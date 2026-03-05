@@ -1,0 +1,6 @@
+# Local skill installs (user/global/local state should not be versioned)
+.copilot/skills/
+.claude/skills/
+.codex/skills/
+.gemini/skills/
+.opencode/skills/

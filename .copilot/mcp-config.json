@@ -1,0 +1,172 @@
+{
+  "mcpServers": {
+    "sequential-thinking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ]
+    },
+    "shannon-thinking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "server-shannon-thinking@latest"
+      ]
+    },
+    "structured-thinking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "structured-thinking"
+      ]
+    },
+    "cascade-thinking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "cascade-thinking-mcp"
+      ]
+    },
+    "crash": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "crash-mcp"
+      ]
+    },
+    "lotus-wisdom-mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "lotus-wisdom-mcp"
+      ]
+    },
+    "think-strategies": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "github:aaronsb/think-strategies"
+      ]
+    },
+    "default": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://mcp.w4w.dev/mcp/default"
+      ]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest",
+        "--extension"
+      ],
+      "env": {
+        "PLAYWRIGHT_MCP_EXTENSION_TOKEN": "${PLAYWRIGHT_MCP_EXTENSION_TOKEN}",
+        "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD": "1"
+      }
+    },
+    "docling": {
+      "command": "uvx",
+      "args": [
+        "--from=docling-mcp",
+        "docling-mcp-server"
+      ]
+    },
+    "fetch": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-fetch-server"
+      ]
+    },
+    "fetcher": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "fetcher-mcp"
+      ]
+    },
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp",
+        "--api-key",
+        "${CONTEXT7_API_KEY}"
+      ]
+    },
+    "repomix": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "repomix",
+        "--mcp"
+      ]
+    },
+    "brave-search": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-brave-search"
+      ],
+      "env": {
+        "BRAVE_API_KEY": "${BRAVE_API_KEY}"
+      }
+    },
+    "exa": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "exa-mcp-server"
+      ],
+      "env": {
+        "EXA_API_KEY": "${EXA_API_KEY}"
+      }
+    },
+    "deepwiki": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://mcp.deepwiki.com/mcp"
+      ]
+    },
+    "wikipedia": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "wikipedia-mcp"
+      ]
+    },
+    "wayback": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-wayback-machine"
+      ]
+    },
+    "g-search": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "g-search-mcp"
+      ]
+    },
+    "duckduckgo-search": {
+      "command": "uvx",
+      "args": [
+        "duckduckgo-mcp-server"
+      ]
+    },
+    "arxiv": {
+      "command": "uvx",
+      "args": [
+        "arxiv-mcp-server"
+      ]
+    }
+  }
+}

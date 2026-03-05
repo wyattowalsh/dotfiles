@@ -1,0 +1,7 @@
+--smart-case
+--hidden
+--glob=!.git/
+--glob=!node_modules/
+--glob=!.venv/
+--glob=!__pycache__/
+--colors=line:style:bold
