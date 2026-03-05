@@ -32,6 +32,25 @@ LOCK_FD=9
 LOCK_METHOD=""
 
 export PATH="$LOCAL_BIN:$PATH"
+START_TIME_EPOCH="$(date +%s)"
+
+COLOR_ENABLED=0
+COLOR_RESET=""
+COLOR_INFO=""
+COLOR_WARN=""
+COLOR_ERROR=""
+COLOR_DEBUG=""
+COLOR_SUCCESS=""
+
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  COLOR_ENABLED=1
+  COLOR_RESET=$'\033[0m'
+  COLOR_INFO=$'\033[1;34m'
+  COLOR_WARN=$'\033[1;33m'
+  COLOR_ERROR=$'\033[1;31m'
+  COLOR_DEBUG=$'\033[0;35m'
+  COLOR_SUCCESS=$'\033[1;32m'
+fi
 
 usage() {
   cat <<'USAGE'
@@ -44,22 +63,32 @@ USAGE
 }
 
 info() {
-  printf '[INFO] %s\n' "$*"
+  printf '%s %s\n' "$(styled_tag INFO "$COLOR_INFO")" "$*"
 }
 
 warn() {
   WARNINGS=$((WARNINGS + 1))
-  printf '[WARN] %s\n' "$*" >&2
+  printf '%s %s\n' "$(styled_tag WARN "$COLOR_WARN")" "$*" >&2
 }
 
 error() {
   ERRORS=$((ERRORS + 1))
-  printf '[ERROR] %s\n' "$*" >&2
+  printf '%s %s\n' "$(styled_tag ERROR "$COLOR_ERROR")" "$*" >&2
 }
 
 debug() {
   if [ "$VERBOSE" -eq 1 ]; then
-    printf '[DEBUG] %s\n' "$*" >&2
+    printf '%s %s\n' "$(styled_tag DEBUG "$COLOR_DEBUG")" "$*" >&2
+  fi
+}
+
+styled_tag() {
+  local label="$1"
+  local color="$2"
+  if [ "$COLOR_ENABLED" -eq 1 ]; then
+    printf '%b[%s]%b' "$color" "$label" "$COLOR_RESET"
+  else
+    printf '[%s]' "$label"
   fi
 }
 
@@ -80,28 +109,63 @@ mark_action_skipped() {
   ACTIONS_SKIPPED=$((ACTIONS_SKIPPED + 1))
 }
 
+next_action_step() {
+  printf '%02d' "$((ACTIONS_RUN + ACTIONS_SKIPPED + 1))"
+}
+
 skip_action() {
+  local step
+  step="$(next_action_step)"
   mark_action_skipped
-  info "Skipping: $*"
+  info "[step ${step}] SKIP: $*"
 }
 
 run_action() {
   local description="$1"
   shift
 
+  local step
+  step="$(next_action_step)"
+
   local rendered
   rendered="$(command_to_string "$@")"
 
   if [ "$DRY_RUN" -eq 1 ]; then
     mark_action_skipped
-    info "[dry-run] ${description}: ${rendered}"
+    info "[step ${step}] DRY-RUN: ${description}"
+    debug "Command: ${rendered}"
     return 0
   fi
 
-  info "$description"
+  info "[step ${step}] START: ${description}"
   debug "Command: ${rendered}"
-  "$@" || return $?
-  mark_action_run
+
+  if [ "$VERBOSE" -eq 1 ]; then
+    "$@" || return $?
+    mark_action_run
+    info "[step ${step}] DONE: ${description}"
+    return 0
+  fi
+
+  local output_file
+  output_file="$(mktemp)"
+  if "$@" >"$output_file" 2>&1; then
+    rm -f "$output_file"
+    mark_action_run
+    info "[step ${step}] DONE: ${description}"
+    return 0
+  fi
+
+  local rc
+  rc=$?
+  printf '%s [step %s] FAIL: %s\n' "$(styled_tag ERROR "$COLOR_ERROR")" "$step" "$description" >&2
+  if [ -s "$output_file" ]; then
+    printf '%s\n' "----- command output (${description}) -----" >&2
+    cat "$output_file" >&2
+    printf '%s\n' '----- end command output -----' >&2
+  fi
+  rm -f "$output_file"
+  return "$rc"
 }
 
 run_with_timeout() {
@@ -251,7 +315,40 @@ release_setup_lock() {
 }
 
 print_summary() {
-  info "Summary: actions_run=${ACTIONS_RUN} skipped=${ACTIONS_SKIPPED} warnings=${WARNINGS} errors=${ERRORS}"
+  local end_time elapsed duration status status_color
+  end_time="$(date +%s)"
+  elapsed=$((end_time - START_TIME_EPOCH))
+  duration="$(format_duration "$elapsed")"
+
+  status="SUCCESS"
+  status_color="$COLOR_SUCCESS"
+  if [ "$ERRORS" -gt 0 ]; then
+    status="FAILED"
+    status_color="$COLOR_ERROR"
+  fi
+
+  printf '\n'
+  printf '%s\n' '============================================================'
+  printf '%s %s\n' "$(styled_tag "$status" "$status_color")" "setup.sh finished in ${duration}"
+  printf '%s actions_run=%s skipped=%s warnings=%s errors=%s\n' "$(styled_tag STATS "$COLOR_INFO")" "$ACTIONS_RUN" "$ACTIONS_SKIPPED" "$WARNINGS" "$ERRORS"
+  printf '%s\n' '============================================================'
+}
+
+format_duration() {
+  local total="$1"
+  local hours minutes seconds
+
+  hours=$((total / 3600))
+  minutes=$(((total % 3600) / 60))
+  seconds=$((total % 60))
+
+  if [ "$hours" -gt 0 ]; then
+    printf '%dh%02dm%02ds' "$hours" "$minutes" "$seconds"
+  elif [ "$minutes" -gt 0 ]; then
+    printf '%dm%02ds' "$minutes" "$seconds"
+  else
+    printf '%ds' "$seconds"
+  fi
 }
 
 cleanup() {
@@ -260,7 +357,7 @@ cleanup() {
 
   if [ "$rc" -ne 0 ]; then
     ERRORS=$((ERRORS + 1))
-    printf '[ERROR] setup.sh failed with exit code %s\n' "$rc" >&2
+    printf '%s setup.sh failed with exit code %s\n' "$(styled_tag ERROR "$COLOR_ERROR")" "$rc" >&2
   fi
 
   print_summary
