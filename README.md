@@ -232,6 +232,7 @@ This repo explicitly treats idempotency as a contract (see [`AGENTS.md`](./AGENT
 - preflight checks run before setup to validate required commands/files and privilege availability
 - `--smoke-check` runs verification-only mode; `--verbose` additionally runs post-setup smoke checks
 - apt metadata refresh is done once per run
+- apt update automatically recovers from stale Yarn apt `NO_PUBKEY` failures by removing stale Yarn source entries and retrying once
 - a concurrency guard prevents parallel mutating runs (`flock` with mkdir fallback for stale-lock recovery)
 - network-sensitive steps use retry+exponential backoff and command timeouts
 - privileged apt/system writes are gated through explicit privilege checks and noninteractive apt options

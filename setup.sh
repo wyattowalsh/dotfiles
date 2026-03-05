@@ -100,7 +100,7 @@ run_action() {
 
   info "$description"
   debug "Command: ${rendered}"
-  "$@"
+  "$@" || return $?
   mark_action_run
 }
 
@@ -453,6 +453,38 @@ ensure_local_bin() {
   run_action "Creating local bin directory" mkdir -p "$LOCAL_BIN"
 }
 
+is_yarn_apt_key_failure() {
+  local output="$1"
+  printf '%s' "$output" | grep -Fq 'https://dl.yarnpkg.com/debian' \
+    && printf '%s' "$output" | grep -Fq 'NO_PUBKEY 62D54FD4003F6525'
+}
+
+remove_stale_yarn_apt_sources() {
+  local removed=0
+  local file
+  local -a candidates=(
+    /etc/apt/sources.list
+    /etc/apt/sources.list.d/*.list
+    /etc/apt/sources.list.d/*.sources
+  )
+
+  for file in "${candidates[@]}"; do
+    [ -e "$file" ] || continue
+    if run_privileged grep -Fq 'dl.yarnpkg.com/debian' "$file"; then
+      if [ "$(basename "$file")" = "sources.list" ]; then
+        run_action "Removing Yarn apt source entry from ${file}" run_privileged sed -i '/dl\.yarnpkg\.com\/debian/d' "$file"
+      else
+        run_action "Removing stale Yarn apt source file ${file}" run_privileged rm -f "$file"
+      fi
+      removed=1
+    fi
+  done
+
+  if [ "$removed" -eq 0 ]; then
+    warn "Detected Yarn key failure but found no Yarn apt source entries to remove."
+  fi
+}
+
 ensure_apt_updated() {
   if [ "$APT_UPDATED" -eq 1 ]; then
     return
@@ -463,8 +495,26 @@ ensure_apt_updated() {
   fi
 
   require_privilege "apt-get update" || return 1
-  run_action "Updating apt package index" run_privileged env DEBIAN_FRONTEND=noninteractive apt-get "${APT_COMMON_OPTS[@]}" update
-  APT_UPDATED=1
+  local apt_update_output
+  if apt_update_output="$(run_action "Updating apt package index" run_privileged env DEBIAN_FRONTEND=noninteractive apt-get "${APT_COMMON_OPTS[@]}" update 2>&1)"; then
+    APT_UPDATED=1
+    return
+  fi
+
+  if is_yarn_apt_key_failure "$apt_update_output"; then
+    warn "Detected stale Yarn apt repo key; removing stale Yarn apt source entries and retrying apt-get update once."
+    remove_stale_yarn_apt_sources
+    local retry_output
+    if retry_output="$(run_action "Retrying apt package index update" run_privileged env DEBIAN_FRONTEND=noninteractive apt-get "${APT_COMMON_OPTS[@]}" update 2>&1)"; then
+      APT_UPDATED=1
+      return
+    fi
+    printf '%s\n' "$retry_output" >&2
+    return 1
+  fi
+
+  printf '%s\n' "$apt_update_output" >&2
+  return 1
 }
 
 install_apt_tools() {
