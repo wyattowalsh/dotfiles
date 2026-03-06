@@ -24,7 +24,7 @@ This repository is for dotfiles/bootstrap automation so environment setup is rep
 - Running `./setup.sh` multiple times must be safe and produce the same final state.
 - Check current state before mutating it, and skip steps that are already satisfied.
 - Do not append duplicate config lines or create duplicate artifacts.
-- Fail fast on real errors rather than silently continuing.
+- Keep fail-fast behavior for required steps, while explicitly optional steps warn and continue.
 - Run preflight checks before mutations; use `--smoke-check` for verification-only behavior.
 - Guard mutating runs with a lock/concurrency check and emit structured exit summary counters.
 - Use retry + backoff + command timeouts for network-sensitive operations.
@@ -32,10 +32,12 @@ This repository is for dotfiles/bootstrap automation so environment setup is rep
 
 ## AI bootstrap notes
 - `setup.sh` installs `@anthropic-ai/claude-code`, `@google/gemini-cli`, `@github/copilot`, and `@openai/codex` via npm when missing, and installs `github/gh-copilot` for `gh` when available.
-- `setup.sh` installs skills from `wyattowalsh/agents` (no `gh:` prefix) via `npx -y skills add` with: `add-badges`, `agent-conventions`, `email-whiz`, `frontend-designer`, `honest-review`, `host-panel`, `javascript-conventions`, `learn`, `mcp-creator`, `orchestrator`, `prompt-engineer`, `python-conventions`, `research`, `skill-creator`.
+- `setup.sh` installs skills from `wyattowalsh/agents` (no `gh:` prefix) via non-interactive `npx -y skills add --yes` with a dedicated longer timeout (`SKILLS_INSTALL_TIMEOUT_SECONDS=300`) and: `add-badges`, `agent-conventions`, `email-whiz`, `frontend-designer`, `honest-review`, `host-panel`, `javascript-conventions`, `learn`, `mcp-creator`, `orchestrator`, `prompt-engineer`, `python-conventions`, `research`, `skill-creator`.
 - Skills target agents are limited to: `claude-code`, `codex`, `gemini-cli`, and `github-copilot` (only if each CLI is installed).
 - Universal skills from `~/.agents/skills` are mirrored into `~/.copilot/skills`, `~/.codex/skills`, and `~/.gemini/skills` (for installed CLIs) to improve skill detection.
 - Copilot/Codex require provider authentication after install; skills install may warn and continue when blocked by auth/network constraints.
+- `setup.sh` installs `wagents` as an optional step: it tries `uv tool install wagents`, falls back to `uv tool install --from "$HOME/dev/tools/agents" wagents`, and warns/continues if still unavailable.
+- `setup.sh` skips `chsh` default-shell updates in Codespaces or non-interactive sessions.
 
 ## Bash safety conventions
 - Start bash scripts with: `set -euo pipefail`.

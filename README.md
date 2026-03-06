@@ -129,11 +129,11 @@ flowchart LR
 3. Installs `eza`, `lazygit`, `zoxide`, `yazi` from latest GitHub releases
 4. Installs Node via `nvm` (LTS), Python tool runner `uv`, and Go
 5. Installs AI CLIs (`claude`, `gemini`, `copilot`, `codex`) plus `gh-copilot` for `gh` (when available)
-6. Installs shared skills from `wyattowalsh/agents` (no `gh:` prefix) for supported CLIs
+6. Installs shared skills from `wyattowalsh/agents` (no `gh:` prefix) for supported CLIs using non-interactive `npx -y skills add --yes` with a dedicated longer timeout
 7. Mirrors universal skills from `~/.agents/skills` into `~/.copilot/skills`, `~/.codex/skills`, and `~/.gemini/skills` (when those CLIs are installed) for skill detection
-8. Clones `~/dev/tools/agents` and installs `wagents` via `uv` (if missing)
+8. Clones `~/dev/tools/agents` and installs optional `wagents` via `uv` (fallbacks to local source install if needed)
 9. Symlinks managed config files into `$HOME`
-10. Attempts to set default shell to `zsh`
+10. Attempts to set default shell to `zsh` (skipped in Codespaces/non-interactive sessions)
 
 <details>
 <summary><strong>Detailed install matrix</strong></summary>
@@ -147,8 +147,9 @@ flowchart LR
 | Go runtime | Latest Go tarball into `/usr/local/go` | Skips if `go` already exists |
 | AI CLIs | npm global `@anthropic-ai/claude-code`, `@google/gemini-cli`, `@github/copilot`, `@openai/codex` | Skips each CLI already present |
 | GitHub Copilot CLI ext | `gh extension install github/gh-copilot` (if `gh` exists) | Installs only if extension missing |
-| Agent skills | `npx -y skills add wyattowalsh/agents ... -g` (no `gh:` prefix) for supported agents only | Guard file prevents re-install when skills/targets are unchanged |
+| Agent skills | Non-interactive `npx -y skills add --yes wyattowalsh/agents ... -g` (no `gh:` prefix) for supported agents only, with a dedicated 300s timeout | Guard file prevents re-install; auth/network/timeout failures warn and continue |
 | Skill mirroring | Symlinks `~/.agents/skills/*` into `~/.copilot/skills`, `~/.codex/skills`, `~/.gemini/skills` (for installed CLIs) | Creates/repairs links idempotently |
+| Agents helper tool | Clones `~/dev/tools/agents`; optional `wagents` install first uses `uv tool install wagents`, then fallback `uv tool install --from ~/dev/tools/agents wagents` | Warns and continues if `wagents` remains unavailable |
 | Dotfile linking | `ln -sfn` links into `$HOME` | Replaces link target safely |
 
 </details>
@@ -190,14 +191,15 @@ flowchart LR
 
 ### Shared skills bootstrap
 
-- Source: `npx -y skills add wyattowalsh/agents` (no `gh:` prefix)
+- Source: non-interactive `npx -y skills add --yes wyattowalsh/agents` (no `gh:` prefix)
 - Skills: `add-badges`, `agent-conventions`, `email-whiz`, `frontend-designer`, `honest-review`, `host-panel`, `javascript-conventions`, `learn`, `mcp-creator`, `orchestrator`, `prompt-engineer`, `python-conventions`, `research`, `skill-creator`
 - Agent targets (limited): `claude-code`, `codex`, `gemini-cli`, `github-copilot` (only when each CLI is installed)
 - Universal skill mirroring: `~/.agents/skills` is symlinked into `~/.copilot/skills`, `~/.codex/skills`, and `~/.gemini/skills` for installed CLIs so skills are discoverable by each agent runtime
+- Skills install uses a dedicated longer timeout (`SKILLS_INSTALL_TIMEOUT_SECONDS=300`)
 
 > [!NOTE]
 > `copilot`/`codex` installs provide binaries, but first-run authentication is still required by each provider (and Codex may rely on provider env auth such as API keys depending on your setup).  
-> Skills installation requires npm/network access and can be blocked by auth/network constraints; `setup.sh` logs a warning and continues in that case.
+> Skills installation requires npm/network access and can be blocked by auth/network/time constraints; `setup.sh` logs a warning and continues in that case.
 
 ### Copilot MCP configuration
 
@@ -239,7 +241,7 @@ This repo explicitly treats idempotency as a contract (see [`AGENTS.md`](./AGENT
 - clones happen only when targets are missing
 - symlinks use `ln -sfn` replacement semantics
 - structured summary logging reports actions run/skipped plus warning/error counts at exit
-- script runs with `set -euo pipefail` to fail fast on real errors
+- script runs with `set -euo pipefail` to fail fast on required errors, while explicitly optional steps (for example skills/wagents/chsh) warn and continue
 
 > [!NOTE]
 > Re-running `./setup.sh` should converge to the same final state without duplicate config artifacts.
@@ -269,7 +271,7 @@ This repo explicitly treats idempotency as a contract (see [`AGENTS.md`](./AGENT
 | `copilot`/`codex` auth errors | CLI installed but not authenticated for your account/provider | Run each CLI login flow, then retry |
 | Skills install warning about auth/network constraints | npm/network outage or missing auth for `wyattowalsh/agents` | Restore connectivity/auth and re-run `./setup.sh` |
 | MCP server auth errors | Missing API key env vars | Export required keys before launching Claude |
-| New shell not using zsh | `chsh` not permitted in environment | Run `chsh -s "$(command -v zsh)"` manually (if allowed) |
+| New shell not using zsh | Codespaces/non-interactive session or `chsh` not permitted | Run `chsh -s "$(command -v zsh)"` manually in an interactive shell (if allowed) |
 
 </details>
 

@@ -17,6 +17,7 @@ ERRORS=0
 NETWORK_RETRY_ATTEMPTS=3
 NETWORK_RETRY_BASE_DELAY=2
 NETWORK_TIMEOUT_SECONDS=120
+SKILLS_INSTALL_TIMEOUT_SECONDS=300
 
 APT_COMMON_OPTS=(-o Dpkg::Use-Pty=0 -o Acquire::Retries=3)
 APT_INSTALL_OPTS=(-y "${APT_COMMON_OPTS[@]}")
@@ -148,16 +149,17 @@ run_action() {
   fi
 
   local output_file
+  local rc=0
   output_file="$(mktemp)"
   if "$@" >"$output_file" 2>&1; then
     rm -f "$output_file"
     mark_action_run
     info "[step ${step}] DONE: ${description}"
     return 0
+  else
+    rc=$?
   fi
 
-  local rc
-  rc=$?
   printf '%s [step %s] FAIL: %s\n' "$(styled_tag ERROR "$COLOR_ERROR")" "$step" "$description" >&2
   if [ -s "$output_file" ]; then
     printf '%s\n' "----- command output (${description}) -----" >&2
@@ -192,9 +194,10 @@ retry_with_backoff() {
     debug "Attempt ${attempt}/${NETWORK_RETRY_ATTEMPTS}: ${description}"
     if run_with_timeout "$@"; then
       return 0
+    else
+      rc=$?
     fi
 
-    rc=$?
     if [ "$attempt" -lt "$NETWORK_RETRY_ATTEMPTS" ]; then
       warn "${description} failed (attempt ${attempt}/${NETWORK_RETRY_ATTEMPTS}); retrying in ${delay}s."
       sleep "$delay"
@@ -1071,8 +1074,8 @@ install_agent_skills() {
 
   while [ "$attempt" -le "$NETWORK_RETRY_ATTEMPTS" ]; do
     debug "Attempt ${attempt}/${NETWORK_RETRY_ATTEMPTS}: Installing agent skills"
-    info "Installing agent skills (attempt ${attempt}/${NETWORK_RETRY_ATTEMPTS}); this may take up to ${NETWORK_TIMEOUT_SECONDS}s."
-    if install_output="$(run_with_timeout npx -y skills add wyattowalsh/agents "${skill_args[@]}" "${agent_args[@]}" -g 2>&1)"; then
+    info "Installing agent skills (attempt ${attempt}/${NETWORK_RETRY_ATTEMPTS}); this may take up to ${SKILLS_INSTALL_TIMEOUT_SECONDS}s."
+    if install_output="$(NETWORK_TIMEOUT_SECONDS="$SKILLS_INSTALL_TIMEOUT_SECONDS" run_with_timeout npx -y skills add --yes wyattowalsh/agents "${skill_args[@]}" "${agent_args[@]}" -g 2>&1)"; then
       mkdir -p "$guard_dir"
       printf '%s' "$guard_token" > "$guard_file"
       mark_action_run
@@ -1082,7 +1085,7 @@ install_agent_skills() {
     fi
 
     if [ "$rc" -eq 124 ]; then
-      warn "Skills install attempt ${attempt}/${NETWORK_RETRY_ATTEMPTS} timed out after ${NETWORK_TIMEOUT_SECONDS}s."
+      warn "Skills install attempt ${attempt}/${NETWORK_RETRY_ATTEMPTS} timed out after ${SKILLS_INSTALL_TIMEOUT_SECONDS}s."
       if [ -n "$install_output" ]; then
         printf '%s\n' "$install_output" >&2
       fi
@@ -1216,8 +1219,22 @@ install_agents() {
     if [ "$DRY_RUN" -eq 1 ]; then
       skip_action "Would install wagents via uv"
     else
-      retry_with_backoff "Installing wagents" uv tool install wagents
-      mark_action_run
+      local wagents_installed=0
+      if retry_with_backoff "Installing wagents" uv tool install wagents; then
+        wagents_installed=1
+      elif [ -d "$target/.git" ]; then
+        warn "Primary wagents install failed; retrying from local agents source."
+        if retry_with_backoff "Installing wagents from local agents source" uv tool install --from "$target" wagents; then
+          wagents_installed=1
+        fi
+      fi
+
+      if [ "$wagents_installed" -eq 1 ]; then
+        mark_action_run
+      else
+        warn "Unable to install optional wagents tool; continuing setup."
+        mark_action_skipped
+      fi
     fi
   elif command -v wagents >/dev/null 2>&1; then
     skip_action "wagents already installed"
@@ -1247,6 +1264,11 @@ set_zsh_default_shell() {
 
   if [ "${SHELL:-}" = "$zsh_path" ]; then
     skip_action "Default shell already set to zsh"
+    return
+  fi
+
+  if [ -n "${CODESPACES:-}" ] || [ ! -t 0 ]; then
+    skip_action "Codespaces/non-interactive session detected; skipping default shell update"
     return
   fi
 
@@ -1312,7 +1334,11 @@ main() {
   run_preflight_checks
 
   if [ "$SMOKE_CHECK" -eq 1 ]; then
-    run_smoke_checks
+    if [ "$DRY_RUN" -eq 1 ]; then
+      run_smoke_checks || warn "Smoke checks reported issues during dry-run."
+    else
+      run_smoke_checks
+    fi
     return
   fi
 
