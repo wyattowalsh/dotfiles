@@ -685,7 +685,10 @@ install_tar_binary_from_github() {
   fi
 
   local url
-  url="$(github_asset_url "$repo" "$regex")"
+  if ! url="$(github_asset_url "$repo" "$regex")"; then
+    error "Failed to resolve ${binary} release metadata for ${repo}."
+    return 1
+  fi
   if [ -z "$url" ]; then
     error "Could not find ${binary} release asset for ${repo}."
     return 1
@@ -695,12 +698,15 @@ install_tar_binary_from_github() {
   tmpdir="$(mktemp -d)"
   archive="$tmpdir/archive.tar.gz"
 
-  if ! retry_with_backoff "Download ${binary} archive" curl -fsSL "$url" -o "$archive"; then
+  if ! run_action "Downloading ${binary} archive from ${repo}" retry_with_backoff "Download ${binary} archive" curl -fsSL "$url" -o "$archive"; then
     rm -rf "$tmpdir"
     return 1
   fi
 
-  tar -xzf "$archive" -C "$tmpdir"
+  if ! run_action "Extracting ${binary} archive" tar -xzf "$archive" -C "$tmpdir"; then
+    rm -rf "$tmpdir"
+    return 1
+  fi
   binary_path="$(find "$tmpdir" -type f -name "$binary" | head -n1)"
 
   if [ -z "$binary_path" ]; then
@@ -709,9 +715,11 @@ install_tar_binary_from_github() {
     return 1
   fi
 
-  run_privileged install -m 755 "$binary_path" "/usr/local/bin/${binary}"
+  if ! run_action "Installing ${binary} binary to /usr/local/bin" run_privileged install -m 755 "$binary_path" "/usr/local/bin/${binary}"; then
+    rm -rf "$tmpdir"
+    return 1
+  fi
   rm -rf "$tmpdir"
-  mark_action_run
 }
 
 install_deb_from_github() {
@@ -744,7 +752,10 @@ install_deb_from_github() {
   fi
 
   local url
-  url="$(github_asset_url "$repo" "$regex")"
+  if ! url="$(github_asset_url "$repo" "$regex")"; then
+    error "Failed to resolve ${check_cmd} release metadata for ${repo}."
+    return 1
+  fi
   if [ -z "$url" ]; then
     error "Could not find ${check_cmd} deb asset for ${repo}."
     return 1
@@ -754,15 +765,20 @@ install_deb_from_github() {
   tmpdir="$(mktemp -d)"
   debfile="$tmpdir/package.deb"
 
-  if ! retry_with_backoff "Download ${check_cmd} deb" curl -fsSL "$url" -o "$debfile"; then
+  if ! run_action "Downloading ${check_cmd} deb from ${repo}" retry_with_backoff "Download ${check_cmd} deb" curl -fsSL "$url" -o "$debfile"; then
     rm -rf "$tmpdir"
     return 1
   fi
 
-  ensure_apt_updated
-  run_privileged env DEBIAN_FRONTEND=noninteractive apt-get "${APT_INSTALL_OPTS[@]}" install "$debfile"
+  if ! ensure_apt_updated; then
+    rm -rf "$tmpdir"
+    return 1
+  fi
+  if ! run_action "Installing ${check_cmd} deb package" run_privileged env DEBIAN_FRONTEND=noninteractive apt-get "${APT_INSTALL_OPTS[@]}" install "$debfile"; then
+    rm -rf "$tmpdir"
+    return 1
+  fi
   rm -rf "$tmpdir"
-  mark_action_run
 }
 
 clone_if_missing() {
@@ -1055,14 +1071,25 @@ install_agent_skills() {
 
   while [ "$attempt" -le "$NETWORK_RETRY_ATTEMPTS" ]; do
     debug "Attempt ${attempt}/${NETWORK_RETRY_ATTEMPTS}: Installing agent skills"
+    info "Installing agent skills (attempt ${attempt}/${NETWORK_RETRY_ATTEMPTS}); this may take up to ${NETWORK_TIMEOUT_SECONDS}s."
     if install_output="$(run_with_timeout npx -y skills add wyattowalsh/agents "${skill_args[@]}" "${agent_args[@]}" -g 2>&1)"; then
       mkdir -p "$guard_dir"
       printf '%s' "$guard_token" > "$guard_file"
       mark_action_run
       return
+    else
+      rc=$?
     fi
 
-    rc=$?
+    if [ "$rc" -eq 124 ]; then
+      warn "Skills install attempt ${attempt}/${NETWORK_RETRY_ATTEMPTS} timed out after ${NETWORK_TIMEOUT_SECONDS}s."
+      if [ -n "$install_output" ]; then
+        printf '%s\n' "$install_output" >&2
+      fi
+      warn "Skipping skills install for this run to avoid prolonged startup stalls."
+      mark_action_skipped
+      return
+    fi
     if is_network_or_auth_error "$install_output"; then
       warn "Skills install skipped due to network/auth constraints."
       printf '%s\n' "$install_output" >&2
@@ -1246,6 +1273,14 @@ install_github_release_tools() {
   if [ "$ARCH_NAME" = "unknown" ]; then
     warn "Skipping GitHub release tool installs; unsupported architecture: ${ARCH_RAW}."
     mark_action_skipped
+    return
+  fi
+
+  if command -v eza >/dev/null 2>&1 \
+    && command -v lazygit >/dev/null 2>&1 \
+    && command -v zoxide >/dev/null 2>&1 \
+    && command -v yazi >/dev/null 2>&1; then
+    skip_action "GitHub release tools already installed (eza lazygit zoxide yazi)"
     return
   fi
 

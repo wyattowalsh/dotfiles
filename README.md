@@ -116,7 +116,7 @@ flowchart LR
 | Internet access | Fetches installers/assets from GitHub, go.dev, npm, astral, etc. | `curl -I https://api.github.com` |
 
 > [!WARNING]
-> On systems without `apt-get`, `setup.sh` can skip some apt steps but later GitHub `.deb` installs (`zoxide`, `yazi`) will fail by design.
+> On systems without `apt-get`, `setup.sh` skips apt-based installs (including GitHub `.deb` assets like `zoxide` and `yazi`) with warnings.
 
 ---
 
