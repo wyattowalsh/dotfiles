@@ -128,7 +128,7 @@ flowchart LR
 2. Installs Oh My Zsh + Powerlevel10k + Zsh plugins (autosuggestions/syntax-highlighting)
 3. Installs `eza`, `lazygit`, `zoxide`, `yazi` from latest GitHub releases
 4. Installs Node via `nvm` (LTS), Python tool runner `uv`, and Go
-5. Installs AI CLIs (`claude`, `gemini`, `copilot`, `codex`) plus `gh-copilot` for `gh` (when available)
+5. Installs AI CLIs (`claude`, `gemini`, `copilot`, `codex`) plus `gh-copilot` for `gh` (when available), then links startup shims into `~/.local/bin`
 6. Installs shared skills from `wyattowalsh/agents` (no `gh:` prefix) for supported CLIs using non-interactive `npx -y skills add --yes` with a dedicated longer timeout
 7. Mirrors universal skills from `~/.agents/skills` into `~/.copilot/skills`, `~/.codex/skills`, and `~/.gemini/skills` (when those CLIs are installed) for skill detection
 8. Clones `~/dev/tools/agents` and installs optional `wagents` via `uv` (fallbacks to local source install if needed)
@@ -145,7 +145,7 @@ flowchart LR
 | Node runtime | `nvm install --lts` + default alias | Reuses installed `nvm`; tracks current LTS[^lts] |
 | Python tooling | `uv` installer | Skips if `uv` already exists |
 | Go runtime | Latest Go tarball into `/usr/local/go` | Skips if `go` already exists |
-| AI CLIs | npm global `@anthropic-ai/claude-code`, `@google/gemini-cli`, `@github/copilot`, `@openai/codex` | Skips each CLI already present |
+| AI CLIs | npm global `@anthropic-ai/claude-code`, `@google/gemini-cli`, `@github/copilot`, `@openai/codex` + startup shims in `~/.local/bin` | Skips each CLI already present and refreshes shim links idempotently |
 | GitHub Copilot CLI ext | `gh extension install github/gh-copilot` (if `gh` exists) | Installs only if extension missing |
 | Agent skills | Non-interactive `npx -y skills add --yes wyattowalsh/agents ... -g` (no `gh:` prefix) for supported agents only, with a dedicated 300s timeout | Guard file prevents re-install; auth/network/timeout failures warn and continue |
 | Skill mirroring | Symlinks `~/.agents/skills/*` into `~/.copilot/skills`, `~/.codex/skills`, `~/.gemini/skills` (for installed CLIs) | Creates/repairs links idempotently |
@@ -188,6 +188,7 @@ flowchart LR
 - **GitHub Copilot CLI** (`copilot`) via npm global `@github/copilot`
 - **Codex CLI** (`codex`) via npm global `@openai/codex`
 - **GitHub Copilot extension for `gh`** when GitHub CLI is already installed
+- Startup shim links for `claude`, `gemini`, `copilot`, `codex` in `~/.local/bin` so commands resolve on fresh shells before `nvm` is initialized
 
 ### Shared skills bootstrap
 

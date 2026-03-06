@@ -985,6 +985,77 @@ install_npm_package_if_missing() {
   mark_action_run
 }
 
+resolve_npm_cli_binary() {
+  local binary="$1"
+  local npm_prefix
+  local candidate
+
+  npm_prefix="$(npm config get prefix 2>/dev/null || true)"
+  if [ -n "$npm_prefix" ] && [ "$npm_prefix" != "undefined" ] && [ "$npm_prefix" != "null" ]; then
+    candidate="${npm_prefix}/bin/${binary}"
+    if [ -e "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  fi
+
+  if command -v "$binary" >/dev/null 2>&1; then
+    candidate="$(command -v "$binary")"
+    if [ "$candidate" != "$LOCAL_BIN/$binary" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+link_ai_cli_shim() {
+  local binary="$1"
+  local source_path
+  local target_path="$LOCAL_BIN/$binary"
+
+  if ! source_path="$(resolve_npm_cli_binary "$binary")"; then
+    if [ "$DRY_RUN" -eq 1 ]; then
+      skip_action "Would ensure ${binary} startup shim in ${LOCAL_BIN}"
+      return
+    fi
+    warn "Unable to resolve ${binary} binary path for startup shim."
+    mark_action_skipped
+    return
+  fi
+
+  if [ -L "$target_path" ] && [ "$(readlink "$target_path")" = "$source_path" ]; then
+    skip_action "${binary} startup shim already links to ${source_path}"
+    return
+  fi
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    skip_action "Would link ${target_path} -> ${source_path}"
+    return
+  fi
+
+  if [ -e "$target_path" ] && [ ! -L "$target_path" ]; then
+    warn "Replacing existing path with symlink: $target_path"
+  fi
+
+  ln -sfn "$source_path" "$target_path"
+  mark_action_run
+}
+
+ensure_ai_cli_startup_shims() {
+  if ! command -v npm >/dev/null 2>&1; then
+    warn "npm not found; skipping AI CLI startup shim creation."
+    mark_action_skipped
+    return
+  fi
+
+  local binary
+  for binary in claude gemini copilot codex; do
+    link_ai_cli_shim "$binary"
+  done
+}
+
 install_ai_clis() {
   if ! command -v npm >/dev/null 2>&1; then
     warn "npm not found; skipping AI CLI npm installs."
@@ -1356,6 +1427,7 @@ main() {
   install_uv
   install_go
   install_ai_clis
+  ensure_ai_cli_startup_shims
   install_agent_skills
   sync_universal_skill_links
   install_agents

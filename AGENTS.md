@@ -32,6 +32,7 @@ This repository is for dotfiles/bootstrap automation so environment setup is rep
 
 ## AI bootstrap notes
 - `setup.sh` installs `@anthropic-ai/claude-code`, `@google/gemini-cli`, `@github/copilot`, and `@openai/codex` via npm when missing, and installs `github/gh-copilot` for `gh` when available.
+- `setup.sh` also maintains startup shim links for `claude`, `gemini`, `copilot`, and `codex` in `~/.local/bin` so those commands resolve before `nvm` lazy initialization.
 - `setup.sh` installs skills from `wyattowalsh/agents` (no `gh:` prefix) via non-interactive `npx -y skills add --yes` with a dedicated longer timeout (`SKILLS_INSTALL_TIMEOUT_SECONDS=300`) and: `add-badges`, `agent-conventions`, `email-whiz`, `frontend-designer`, `honest-review`, `host-panel`, `javascript-conventions`, `learn`, `mcp-creator`, `orchestrator`, `prompt-engineer`, `python-conventions`, `research`, `skill-creator`.
 - Skills target agents are limited to: `claude-code`, `codex`, `gemini-cli`, and `github-copilot` (only if each CLI is installed).
 - Universal skills from `~/.agents/skills` are mirrored into `~/.copilot/skills`, `~/.codex/skills`, and `~/.gemini/skills` (for installed CLIs) to improve skill detection.
