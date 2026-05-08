@@ -1,0 +1,19 @@
+---
+title: Validation
+description: Commands that prove the repo is safe to apply.
+---
+
+Use Taskfile targets as the canonical command surface.
+
+```bash
+task check
+task smoke
+task ai:check
+task docs:build
+task brew:check
+task darwin:check
+task home:diff
+```
+
+Some checks skip gracefully when optional tools are not installed.
+

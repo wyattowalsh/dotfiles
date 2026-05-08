@@ -1,6 +1,6 @@
 # Dotfiles Bootstrap
 
-Opinionated Linux dotfiles + bootstrap automation for a fast, repeatable developer environment.
+Opinionated dotfiles + bootstrap automation for a fast, repeatable developer environment.
 
 <!-- BADGES:START -->
 [![Platform: Debian/Ubuntu](https://img.shields.io/badge/Platform-Debian%2FUbuntu-E95420?style=flat-square&logo=ubuntu&logoColor=white)](#prerequisites)
@@ -11,12 +11,13 @@ Opinionated Linux dotfiles + bootstrap automation for a fast, repeatable develop
 <!-- BADGES:END -->
 
 > [!NOTE]
-> This repo is currently tuned for Debian/Ubuntu-style systems (`apt-get`) and expects network access for package and release downloads.
+> The legacy `setup.sh` path remains tuned for Debian/Ubuntu-style systems. The full-rig macOS path is now scaffolded around `Taskfile.yml`, Homebrew Bundle, nix-darwin/Home Manager, Chezmoi-style templates, MCPHub-first AI config, and internal Fumadocs documentation.
 
 ## At a glance
 
 | Platform | Entrypoint | Re-run safety |
 |---|---|---|
+| Apple Silicon macOS | `task bootstrap -- --dry-run` then `task bootstrap -- --apply` | Dry-run-first preview with curated Brew, Nix, Chezmoi, AI/MCP, and docs checks |
 | Debian/Ubuntu-style Linux (`apt-get`) | [`setup.sh`](./setup.sh) | Safe to re-run with idempotent guards and convergence checks |
 
 ## Table of contents
@@ -24,6 +25,7 @@ Opinionated Linux dotfiles + bootstrap automation for a fast, repeatable develop
 - [At a glance](#at-a-glance)
 - [Overview](#overview)
 - [Quick start](#quick-start)
+- [Taskfile workflows](#taskfile-workflows)
 - [Run modes](#run-modes)
 - [Prerequisites](#prerequisites)
 - [What gets installed/configured](#what-gets-installedconfigured)
@@ -38,7 +40,12 @@ Opinionated Linux dotfiles + bootstrap automation for a fast, repeatable develop
 
 ## Overview
 
-This repository centers on a single entrypoint: [`setup.sh`](./setup.sh). Running it installs core CLI tooling, shell/runtime dependencies, AI CLIs, and then symlinks repo-managed config files into `$HOME` so your environment is reproducible and easy to version.
+This repository has two entrypoints:
+
+- `Taskfile.yml` for the full-rig macOS migration and validation workflow.
+- [`setup.sh`](./setup.sh) for the existing Debian/Ubuntu bootstrap path.
+
+The macOS target is intentionally layered: Homebrew Bundle for the large app/tool surface, nix-darwin/Home Manager for durable system/user state, Chezmoi-style templates for portable home configuration, MCPHub-first AI config, and a Fumadocs internal docs site for runbooks and validation.
 
 Key goals:
 
@@ -56,7 +63,7 @@ Key goals:
 ```bash
 git clone <your-fork-or-this-repo-url> ~/dotfiles
 cd ~/dotfiles
-./setup.sh
+task bootstrap -- --dry-run
 exec zsh -l
 ```
 
@@ -66,7 +73,8 @@ exec zsh -l
 Checklist:
 
 - [ ] Clone repo to your preferred permanent location
-- [ ] Run `./setup.sh`
+- [ ] Run `task bootstrap -- --dry-run` on macOS or `./setup.sh --dry-run --verbose` on Linux
+- [ ] Review planned changes before applying
 - [ ] Open a new terminal (or `exec zsh -l`)
 - [ ] Confirm links and tools with the verification steps below
 
@@ -80,6 +88,33 @@ gh extension list | rg gh-copilot
 ```
 
 </details>
+
+---
+
+## Run modes
+
+## Taskfile workflows
+
+`Taskfile.yml` is the canonical command surface for the modernized repo:
+
+```bash
+task --list
+task check
+task smoke
+task secrets:scan
+task ai:check
+task brew:check
+task darwin:check
+task home:diff
+task docs:build
+```
+
+The bootstrap dispatcher defaults to preview behavior unless `--apply` is explicitly supplied:
+
+```bash
+task bootstrap -- --dry-run
+task bootstrap -- --apply
+```
 
 ---
 
@@ -162,6 +197,14 @@ flowchart LR
 
 | File | Role | Destination / usage |
 |---|---|---|
+| [`Taskfile.yml`](./Taskfile.yml) | Canonical workflow runner for bootstrap, validation, docs, Brew, Darwin, AI, and secrets checks | Run with `task <name>` |
+| [`bootstrap/`](./bootstrap) | macOS full-rig bootstrap dispatcher and subsystem instructions | Run through `task bootstrap` |
+| [`brew/`](./brew) | Curated Homebrew Bundle desired state and package inventory notes | Validate with `task brew:check` |
+| [`darwin/`](./darwin) | nix-darwin/Home Manager scaffold for Apple Silicon macOS | Validate with `task darwin:check` |
+| [`home/`](./home) | Chezmoi-style managed home configuration templates | Preview with `task home:diff` |
+| [`ai/`](./ai) | Sanitized MCPHub-first AI/MCP manifests and generated examples | Validate with `task ai:check` |
+| [`docs/`](./docs) | Internal Fumadocs site for runbooks and generated references | Build with `task docs:build` |
+| [`openspec/`](./openspec) | OpenSpec change proposal for the full-rig modernization | Reference for migration scope |
 | [`setup.sh`](./setup.sh) | Bootstrap orchestrator | Run manually to converge environment |
 | [`.zshrc`](./.zshrc) | Shell runtime config, plugins, aliases, lazy `nvm`, fzf/zoxide/direnv hooks | Linked to `~/.zshrc` |
 | [`.p10k.zsh`](./.p10k.zsh) | Lean Powerlevel10k prompt config | Linked to `~/.p10k.zsh` |

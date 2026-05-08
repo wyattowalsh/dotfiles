@@ -1,0 +1,36 @@
+{
+  "$schema": "./schemas/mcphub.schema.json",
+  "version": 1,
+  "transport": {
+    "type": "stdio",
+    "command": "/Users/ww/dev/projects/agents/scripts/mcphub/remote-stdio.sh",
+    "bearerTokenEnv": "MCPHUB_BEARER_TOKEN"
+  },
+  "endpoints": {
+    "all": "http://127.0.0.1:46683/mcp",
+    "groups": {
+      "all-managed": "http://127.0.0.1:46683/mcp/all-managed",
+      "browser": "http://127.0.0.1:46683/mcp/browser",
+      "code": "http://127.0.0.1:46683/mcp/code",
+      "data": "http://127.0.0.1:46683/mcp/data",
+      "local-ai": "http://127.0.0.1:46683/mcp/local-ai",
+      "reasoning": "http://127.0.0.1:46683/mcp/reasoning",
+      "research": "http://127.0.0.1:46683/mcp/research"
+    }
+  },
+  "fallbackServers": [
+    "arxiv",
+    "brave-search",
+    "context7",
+    "deepwiki",
+    "docling",
+    "duckduckgo-search",
+    "exa",
+    "fetch",
+    "fetcher",
+    "playwright",
+    "repomix",
+    "sequential-thinking"
+  ]
+}
+

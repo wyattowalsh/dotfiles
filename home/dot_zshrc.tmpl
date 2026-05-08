@@ -1,0 +1,22 @@
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+export XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+
+typeset -U path fpath
+path=(
+  "$HOME/.local/bin"
+  "$HOME/go/bin"
+  "$HOME/bin"
+  $path
+)
+export PATH
+
+export LANG="${LANG:-en_US.UTF-8}"
+export EDITOR="${EDITOR:-code --wait}"
+export PAGER="${PAGER:-less}"
+export LESS="${LESS:--FRX}"
+
+if [[ -r "$HOME/.zshrc.local" ]]; then
+  source "$HOME/.zshrc.local"
+fi

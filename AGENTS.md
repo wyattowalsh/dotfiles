@@ -5,6 +5,15 @@ This repository is for dotfiles/bootstrap automation so environment setup is rep
 
 ## Files overview
 - `setup.sh`: main bootstrap entrypoint (should converge system state when re-run; supports `--dry-run`, `--verbose`, and `--smoke-check`).
+- `Taskfile.yml`: canonical workflow runner for bootstrap, checks, docs, Brew, Darwin, AI/MCP, inventory, and secret scans.
+- `bootstrap/`: macOS full-rig bootstrap scripts.
+- `brew/`: curated Homebrew Bundle desired state and package notes.
+- `darwin/`: nix-darwin/Home Manager scaffold for Apple Silicon macOS.
+- `home/`: Chezmoi-style home configuration templates.
+- `ai/`: sanitized MCPHub-first AI/MCP manifests and generated examples.
+- `docs/`: internal Fumadocs documentation site.
+- `checks/`: validation and smoke-check scripts used by Taskfile targets.
+- `openspec/`: OpenSpec change notes for non-trivial workflow/public structure changes.
 - `.zshrc`: Zsh runtime configuration.
 - `.p10k.zsh`: Powerlevel10k prompt configuration.
 - `.gitconfig`: shared Git configuration defaults.
@@ -45,6 +54,18 @@ This repository is for dotfiles/bootstrap automation so environment setup is rep
 - Verify required commands before use: `command -v <cmd> >/dev/null 2>&1`.
 - Manage symlinks with replacement semantics: `ln -sfn <source> <target>`.
 - Quote variable/path expansions.
+
+## Taskfile conventions
+- Use `Taskfile.yml` as the command runner; do not add a `justfile` or Makefile.
+- Keep Taskfile tasks thin and delegate complex shell logic to scripts under `checks/` or `bootstrap/`.
+- Task targets that may mutate state must provide a dry-run or preview path.
+
+## macOS full-rig conventions
+- Treat the live Mac as inventory, not as a blob to commit.
+- Curate Homebrew packages by intent before promoting them to `brew/Brewfile`.
+- Keep nix-darwin/Home Manager host-specific values in `darwin/hosts/`.
+- Keep portable home configuration in `home/` and private values in local Chezmoi data or untracked overrides.
+- MCPHub is the default AI/MCP control plane; direct MCP configs are fallback/bootstrap only.
 
 ## No secrets policy
 - Never commit passwords, tokens, API keys, private keys, or other secrets.

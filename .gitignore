@@ -4,3 +4,13 @@
 .codex/skills/
 .gemini/skills/
 .opencode/skills/
+
+# Local machine state and generated scratch data
+.DS_Store
+local/
+docs/.next/
+docs/out/
+docs/node_modules/
+docs/.fumadocs/
+docs/.source/
+docs/*.tsbuildinfo

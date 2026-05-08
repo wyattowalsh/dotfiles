@@ -1,0 +1,12 @@
+[manager]
+ratio = [1, 2, 5]
+
+[plugin]
+prepend_previewers = [
+  { name = "*.csv", run = "duckdb" },
+  { name = "*.tsv", run = "duckdb" },
+  { name = "*.json", run = "duckdb" },
+  { name = "*.parquet", run = "duckdb" },
+  { name = "*.ipynb", run = "nbpreview" }
+]
+

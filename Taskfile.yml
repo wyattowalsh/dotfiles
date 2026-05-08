@@ -1,0 +1,129 @@
+version: "3"
+
+vars:
+  SHELL_FILES: setup.sh bootstrap/macos.sh checks/ai-check.sh checks/secrets-scan.sh checks/smoke.sh checks/validate-json.sh
+  JSON_FILES:
+    sh: find . -path './.git' -prune -o -path './docs/node_modules' -prune -o -name '*.json' -print
+
+tasks:
+  default:
+    desc: List available tasks.
+    cmds:
+      - task --list
+
+  bootstrap:
+    desc: Dispatch to the platform bootstrapper. Pass flags after --, for example task bootstrap -- --dry-run.
+    cmds:
+      - ./bootstrap/macos.sh {{.CLI_ARGS}}
+
+  check:
+    desc: Run static validation.
+    deps:
+      - check:shell
+      - check:json
+      - secrets:scan
+
+  check:shell:
+    desc: Validate shell scripts with bash -n and shellcheck when available.
+    cmds:
+      - bash -n {{.SHELL_FILES}}
+      - |
+        if command -v shellcheck >/dev/null 2>&1; then
+          shellcheck {{.SHELL_FILES}}
+        else
+          echo "shellcheck not installed; skipping"
+        fi
+
+  check:json:
+    desc: Validate repository JSON files.
+    cmds:
+      - ./checks/validate-json.sh
+
+  smoke:
+    desc: Run non-destructive smoke checks.
+    cmds:
+      - ./checks/smoke.sh
+
+  secrets:scan:
+    desc: Scan tracked source for obvious secret-shaped values.
+    cmds:
+      - ./checks/secrets-scan.sh
+
+  brew:check:
+    desc: Check the curated Brewfile when Homebrew is available.
+    cmds:
+      - |
+        if command -v brew >/dev/null 2>&1; then
+          brew bundle check --file brew/Brewfile
+        else
+          echo "brew not installed; skipping"
+        fi
+
+  darwin:check:
+    desc: Check Nix flakes and nix-darwin when available.
+    cmds:
+      - |
+        if command -v nix >/dev/null 2>&1; then
+          nix flake check ./darwin
+        else
+          echo "nix not installed; skipping"
+        fi
+      - |
+        if command -v darwin-rebuild >/dev/null 2>&1; then
+          darwin-rebuild check --flake ./darwin#w4w-mbp
+        else
+          echo "darwin-rebuild not installed; skipping"
+        fi
+
+  home:diff:
+    desc: Preview Chezmoi-managed home config when Chezmoi is available.
+    cmds:
+      - |
+        if command -v chezmoi >/dev/null 2>&1; then
+          chezmoi --source home data
+          chezmoi --source home diff
+        else
+          echo "chezmoi not installed; skipping"
+        fi
+
+  ai:check:
+    desc: Validate sanitized AI/MCP config manifests.
+    cmds:
+      - ./checks/ai-check.sh
+
+  docs:install:
+    desc: Install docs dependencies.
+    dir: docs
+    cmds:
+      - pnpm install
+
+  docs:check:
+    desc: Typecheck and lint the Fumadocs site when dependencies are installed.
+    dir: docs
+    cmds:
+      - |
+        if [ -d node_modules ]; then
+          pnpm lint
+          pnpm typecheck
+        else
+          echo "docs/node_modules missing; run task docs:install first"
+        fi
+
+  docs:build:
+    desc: Build the internal Fumadocs site when dependencies are installed.
+    dir: docs
+    cmds:
+      - |
+        if [ -d node_modules ]; then
+          pnpm build
+        else
+          echo "docs/node_modules missing; run task docs:install first"
+        fi
+
+  inventory:redacted:
+    desc: Generate local redacted inventory artifacts under ignored local/.
+    cmds:
+      - mkdir -p local
+      - brew bundle dump --file=local/Brewfile.raw --describe --force || true
+      - find "$HOME/.config" -maxdepth 2 -type d 2>/dev/null | sed "s#$HOME#~#" | sort > local/config-dirs.txt
+

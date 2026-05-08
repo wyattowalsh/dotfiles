@@ -1,0 +1,15 @@
+---
+title: Fresh Mac Runbook
+description: First-run setup sequence for an Apple Silicon Mac.
+---
+
+1. Install Xcode Command Line Tools.
+2. Clone this repository into a stable path.
+3. Run `task bootstrap -- --dry-run`.
+4. Review the planned Homebrew, Nix, Chezmoi, AI/MCP, and docs actions.
+5. Run `task bootstrap -- --apply` only after the preview is acceptable.
+6. Authenticate providers manually where required.
+7. Run `task check` and `task smoke`.
+
+Provider credentials and MCP bearer tokens are intentionally manual/private.
+

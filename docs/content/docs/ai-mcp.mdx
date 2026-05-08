@@ -1,0 +1,18 @@
+---
+title: AI and MCP Matrix
+description: How AI client configuration is modeled.
+---
+
+MCPHub is the default control plane. Direct MCP configs are fallback surfaces
+for bootstrap and recovery.
+
+Tracked sources:
+
+- `ai/mcphub.manifest.json`
+- `ai/client-surfaces.json`
+- `ai/templates/`
+- `ai/generated/*.example.json`
+
+Never commit literal bearer tokens, API keys, provider auth files, logs,
+histories, or session databases.
+

@@ -1,0 +1,7 @@
+gui:
+  showFileTree: true
+  showCommandLog: false
+git:
+  paging:
+    pager: delta --paging=never
+

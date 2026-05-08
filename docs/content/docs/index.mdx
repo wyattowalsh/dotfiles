@@ -1,0 +1,13 @@
+---
+title: Dotfiles Full Rig
+description: Internal guide for the full-rig bootstrap.
+---
+
+This site documents the tracked bootstrap system, not private local state.
+
+## Start Here
+
+- Fresh Mac bootstrap: install prerequisites, run `task bootstrap -- --dry-run`, review, then run with `--apply`.
+- Validation: run `task check`, `task smoke`, and focused namespace checks before commits.
+- Secrets: literal tokens, auth files, caches, logs, telemetry, and histories do not belong in Git.
+

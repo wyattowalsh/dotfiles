@@ -1,0 +1,9 @@
+# Ghostty portable baseline.
+# Machine-specific theme assets should be configured in ~/.config/ghostty/config.local.
+
+font-family = {{ .ghostty.fontFamily | default "MonaspiceNe Nerd Font Mono" }}
+font-size = {{ .ghostty.fontSize | default "14" }}
+theme = {{ .ghostty.theme | default "APEX Light Ultra" }}
+shell-integration = detect
+shell-integration-features = cursor,sudo,title,ssh-env,ssh-terminfo,path
+
