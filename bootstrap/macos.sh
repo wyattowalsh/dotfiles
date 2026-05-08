@@ -72,6 +72,12 @@ parse_args() {
     esac
     shift
   done
+
+  if [ "$DRY_RUN" -eq 1 ] && [ "$APPLY" -eq 1 ]; then
+    printf '%s\n' '--dry-run and --apply cannot be used together.' >&2
+    usage >&2
+    exit 2
+  fi
 }
 
 load_homebrew_shellenv() {

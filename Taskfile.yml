@@ -1,7 +1,7 @@
 version: "3"
 
 vars:
-  SHELL_FILES: setup.sh bootstrap/macos.sh checks/ai-check.sh checks/secrets-scan.sh checks/smoke.sh checks/validate-json.sh
+  SHELL_FILES: setup.sh bootstrap/macos.sh checks/ai-check.sh checks/ai-negative-check.sh checks/secrets-scan.sh checks/smoke.sh checks/validate-json.sh
 
 tasks:
   default:
@@ -88,6 +88,7 @@ tasks:
     desc: Validate sanitized AI/MCP config manifests.
     cmds:
       - ./checks/ai-check.sh
+      - ./checks/ai-negative-check.sh
 
   docs:install:
     desc: Install docs dependencies.
