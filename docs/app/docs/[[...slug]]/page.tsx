@@ -2,8 +2,13 @@ import { DocsPage, DocsBody } from "fumadocs-ui/page";
 import { notFound } from "next/navigation";
 import { source } from "@/lib/source";
 
-export default function Page({ params }: { params: { slug?: string[] } }) {
-  const page = source.getPage(params.slug);
+type PageProps = {
+  params: Promise<{ slug?: string[] }>;
+};
+
+export default async function Page({ params }: PageProps) {
+  const { slug } = await params;
+  const page = source.getPage(slug);
   if (!page) notFound();
 
   return (
@@ -20,8 +25,9 @@ export function generateStaticParams() {
   return source.generateParams();
 }
 
-export function generateMetadata({ params }: { params: { slug?: string[] } }) {
-  const page = source.getPage(params.slug);
+export async function generateMetadata({ params }: PageProps) {
+  const { slug } = await params;
+  const page = source.getPage(slug);
   if (!page) return {};
 
   return {

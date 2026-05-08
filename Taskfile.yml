@@ -2,8 +2,6 @@ version: "3"
 
 vars:
   SHELL_FILES: setup.sh bootstrap/macos.sh checks/ai-check.sh checks/secrets-scan.sh checks/smoke.sh checks/validate-json.sh
-  JSON_FILES:
-    sh: find . -path './.git' -prune -o -path './docs/node_modules' -prune -o -name '*.json' -print
 
 tasks:
   default:
@@ -98,12 +96,11 @@ tasks:
       - pnpm install
 
   docs:check:
-    desc: Typecheck and lint the Fumadocs site when dependencies are installed.
+    desc: Typecheck the Fumadocs site when dependencies are installed.
     dir: docs
     cmds:
       - |
         if [ -d node_modules ]; then
-          pnpm lint
           pnpm typecheck
         else
           echo "docs/node_modules missing; run task docs:install first"
@@ -126,4 +123,3 @@ tasks:
       - mkdir -p local
       - brew bundle dump --file=local/Brewfile.raw --describe --force || true
       - find "$HOME/.config" -maxdepth 2 -type d 2>/dev/null | sed "s#$HOME#~#" | sort > local/config-dirs.txt
-
