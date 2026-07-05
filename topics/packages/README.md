@@ -1,6 +1,19 @@
 # Packages Topic
 
-Owns package intent and package curation policy.
+Owns package intent, curation policy, and promotion from live inventory.
 
-Canonical package desired state lives in `brew/Brewfile` and `darwin/` modules.
+## Canonical SSOT
 
+- `brew/Brewfile` — Homebrew Bundle desired state
+- `darwin/` — nix-managed system/user packages
+
+## Workflow
+
+```bash
+task inventory:redacted   # local/Brewfile.raw
+# review and classify
+task brew:check
+task bootstrap -- --apply
+```
+
+See [Package catalog](../../docs/content/docs/packages.mdx) for Brewfile groups.

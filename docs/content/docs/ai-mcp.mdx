@@ -1,18 +1,64 @@
 ---
 title: AI and MCP Matrix
-description: How AI client configuration is modeled.
+description: MCPHub-first control plane, direct fallbacks, and validation.
 ---
 
-MCPHub is the default control plane. Direct MCP configs are fallback surfaces
-for bootstrap and recovery.
+## Policy
 
-Tracked sources:
+| Layer | Role |
+| --- | --- |
+| **MCPHub** | Default control plane — groups, endpoints, bearer auth via env |
+| **Direct MCP JSON** | Bootstrap and recovery fallbacks only (Claude, Copilot configs) |
+| **`ai/` manifests** | Sanitized SSOT for generated client surfaces |
 
-- `ai/mcphub.manifest.json`
-- `ai/client-surfaces.json`
-- `ai/templates/`
-- `ai/generated/*.example.json`
+Never commit literal bearer tokens, API keys, OAuth files, logs, histories, or session databases.
 
-Never commit literal bearer tokens, API keys, provider auth files, logs,
-histories, or session databases.
+## Tracked sources
 
+```
+ai/
+├── mcphub.manifest.json    # MCPHub transport, endpoints, fallback server list
+├── client-surfaces.json    # Per-client generation targets
+├── templates/              # Jinja-style templates for client configs
+└── generated/*.example.json
+```
+
+Root symlinks (via bootstrap):
+
+- `~/.copilot/mcp-config.json` ← `.copilot/mcp-config.json`
+- `~/.config/claude/mcp.json` ← `.config/claude/mcp.json`
+
+Placeholder env vars (`${MCPHUB_BEARER_TOKEN}`, `${BRAVE_API_KEY}`, etc.) keep secrets out of git.
+
+## MCPHub groups
+
+From `ai/mcphub.manifest.json`:
+
+- `all-managed`, `browser`, `code`, `data`, `local-ai`, `reasoning`, `research`
+
+Bearer token: `MCPHUB_BEARER_TOKEN` (untracked).
+
+## Fallback servers
+
+When MCPHub is unavailable, direct configs may include servers such as `fetch`, `context7`, `brave-search`, `playwright`, `sequential-thinking`, and `repomix`. Treat these as **recovery paths**, not the primary operating model.
+
+## Linux bootstrap (`setup.sh`)
+
+On Debian/Ubuntu, `setup.sh` installs AI CLIs via npm, `gh-copilot`, skills from `wyattowalsh/agents`, and mirrors universal skills into per-agent skill dirs. macOS full-rig bootstrap does not yet mirror this path — install CLIs manually or extend bootstrap when promoted.
+
+## Validate
+
+```bash
+task ai:check
+```
+
+Runs `checks/ai-check.sh` (schema + fixture validation) and `checks/ai-negative-check.sh` (reject bad patterns).
+
+## Migration hygiene
+
+Before promoting local MCP config into tracked files:
+
+1. Replace literal tokens with `${ENV_VAR}` placeholders
+2. Run `task secrets:scan`
+3. Run `task ai:check`
+4. Prefer MCPHub group endpoints over duplicating per-server stdio blocks

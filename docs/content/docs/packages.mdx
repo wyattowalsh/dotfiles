@@ -1,19 +1,48 @@
 ---
 title: Package Catalog
-description: Homebrew and system package intent.
+description: Homebrew and system package intent for the full-rig Mac.
 ---
 
-The curated Brewfile is grouped by intent. Raw local package dumps are evidence
-only and belong under ignored `local/`.
+`brew/Brewfile` is **curated desired state**. Raw dumps are evidence only — review `local/Brewfile.raw` from `task inventory:redacted` before promoting entries.
 
-Current groups include:
+## Validate
 
-- core CLI tools
-- development languages
-- AI and MCP tooling
-- terminal/editor apps
-- browsers and productivity apps
-- fonts
-- QuickLook plugins
-- services
+```bash
+task inventory:redacted   # refresh local/Brewfile.raw
+task brew:check           # brew bundle check --file brew/Brewfile
+```
 
+## Brewfile groups
+
+| Group | Examples | Notes |
+| --- | --- | --- |
+| `core-cli` | `ripgrep`, `fd`, `eza`, `fzf`, `uv`, `gh`, `gomi` | Daily terminal tooling |
+| `dev-languages` | `node`, `pnpm`, `go`, `bun`, `deno`, `mise`, `docker` | Runtimes and containers |
+| `ai-tools` | `ollama`, `stripe`, `supabase` | AI and platform CLIs |
+| `terminal-editors` | `lazygit` | TUI dev tools |
+| `browsers/productivity/media` | `ghostty`, `cursor`, `obsidian`, `slack` | GUI apps via cask |
+| `fonts` | Nerd Font casks | Terminal typography |
+| `quicklook` | `qlmarkdown`, `quicklook-json` | macOS Quick Look plugins |
+
+## Taps
+
+- `go-task/tap` — Task runner
+- `oven-sh/bun` — Bun runtime
+- `stripe/stripe-cli` — Stripe CLI
+- `supabase/tap` — Supabase CLI
+
+## Services
+
+Some formulae declare `restart_service: true` (e.g. `pueue`). Promote service intent explicitly — default stopped databases and cloud daemons unless deliberately managed.
+
+## Nix complement
+
+Durable system and user packages also live in `darwin/` modules. Prefer nix-darwin for reproducible system state; Homebrew for the broad GUI and cask surface.
+
+## Promotion checklist
+
+1. Classify the package into a Brewfile comment group
+2. Decide service start/stop policy
+3. Add to `brew/Brewfile`
+4. Run `task brew:check`
+5. Apply via `task bootstrap -- --apply`

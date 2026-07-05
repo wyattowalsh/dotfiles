@@ -1,7 +1,13 @@
 # AGENTS
 
 ## Purpose
-This repository is for dotfiles/bootstrap automation so environment setup is repeatable and safe to re-run.
+This repository is a **private, personal, internal-only** dotfiles SSOT for the `w4w-mbp` rig (`/Users/ww`). It captures curated desired state for shell, editor, git, Homebrew, nix-darwin, Chezmoi-managed home config, and AI/MCP bootstrap. Treat the live Mac as inventory (`task inventory:redacted` → `local/`), promote intentional changes into tracked files, and keep secrets out of git.
+
+## SSOT workflow
+1. Run `task inventory:redacted` to refresh ignored `local/Brewfile.raw` and config-dir inventory.
+2. Diff live vs repo (`cmp` for `.zshrc`/`.p10k.zsh`, `task home:diff`, `task brew:check`).
+3. Promote curated changes into `brew/Brewfile`, `home/`, root dotfiles, and `darwin/` as appropriate.
+4. Validate with `task check` before `task bootstrap -- --apply` on macOS.
 
 ## Files overview
 - `setup.sh`: main bootstrap entrypoint (should converge system state when re-run; supports `--dry-run`, `--verbose`, and `--smoke-check`).
@@ -70,3 +76,10 @@ This repository is for dotfiles/bootstrap automation so environment setup is rep
 ## No secrets policy
 - Never commit passwords, tokens, API keys, private keys, or other secrets.
 - Keep sensitive values in untracked local files or environment variables.
+
+## Documentation maintenance
+- Internal runbooks: `docs/content/docs/` (Fumadocs). Sidebar order: `docs/content/docs/meta.json`.
+- When changing Taskfile targets, bootstrap phases, Brewfile groups, home layout, or AI/MCP policy — update the matching MDX page and nested `AGENTS.md` in the same change.
+- Root `README.md` stays the public-facing overview; `docs/` is the operator deep-dive.
+- Validate doc changes with `task docs:ci` before merge.
+- `topics/` READMEs are lightweight ownership maps; link to canonical SSOT paths instead of duplicating manifest content.

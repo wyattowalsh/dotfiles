@@ -1,21 +1,41 @@
 # AI and MCP Configuration
 
-This directory contains the source-of-truth manifests for generated AI client configuration.
+Source-of-truth manifests for MCPHub and generated AI client configuration.
+
+## Layout
+
+```
+ai/
+├── mcphub.manifest.json     # MCPHub transport, endpoints, fallbacks
+├── client-surfaces.json     # Per-client generation targets
+├── templates/               # Config templates with placeholders
+├── generated/*.example.json # Sanitized examples
+└── schemas/                 # JSON Schema for validation
+```
 
 ## Policy
-- MCPHub is the default control plane.
-- Direct MCP server configs remain as bootstrap and recovery fallbacks.
-- Literal tokens, API keys, OAuth files, auth databases, logs, histories, and session state are never committed.
-- Client-specific generated files must validate before they are installed.
 
-## Current Local Issues To Resolve
-- Gemini rejects the current local `mcpServers.mcphub_all` shape.
-- The local Gemini file contains a literal MCPHub bearer token and must be converted to `${MCPHUB_BEARER_TOKEN}` before any tracked import.
-- OpenCode currently defaults to `openai/gpt-5.5`; model stability should be reviewed separately from MCP migration.
+| Layer | Role |
+| --- | --- |
+| MCPHub | Default control plane (`MCPHUB_BEARER_TOKEN` via env) |
+| Direct MCP JSON | Bootstrap/recovery in `.copilot/`, `.config/claude/` |
+| `setup.sh` (Linux) | Installs CLIs, skills, shim links |
 
-Validate with:
+Never commit literal tokens, OAuth files, logs, histories, or session databases.
+
+## Known migration debt
+
+Before promoting local Gemini/OpenCode MCP config into tracked files:
+
+- Replace literal MCPHub bearer tokens with `${MCPHUB_BEARER_TOKEN}`
+- Validate Gemini `mcpServers` shape against current CLI schema
+- Review OpenCode default model separately from MCP migration
+
+## Validate
 
 ```bash
 task ai:check
+task secrets:scan
 ```
 
+Operator docs: `docs/content/docs/ai-mcp.mdx`

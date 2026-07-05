@@ -1,0 +1,63 @@
+---
+title: Home Configuration
+description: Chezmoi templates, root symlinks, and local override policy.
+---
+
+Home configuration splits across **repo-root symlinks** (shell + git + AI bootstrap files) and **Chezmoi-managed** `~/.config/*` trees.
+
+## Layout
+
+```
+dotfiles/
+├── .zshrc .p10k.zsh .gitconfig     # symlinked by bootstrap/macos.sh
+├── home/
+│   ├── dot_zshrc.tmpl              # parity mirror (chezmoiignored)
+│   ├── dot_p10k.zsh                # parity mirror (chezmoiignored)
+│   ├── dot_zsh/functions/          # freshen, sync-cursor, tests
+│   └── private_dot_config/
+│       ├── ghostty/config.tmpl
+│       ├── lazygit/config.yml
+│       └── yazi/yazi.toml
+```
+
+## Deploy paths
+
+| Target | Mechanism | Preview |
+| --- | --- | --- |
+| `~/.zshrc` | Root symlink | `readlink ~/.zshrc` |
+| `~/.config/ghostty` | Chezmoi template | `task home:diff` |
+| `~/.zsh/functions/*` | Chezmoi | `task home:diff` |
+
+`home/.chezmoiignore` excludes `dot_zshrc.tmpl` and `dot_p10k.zsh` so Chezmoi does not fight bootstrap symlinks.
+
+## Templates and machine values
+
+Use Chezmoi data for host-specific paths:
+
+```toml
+# ghostty background example
+background = "{{ .chezmoi.homeDir }}/.config/ghostty/backgrounds/wall.jpg"
+```
+
+Background image files stay local under `~/.config/ghostty/backgrounds/` — not committed.
+
+## Private overrides
+
+| Hook | Purpose |
+| --- | --- |
+| `~/.zshrc.local` | Machine-specific zsh overrides (sourced by `.zshrc`) |
+| Chezmoi `data` / `.local` patterns | Untracked private values |
+
+Never commit identities, tokens, auth databases, histories, or telemetry.
+
+## Validation
+
+```bash
+task check:zsh     # zsh -n + cmp parity for .zshrc/.p10k
+task home:diff     # chezmoi diff when chezmoi is installed
+zsh home/dot_zsh/functions/tests/freshen_test.zsh
+```
+
+## freshen function
+
+`home/dot_zsh/functions/freshen` is an autoloadable zsh function for Homebrew/mas upgrades with dry-run and `--yes` guards. See `home/dot_zsh/functions/AGENTS.md` for TDD and safety invariants.

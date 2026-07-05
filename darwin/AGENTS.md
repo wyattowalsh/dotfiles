@@ -1,11 +1,21 @@
 # AGENTS
 
 ## Scope
-Nix, nix-darwin, and Home Manager configuration.
+
+`darwin/` — nix-darwin + Home Manager flake for Apple Silicon macOS (`w4w-mbp` host).
 
 ## Rules
-- Keep host-specific values isolated in host modules.
-- Do not encode secrets, tokens, or private paths that belong in Chezmoi data.
-- Prefer small modules by concern: packages, shell, macOS defaults, services, and user configuration.
-- Validate with `nix flake check` and `darwin-rebuild check` when available.
 
+- Host-specific values live in `darwin/hosts/` — not in portable `home/` templates
+- Commit `darwin/flake.lock`; apply path requires it (`bootstrap/macos.sh`)
+- No secrets, tokens, or private paths that belong in Chezmoi data
+- Split modules by concern: packages, shell, macOS defaults, services, user config
+- Validate with `task darwin:check` when `nix` / `darwin-rebuild` are available
+
+## Bootstrap integration
+
+```bash
+nix flake lock ./darwin          # generate lock before first apply
+task bootstrap -- --dry-run      # darwin-rebuild check
+task bootstrap -- --apply        # darwin-rebuild switch --flake ./darwin#w4w-mbp
+```

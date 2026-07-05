@@ -1,10 +1,28 @@
 # AGENTS
 
 ## Scope
-GitHub-specific automation, Copilot instructions, and CI workflows.
+
+GitHub Copilot instructions, path-specific `.github/instructions/`, LSP config, and CI workflows.
+
+## Files
+
+| Path | Audience |
+| --- | --- |
+| `copilot-instructions.md` | Repo-wide Copilot (delegates to root `AGENTS.md`) |
+| `instructions/*.instructions.md` | Path-scoped guidance via `applyTo` frontmatter |
+| `workflows/ci.yml` | Runs `task ci` on push/PR |
+| `lsp.json` | Repo-level LSP for GitHub tooling |
 
 ## Rules
-- Keep GitHub Copilot instructions aligned with root `AGENTS.md`.
-- Use path-specific `.github/instructions/*.instructions.md` for subsystem-specific guidance.
-- Do not add workflows that mutate external state without explicit approval.
 
+- Keep Copilot instructions aligned with root `AGENTS.md` — no conflicting policy
+- Path instructions stay short; link to subsystem `AGENTS.md` for depth
+- Workflows are read-only validation unless explicitly approved to mutate external state
+- Update `instructions/docs.instructions.md` when Fumadocs content graph changes
+
+## CI
+
+```yaml
+# .github/workflows/ci.yml → task ci
+# check + smoke + ai:check + docs:ci
+```
