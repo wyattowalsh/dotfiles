@@ -13,8 +13,8 @@ applyTo: "ai/**,.copilot/**,.claude/**,.config/claude/**,GEMINI.md"
 ## Validate
 
 ```bash
-task ai:check
-task secrets:scan
+just ai-check
+just secrets-scan
 ```
 
 Sync `docs/content/docs/ai-mcp.mdx` when policy or manifest shape changes.

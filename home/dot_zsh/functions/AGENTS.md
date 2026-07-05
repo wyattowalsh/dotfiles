@@ -13,10 +13,10 @@ Deployed to `~/.zsh/functions/` via Chezmoi (`home/dot_zsh/functions/`).
 - Before completion:
 
 ```bash
-zsh -n home/dot_zsh/functions/freshen
-zsh home/dot_zsh/functions/tests/freshen_test.zsh
-FRESHEN_UNDER_TEST=home/dot_zsh/functions/freshen zsh home/dot_zsh/functions/tests/freshen_test.zsh
+just check-freshen
 ```
+
+Version SSOT: `home/dot_zsh/functions/freshen.VERSION` (run `./checks/freshen-version.sh` after bumps).
 
 - `FRESHEN_TEST_KEEP_TMP=1` only when debugging test artifacts
 

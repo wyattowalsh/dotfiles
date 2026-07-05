@@ -10,10 +10,10 @@ Owns package intent, curation policy, and promotion from live inventory.
 ## Workflow
 
 ```bash
-task inventory:redacted   # local/Brewfile.raw
+just inventory-redacted   # local/Brewfile.raw
 # review and classify
-task brew:check
-task bootstrap -- --apply
+just brew-check
+just bootstrap --apply
 ```
 
 See [Package catalog](../../docs/content/docs/packages.mdx) for Brewfile groups.

@@ -6,7 +6,7 @@ Internal Fumadocs documentation site (`docs/`). Serves runbooks for the macOS fu
 
 ## Content rules
 
-- Ground pages in tracked manifests (`brew/Brewfile`, `ai/`, `Taskfile.yml`, `bootstrap/macos.sh`) — not live `~` inventory
+- Ground pages in tracked manifests (`brew/Brewfile`, `ai/`, `justfile`, `bootstrap/macos.sh`) — not live `~` inventory
 - Keep `content/docs/meta.json` sidebar order aligned when adding or renaming pages
 - Use MDX frontmatter `title` + `description` on every page
 - Prefer tables and command blocks over prose lists for scanability
@@ -16,7 +16,7 @@ Internal Fumadocs documentation site (`docs/`). Serves runbooks for the macOS fu
 
 | Repo change | Update |
 | --- | --- |
-| New Taskfile target | `validation.mdx` + root `README.md` |
+| New justfile recipe | `validation.mdx` + root `README.md` |
 | Bootstrap behavior | `fresh-mac.mdx` |
 | Brewfile group changes | `packages.mdx` |
 | Chezmoi/home layout | `home-config.mdx` + `home/README.md` |
@@ -26,10 +26,10 @@ Internal Fumadocs documentation site (`docs/`). Serves runbooks for the macOS fu
 ## Validation
 
 ```bash
-task docs:install
-task docs:check      # pnpm typecheck
-task docs:build
-task docs:ci         # frozen lockfile + build (CI gate)
+just docs-install
+just docs-check      # pnpm typecheck
+just docs-build
+just docs-ci         # frozen lockfile + build (CI gate)
 ```
 
 Commit `docs/pnpm-lock.yaml` whenever `docs/package.json` changes.

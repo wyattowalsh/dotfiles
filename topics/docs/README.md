@@ -9,11 +9,11 @@ Owns internal documentation workflow and Fumadocs content graph.
 ## Commands
 
 ```bash
-task docs:install
-task docs:build
-task docs:ci
+just docs-install
+just docs-build
+just docs-ci
 ```
 
 ## When to update
 
-Change MDX pages when Taskfile targets, bootstrap behavior, or manifest policy changes. See `docs/AGENTS.md` for the sync matrix.
+Change MDX pages when justfile recipes, bootstrap behavior, or manifest policy changes. See `docs/AGENTS.md` for the sync matrix.

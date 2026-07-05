@@ -22,11 +22,11 @@ Commit the lockfile so nix-darwin resolves pinned refs instead of moving upstrea
 ```bash
 git clone <repo-url> ~/dev/projects/dotfiles
 cd ~/dev/projects/dotfiles
-task bootstrap -- --dry-run    # preview (default when neither flag is passed)
-task bootstrap -- --apply      # mutate after review
+just bootstrap --dry-run    # preview (default when neither flag is passed)
+just bootstrap --apply      # mutate after review
 exec zsh -l
-task check
-task smoke
+just check
+just smoke
 ```
 
 ### What `bootstrap/macos.sh` does
@@ -42,18 +42,18 @@ task smoke
 ### What bootstrap does **not** do
 
 - Install or configure AI CLIs, skills, or MCP servers (see `./setup.sh` on Linux or manual macOS install)
-- Build or serve the Fumadocs site (use `task docs:build` separately)
+- Build or serve the Fumadocs site (use `just docs-build` separately)
 - Overwrite non-symlink targets — existing regular files at `~/.zshrc` etc. must be backed up or removed first
 
 ```mermaid
 flowchart TD
-  A[Clone repo] --> B[task bootstrap --dry-run]
+  A[Clone repo] --> B[just bootstrap --dry-run]
   B --> C{Output acceptable?}
   C -->|No| D[Adjust brew/home/darwin manifests]
   D --> B
   C -->|Yes| E[nix flake lock ./darwin]
-  E --> F[task bootstrap --apply]
-  F --> G[task check && task smoke]
+  E --> F[just bootstrap --apply]
+  F --> G[just check && just smoke]
   G --> H[Authenticate AI providers manually]
 ```
 
@@ -62,9 +62,9 @@ flowchart TD
 ```bash
 ls -l ~/.zshrc ~/.p10k.zsh ~/.gitconfig
 readlink ~/.zshrc    # should point into the clone
-task brew:check
-task home:diff       # should be clean after apply
-task darwin:check    # when nix is available
+just brew-check
+just home-diff       # should be clean after apply
+just darwin-check    # when nix is available
 ```
 
 ## Manual follow-ups

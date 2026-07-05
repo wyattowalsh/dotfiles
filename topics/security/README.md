@@ -13,10 +13,10 @@ Never track:
 ## Tooling
 
 ```bash
-task secrets:scan      # tracked files only; requires rg
-task inventory:redacted  # scrubbed paths, no contents
+just secrets-scan      # tracked files only; requires rg
+just inventory-redacted  # scrubbed paths, no contents
 ```
 
 ## Agent instructions
 
-Root `AGENTS.md` § No secrets policy applies to all subsystems. Run `task secrets:scan` before commits that touch MCP or credential-adjacent config.
+Root `AGENTS.md` § No secrets policy applies to all subsystems. Run `just secrets-scan` before commits that touch MCP or credential-adjacent config.

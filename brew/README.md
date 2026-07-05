@@ -5,9 +5,9 @@
 ## Commands
 
 ```bash
-task inventory:redacted   # writes local/Brewfile.raw (ignored)
-task brew:check           # brew bundle check --file brew/Brewfile
-task bootstrap -- --apply   # brew bundle install on macOS apply
+just inventory-redacted   # writes local/Brewfile.raw (ignored)
+just brew-check           # brew bundle check --file brew/Brewfile
+just bootstrap --apply   # brew bundle install on macOS apply
 ```
 
 ## Groups
@@ -25,7 +25,7 @@ Comment headers in `Brewfile` classify intent:
 1. Find package in `local/Brewfile.raw`
 2. Decide group and service policy (`restart_service` or not)
 3. Add to `brew/Brewfile`
-4. `task brew:check`
+4. `just brew-check`
 5. Update `docs/content/docs/packages.mdx` if policy changes
 
 See `brew/AGENTS.md` for agent conventions.

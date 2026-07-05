@@ -5,6 +5,12 @@ DRY_RUN=0
 VERBOSE=0
 APPLY=0
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+BREWFILE="$REPO_DIR/brew/Brewfile"
+DARWIN_FLAKE="$REPO_DIR/darwin"
+DARWIN_HOST="${DARWIN_HOST:-w4w-mbp}"
+
 usage() {
   cat <<'USAGE'
 Usage: bootstrap/macos.sh [--dry-run] [--apply] [--verbose]
@@ -46,6 +52,44 @@ mode_name() {
   else
     printf 'dry-run'
   fi
+}
+
+nix_darwin_command() {
+  if command -v darwin-rebuild >/dev/null 2>&1; then
+    darwin-rebuild "$@"
+    return
+  fi
+
+  if [ ! -f "$DARWIN_FLAKE/flake.lock" ]; then
+    printf 'darwin-rebuild is unavailable and %s is missing. Run: nix flake lock %s\n' "$DARWIN_FLAKE/flake.lock" "$DARWIN_FLAKE" >&2
+    return 1
+  fi
+
+  if ! command -v jq >/dev/null 2>&1; then
+    printf 'jq is required to read the pinned nix-darwin revision from %s.\n' "$DARWIN_FLAKE/flake.lock" >&2
+    return 1
+  fi
+
+  local owner repo rev
+  owner="$(jq -r '.nodes."nix-darwin".locked.owner // empty' "$DARWIN_FLAKE/flake.lock")"
+  repo="$(jq -r '.nodes."nix-darwin".locked.repo // empty' "$DARWIN_FLAKE/flake.lock")"
+  rev="$(jq -r '.nodes."nix-darwin".locked.rev // empty' "$DARWIN_FLAKE/flake.lock")"
+
+  if [ -z "$owner" ] || [ -z "$repo" ] || [ -z "$rev" ]; then
+    printf 'Unable to read pinned nix-darwin owner, repo, and revision from %s.\n' "$DARWIN_FLAKE/flake.lock" >&2
+    return 1
+  fi
+
+  nix run "github:${owner}/${repo}/${rev}#darwin-rebuild" -- "$@"
+}
+
+require_darwin_flake_lock() {
+  if [ -f "$DARWIN_FLAKE/flake.lock" ]; then
+    return 0
+  fi
+
+  printf 'Missing %s. Generate and commit it with: nix flake lock %s\n' "$DARWIN_FLAKE/flake.lock" "$DARWIN_FLAKE" >&2
+  return 1
 }
 
 parse_args() {
@@ -113,6 +157,42 @@ require_macos() {
   fi
 }
 
+link_repo_file() {
+  local source_path="$1"
+  local target_path="$2"
+
+  if [ ! -e "$source_path" ]; then
+    printf 'Missing source file: %s\n' "$source_path" >&2
+    return 1
+  fi
+
+  if [ -L "$target_path" ]; then
+    local current_target
+    current_target="$(readlink "$target_path")"
+    if [ "$current_target" = "$source_path" ]; then
+      debug "Symlink already correct: $target_path"
+      return 0
+    fi
+  elif [ -e "$target_path" ] && [ ! -L "$target_path" ]; then
+    printf 'Refusing to replace non-symlink target: %s\n' "$target_path" >&2
+    return 1
+  fi
+
+  run_or_print "Link $(basename "$target_path")" ln -sfn "$source_path" "$target_path"
+}
+
+link_root_dotfiles() {
+  link_repo_file "$REPO_DIR/.zshrc" "$HOME/.zshrc"
+  link_repo_file "$REPO_DIR/.p10k.zsh" "$HOME/.p10k.zsh"
+  link_repo_file "$REPO_DIR/.gitconfig" "$HOME/.gitconfig"
+  link_repo_file "$REPO_DIR/.ripgreprc" "$HOME/.ripgreprc"
+  link_repo_file "$REPO_DIR/.editorconfig" "$HOME/.editorconfig"
+  link_repo_file "$REPO_DIR/.copilot/lsp-config.json" "$HOME/.copilot/lsp-config.json"
+  link_repo_file "$REPO_DIR/.copilot/mcp-config.json" "$HOME/.copilot/mcp-config.json"
+  link_repo_file "$REPO_DIR/.claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
+  link_repo_file "$REPO_DIR/.config/claude/mcp.json" "$HOME/.config/claude/mcp.json"
+}
+
 ensure_command_plan() {
   local command_name="$1"
   local install_hint="$2"
@@ -148,6 +228,10 @@ main() {
   log "macOS full-rig bootstrap"
   log "mode=$(mode_name)"
 
+  if [ "$APPLY" -eq 1 ]; then
+    require_darwin_flake_lock
+  fi
+
   if ! xcode-select -p >/dev/null 2>&1; then
     run_or_print "Install Xcode Command Line Tools" xcode-select --install
   else
@@ -157,33 +241,35 @@ main() {
   # shellcheck disable=SC2016
   ensure_command_plan brew '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
   load_homebrew_shellenv
-  ensure_command_plan task 'brew install go-task'
+  ensure_command_plan just 'brew install just'
   ensure_command_plan nix 'curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install'
   ensure_command_plan chezmoi 'brew install chezmoi'
   ensure_command_plan pnpm 'brew install pnpm'
 
   if [ "$APPLY" -eq 1 ]; then
-    run_or_print "Install curated Brewfile" brew bundle install --file brew/Brewfile
-    run_or_print "Apply Chezmoi home changes" chezmoi --source home apply
+    run_or_print "Install curated Brewfile" brew bundle install --file "$BREWFILE"
+    link_root_dotfiles
+    run_or_print "Apply Chezmoi home changes" chezmoi --source "$REPO_DIR/home" apply
   else
-    run_or_print "Check curated Brewfile" brew bundle check --file brew/Brewfile
-    run_or_print "Preview Chezmoi home changes" chezmoi --source home diff
+    run_or_print "Check curated Brewfile" brew bundle check --file "$BREWFILE"
+    link_root_dotfiles
+    run_or_print "Preview Chezmoi home changes" chezmoi --source "$REPO_DIR/home" diff
   fi
 
   if command -v nix >/dev/null 2>&1; then
-    run_or_print "Check nix-darwin flake" nix flake check ./darwin
+    run_or_print "Check nix-darwin flake" nix flake check --no-write-lock-file "$DARWIN_FLAKE"
   else
     log "nix unavailable; nix-darwin check remains planned."
   fi
 
-  if command -v darwin-rebuild >/dev/null 2>&1; then
+  if command -v darwin-rebuild >/dev/null 2>&1 || command -v nix >/dev/null 2>&1; then
     if [ "$APPLY" -eq 1 ]; then
-      run_or_print "Apply nix-darwin system state" darwin-rebuild switch --flake ./darwin#w4w-mbp
+      run_or_print "Apply nix-darwin system state" nix_darwin_command switch --flake "$DARWIN_FLAKE#$DARWIN_HOST"
     else
-      run_or_print "Check nix-darwin system state" darwin-rebuild check --flake ./darwin#w4w-mbp
+      run_or_print "Check nix-darwin system state" nix_darwin_command check --flake "$DARWIN_FLAKE#$DARWIN_HOST"
     fi
   else
-    log "darwin-rebuild unavailable; nix-darwin switch remains planned."
+    log "nix unavailable; nix-darwin switch remains planned."
   fi
 
   if [ "$APPLY" -eq 1 ]; then

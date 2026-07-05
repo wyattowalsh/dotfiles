@@ -20,5 +20,5 @@ Scaffolding for future topic-owned install notes and validation. Canonical SSOT 
 ## When promoting a topic
 
 1. Move install/apply logic from bootstrap into topic module
-2. Add Taskfile target or bootstrap hook
+2. Add justfile recipe or bootstrap hook
 3. Document in matching `topics/<name>/README.md` and Fumadocs if operator-facing

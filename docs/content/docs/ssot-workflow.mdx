@@ -9,18 +9,18 @@ The live `w4w-mbp` rig is **inventory**, not something to commit wholesale. Prom
 
 ```mermaid
 flowchart LR
-  A[Live machine] --> B[task inventory:redacted]
+  A[Live machine] --> B[just inventory-redacted]
   B --> C[local/ artifacts]
   C --> D[Diff vs repo]
   D --> E[Curate + promote]
-  E --> F[task check]
-  F --> G[task bootstrap --apply]
+  E --> F[just check]
+  F --> G[just bootstrap --apply]
 ```
 
 ## Step 1 — Refresh inventory
 
 ```bash
-task inventory:redacted
+just inventory-redacted
 ```
 
 Writes ignored artifacts under `local/`:
@@ -38,11 +38,11 @@ No file contents or secret-shaped values are copied.
 ```bash
 cmp -s .zshrc home/dot_zshrc.tmpl && echo "zshrc parity OK"
 cmp -s .p10k.zsh home/dot_p10k.zsh && echo "p10k parity OK"
-task brew:check
-task home:diff
+just brew-check
+just home-diff
 ```
 
-`task check:zsh` enforces root ↔ Chezmoi mirror parity in CI.
+`just check-zsh` enforces root ↔ Chezmoi mirror parity in CI.
 
 ## Step 3 — Promote by domain
 
@@ -59,9 +59,9 @@ Classify each Brew entry by intent (core CLI, dev language, AI tool, cask, font,
 ## Step 4 — Validate and apply
 
 ```bash
-task check
-task bootstrap -- --dry-run
-task bootstrap -- --apply   # macOS only, after review
+just check
+just bootstrap --dry-run
+just bootstrap --apply   # macOS only, after review
 ```
 
 ## Chezmoi vs root symlinks

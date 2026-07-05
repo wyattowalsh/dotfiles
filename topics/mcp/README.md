@@ -11,8 +11,8 @@ Owns MCPHub control plane and direct MCP fallback strategy.
 ## Validation
 
 ```bash
-task ai:check
-task secrets:scan
+just ai-check
+just secrets-scan
 ```
 
 See [AI and MCP matrix](../../docs/content/docs/ai-mcp.mdx).

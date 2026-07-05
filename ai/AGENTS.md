@@ -16,14 +16,14 @@
 
 - Placeholders for all secrets (`${VAR}` syntax)
 - Do not copy local auth DBs, logs, session stores, or telemetry into tracked files
-- Validate with `task ai:check` before promoting config changes
-- Run `task secrets:scan` when touching MCP JSON
+- Validate with `just ai-check` before promoting config changes
+- Run `just secrets-scan` when touching MCP JSON
 
 ## Validate
 
 ```bash
-task ai:check
-task secrets:scan
+just ai-check
+just secrets-scan
 ```
 
 ## Docs sync

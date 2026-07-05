@@ -2,7 +2,7 @@
 
 ## Scope
 
-`bootstrap/macos.sh` — macOS full-rig bootstrap dispatcher invoked via `task bootstrap`.
+`bootstrap/macos.sh` — macOS full-rig bootstrap dispatcher invoked via `just bootstrap`.
 
 ## Behavior
 
@@ -17,13 +17,13 @@ Does not install AI CLIs, skills, or build docs. See `setup.sh` for Linux AI boo
 - Preserve idempotency: check state before every mutating step
 - `--dry-run` must not install packages, write links, or switch nix-darwin
 - Start scripts with `set -euo pipefail`; quote paths
-- Validate with `bash -n bootstrap/macos.sh` and `task check:shell`
+- Validate with `bash -n bootstrap/macos.sh` and `just check-shell`
 - Document flag changes in `docs/content/docs/fresh-mac.mdx`
 
 ## Entrypoints
 
 ```bash
-task bootstrap -- --dry-run
-task bootstrap -- --apply
-task bootstrap -- --verbose
+just bootstrap --dry-run
+just bootstrap --apply
+just bootstrap --verbose
 ```

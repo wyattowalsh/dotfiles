@@ -9,7 +9,7 @@ Root-level `.zshrc`, `.p10k.zsh`, and `.gitconfig` live at repo root and are **s
 ## Rules
 
 - `dot_zshrc.tmpl` and `dot_p10k.zsh` are parity mirrors only (`home/.chezmoiignore`)
-- `task check:zsh` enforces `cmp` between root and mirror files
+- `just check-zsh` enforces `cmp` between root and mirror files
 - Template machine-specific paths (`{{ .chezmoi.homeDir }}` in Ghostty, etc.)
 - Keep identities, tokens, auth files, histories, caches, and app DBs out of Git
 - Preserve `~/.zshrc.local` and Chezmoi `.local` override patterns
@@ -17,8 +17,8 @@ Root-level `.zshrc`, `.p10k.zsh`, and `.gitconfig` live at repo root and are **s
 ## Preview
 
 ```bash
-task home:diff
-task bootstrap -- --dry-run
+just home-diff
+just bootstrap --dry-run
 ```
 
 ## Docs sync

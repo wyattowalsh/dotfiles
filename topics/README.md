@@ -22,6 +22,6 @@ Topic directories group related dotfile concerns in the style of mature topic-or
 Each topic README documents:
 
 - **Ownership** — what config domain the topic covers
-- **Validation** — relevant `task` targets
+- **Validation** — relevant `just` recipes
 - **Overrides** — local/private hook patterns
 - **Links** — path to canonical manifest (never duplicate Brewfile contents)

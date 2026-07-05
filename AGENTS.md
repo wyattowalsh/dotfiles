@@ -1,24 +1,24 @@
 # AGENTS
 
 ## Purpose
-This repository is a **private, personal, internal-only** dotfiles SSOT for the `w4w-mbp` rig (`/Users/ww`). It captures curated desired state for shell, editor, git, Homebrew, nix-darwin, Chezmoi-managed home config, and AI/MCP bootstrap. Treat the live Mac as inventory (`task inventory:redacted` → `local/`), promote intentional changes into tracked files, and keep secrets out of git.
+This repository is a **private, personal, internal-only** dotfiles SSOT for the `w4w-mbp` rig (`/Users/ww`). It captures curated desired state for shell, editor, git, Homebrew, nix-darwin, Chezmoi-managed home config, and AI/MCP bootstrap. Treat the live Mac as inventory (`just inventory-redacted` → `local/`), promote intentional changes into tracked files, and keep secrets out of git.
 
 ## SSOT workflow
-1. Run `task inventory:redacted` to refresh ignored `local/Brewfile.raw` and config-dir inventory.
-2. Diff live vs repo (`cmp` for `.zshrc`/`.p10k.zsh`, `task home:diff`, `task brew:check`).
+1. Run `just inventory-redacted` to refresh ignored `local/Brewfile.raw` and config-dir inventory.
+2. Diff live vs repo (`cmp` for `.zshrc`/`.p10k.zsh`, `just home-diff`, `just brew-check`).
 3. Promote curated changes into `brew/Brewfile`, `home/`, root dotfiles, and `darwin/` as appropriate.
-4. Validate with `task check` before `task bootstrap -- --apply` on macOS.
+4. Validate with `just check` before `just bootstrap --apply` on macOS.
 
 ## Files overview
 - `setup.sh`: main bootstrap entrypoint (should converge system state when re-run; supports `--dry-run`, `--verbose`, and `--smoke-check`).
-- `Taskfile.yml`: canonical workflow runner for bootstrap, checks, docs, Brew, Darwin, AI/MCP, inventory, and secret scans.
+- `justfile`: canonical workflow runner for bootstrap, checks, docs, Brew, Darwin, AI/MCP, inventory, and secret scans.
 - `bootstrap/`: macOS full-rig bootstrap scripts.
 - `brew/`: curated Homebrew Bundle desired state and package notes.
 - `darwin/`: nix-darwin/Home Manager scaffold for Apple Silicon macOS.
 - `home/`: Chezmoi-style home configuration templates.
 - `ai/`: sanitized MCPHub-first AI/MCP manifests and generated examples.
 - `docs/`: internal Fumadocs documentation site.
-- `checks/`: validation and smoke-check scripts used by Taskfile targets.
+- `checks/`: validation and smoke-check scripts invoked by justfile recipes.
 - `openspec/`: OpenSpec change notes for non-trivial workflow/public structure changes.
 - `.zshrc`: Zsh runtime configuration.
 - `.p10k.zsh`: Powerlevel10k prompt configuration.
@@ -61,10 +61,10 @@ This repository is a **private, personal, internal-only** dotfiles SSOT for the 
 - Manage symlinks with replacement semantics: `ln -sfn <source> <target>`.
 - Quote variable/path expansions.
 
-## Taskfile conventions
-- Use `Taskfile.yml` as the command runner; do not add a `justfile` or Makefile.
-- Keep Taskfile tasks thin and delegate complex shell logic to scripts under `checks/` or `bootstrap/`.
-- Task targets that may mutate state must provide a dry-run or preview path.
+## Justfile conventions
+- Use `justfile` as the command runner; do not add a `Taskfile.yml` or Makefile.
+- Keep just recipes thin and delegate complex shell logic to scripts under `checks/` or `bootstrap/`.
+- Recipes that may mutate state must provide a dry-run or preview path (e.g. `just bootstrap --dry-run`).
 
 ## macOS full-rig conventions
 - Treat the live Mac as inventory, not as a blob to commit.
@@ -79,7 +79,7 @@ This repository is a **private, personal, internal-only** dotfiles SSOT for the 
 
 ## Documentation maintenance
 - Internal runbooks: `docs/content/docs/` (Fumadocs). Sidebar order: `docs/content/docs/meta.json`.
-- When changing Taskfile targets, bootstrap phases, Brewfile groups, home layout, or AI/MCP policy — update the matching MDX page and nested `AGENTS.md` in the same change.
+- When changing justfile recipes, bootstrap phases, Brewfile groups, home layout, or AI/MCP policy — update the matching MDX page and nested `AGENTS.md` in the same change.
 - Root `README.md` stays the public-facing overview; `docs/` is the operator deep-dive.
-- Validate doc changes with `task docs:ci` before merge.
+- Validate doc changes with `just docs-ci` before merge.
 - `topics/` READMEs are lightweight ownership maps; link to canonical SSOT paths instead of duplicating manifest content.

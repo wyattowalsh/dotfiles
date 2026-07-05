@@ -25,8 +25,8 @@ dotfiles/
 | Target | Mechanism | Preview |
 | --- | --- | --- |
 | `~/.zshrc` | Root symlink | `readlink ~/.zshrc` |
-| `~/.config/ghostty` | Chezmoi template | `task home:diff` |
-| `~/.zsh/functions/*` | Chezmoi | `task home:diff` |
+| `~/.config/ghostty` | Chezmoi template | `just home-diff` |
+| `~/.zsh/functions/*` | Chezmoi | `just home-diff` |
 
 `home/.chezmoiignore` excludes `dot_zshrc.tmpl` and `dot_p10k.zsh` so Chezmoi does not fight bootstrap symlinks.
 
@@ -53,8 +53,8 @@ Never commit identities, tokens, auth databases, histories, or telemetry.
 ## Validation
 
 ```bash
-task check:zsh     # zsh -n + cmp parity for .zshrc/.p10k
-task home:diff     # chezmoi diff when chezmoi is installed
+just check-zsh     # zsh -n + cmp parity for .zshrc/.p10k
+just home-diff     # chezmoi diff when chezmoi is installed
 zsh home/dot_zsh/functions/tests/freshen_test.zsh
 ```
 

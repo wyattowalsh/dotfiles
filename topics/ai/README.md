@@ -18,5 +18,5 @@ macOS full-rig bootstrap does not yet install AI CLIs; install manually or exten
 ## Validation
 
 ```bash
-task ai:check
+just ai-check
 ```

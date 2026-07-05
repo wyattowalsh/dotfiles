@@ -10,8 +10,8 @@ Owns macOS system defaults, launch/service policy, and Apple Silicon host behavi
 ## Bootstrap
 
 ```bash
-task bootstrap -- --dry-run
-task bootstrap -- --apply
+just bootstrap --dry-run
+just bootstrap --apply
 ```
 
 Requires `darwin/flake.lock` on apply. See [Fresh Mac runbook](../../docs/content/docs/fresh-mac.mdx).
@@ -19,5 +19,5 @@ Requires `darwin/flake.lock` on apply. See [Fresh Mac runbook](../../docs/conten
 ## Validation
 
 ```bash
-task darwin:check
+just darwin-check
 ```

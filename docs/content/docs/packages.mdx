@@ -3,13 +3,13 @@ title: Package Catalog
 description: Homebrew and system package intent for the full-rig Mac.
 ---
 
-`brew/Brewfile` is **curated desired state**. Raw dumps are evidence only — review `local/Brewfile.raw` from `task inventory:redacted` before promoting entries.
+`brew/Brewfile` is **curated desired state**. Raw dumps are evidence only — review `local/Brewfile.raw` from `just inventory-redacted` before promoting entries.
 
 ## Validate
 
 ```bash
-task inventory:redacted   # refresh local/Brewfile.raw
-task brew:check           # brew bundle check --file brew/Brewfile
+just inventory-redacted   # refresh local/Brewfile.raw
+just brew-check           # brew bundle check --file brew/Brewfile
 ```
 
 ## Brewfile groups
@@ -26,7 +26,7 @@ task brew:check           # brew bundle check --file brew/Brewfile
 
 ## Taps
 
-- `go-task/tap` — Task runner
+- `just` (formula) — workflow runner (`justfile` recipes)
 - `oven-sh/bun` — Bun runtime
 - `stripe/stripe-cli` — Stripe CLI
 - `supabase/tap` — Supabase CLI
@@ -44,5 +44,5 @@ Durable system and user packages also live in `darwin/` modules. Prefer nix-darw
 1. Classify the package into a Brewfile comment group
 2. Decide service start/stop policy
 3. Add to `brew/Brewfile`
-4. Run `task brew:check`
-5. Apply via `task bootstrap -- --apply`
+4. Run `just brew-check`
+5. Apply via `just bootstrap --apply`

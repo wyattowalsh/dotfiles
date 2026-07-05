@@ -14,11 +14,11 @@ Owns Zsh runtime behavior, PATH ordering, completions, Powerlevel10k prompt, and
 ## Overrides
 
 - `~/.zshrc.local` — sourced last; machine-specific aliases and env
-- Inventory: `task inventory:redacted` → `local/zsh-inventory.txt`
+- Inventory: `just inventory-redacted` → `local/zsh-inventory.txt`
 
 ## Validation
 
 ```bash
-task check:zsh
+just check-zsh
 zsh -n .zshrc
 ```

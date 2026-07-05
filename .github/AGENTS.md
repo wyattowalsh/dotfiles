@@ -10,7 +10,7 @@ GitHub Copilot instructions, path-specific `.github/instructions/`, LSP config, 
 | --- | --- |
 | `copilot-instructions.md` | Repo-wide Copilot (delegates to root `AGENTS.md`) |
 | `instructions/*.instructions.md` | Path-scoped guidance via `applyTo` frontmatter |
-| `workflows/ci.yml` | Runs `task ci` on push/PR |
+| `workflows/ci.yml` | Runs `just ci` on push/PR |
 | `lsp.json` | Repo-level LSP for GitHub tooling |
 
 ## Rules
@@ -23,6 +23,6 @@ GitHub Copilot instructions, path-specific `.github/instructions/`, LSP config, 
 ## CI
 
 ```yaml
-# .github/workflows/ci.yml → task ci
-# check + smoke + ai:check + docs:ci
+# .github/workflows/ci.yml → just ci
+# check + smoke + ai-check + docs-ci
 ```

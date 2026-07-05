@@ -17,4 +17,4 @@ Owns editor and IDE configuration safe to reproduce across machines.
 
 ## Validation
 
-Promote editor config into `home/` Chezmoi templates when ready; preview with `task home:diff`.
+Promote editor config into `home/` Chezmoi templates when ready; preview with `just home-diff`.

@@ -34,8 +34,8 @@ Before promoting local Gemini/OpenCode MCP config into tracked files:
 ## Validate
 
 ```bash
-task ai:check
-task secrets:scan
+just ai-check
+just secrets-scan
 ```
 
 Operator docs: `docs/content/docs/ai-mcp.mdx`

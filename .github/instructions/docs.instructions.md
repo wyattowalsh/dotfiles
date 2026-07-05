@@ -7,7 +7,7 @@ applyTo: "docs/**,README.md,**/AGENTS.md,topics/**"
 ## Docs focus
 
 - Internal operator runbooks — not marketing copy
-- Ground content in tracked manifests and `Taskfile.yml` commands
+- Ground content in tracked manifests and `justfile` commands
 - MDX pages live in `docs/content/docs/`; sidebar in `meta.json`
 - Update nested `AGENTS.md` when subsystem conventions change
 
@@ -18,7 +18,7 @@ applyTo: "docs/**,README.md,**/AGENTS.md,topics/**"
 ## Validate
 
 ```bash
-task docs:ci
+just docs-ci
 ```
 
 Commit `docs/pnpm-lock.yaml` when `docs/package.json` changes.

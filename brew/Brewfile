@@ -2,34 +2,47 @@
 # Raw local dumps belong in ignored local/ files and must be reviewed before
 # promotion here.
 
-tap "go-task/tap"
+
 tap "oven-sh/bun"
 tap "stripe/stripe-cli"
 tap "supabase/tap"
 
 # core-cli
+brew "actionlint"
+brew "ast-grep"
 brew "bash"
 brew "bat"
 brew "coreutils"
 brew "curl"
 brew "direnv"
+brew "difftastic"
+brew "duckdb"
 brew "eza"
 brew "fd"
 brew "fzf"
 brew "gh"
 brew "git"
 brew "git-delta"
-brew "go-task"
+brew "git-lfs"
+brew "git-secrets"
+brew "just"
+brew "gomi"
 brew "jq"
+brew "mas"
 brew "ripgrep"
 brew "shellcheck"
+brew "tmux"
 brew "uv"
+brew "wget"
 brew "yazi"
 brew "zoxide"
 
 # dev-languages
 brew "bun"
 brew "deno"
+brew "docker"
+brew "docker-completion"
+brew "docker-compose"
 brew "go"
 brew "mise"
 brew "node"
@@ -38,6 +51,8 @@ brew "pnpm"
 # ai-tools
 brew "ollama"
 brew "pueue", restart_service: true
+brew "stripe"
+brew "supabase"
 
 # terminal-editors
 brew "lazygit"

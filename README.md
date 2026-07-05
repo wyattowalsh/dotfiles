@@ -13,13 +13,13 @@ Private, personal, internal-only dotfiles SSOT for the `w4w-mbp` rig. Curated de
 <!-- BADGES:END -->
 
 > [!NOTE]
-> The legacy `setup.sh` path remains tuned for Debian/Ubuntu-style systems. The full-rig macOS path is now scaffolded around `Taskfile.yml`, Homebrew Bundle, nix-darwin/Home Manager, Chezmoi-style templates, MCPHub-first AI config, and internal Fumadocs documentation.
+> The legacy `setup.sh` path remains tuned for Debian/Ubuntu-style systems. The full-rig macOS path is now scaffolded around `justfile`, Homebrew Bundle, nix-darwin/Home Manager, Chezmoi-style templates, MCPHub-first AI config, and internal Fumadocs documentation.
 
 ## At a glance
 
 | Platform                              | Entrypoint                                                     | Re-run safety                                                                  |
 | ------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Apple Silicon macOS                   | `task bootstrap -- --dry-run` then `task bootstrap -- --apply` | Dry-run-first preview with curated Brew, Nix, Chezmoi, AI/MCP, and docs checks |
+| Apple Silicon macOS                   | `just bootstrap --dry-run` then `just bootstrap --apply` | Dry-run-first preview with curated Brew, Nix, Chezmoi, AI/MCP, and docs checks |
 | Debian/Ubuntu-style Linux (`apt-get`) | [`setup.sh`](./setup.sh)                                       | Safe to re-run with idempotent guards and convergence checks                   |
 
 ## Table of contents
@@ -27,7 +27,7 @@ Private, personal, internal-only dotfiles SSOT for the `w4w-mbp` rig. Curated de
 - [At a glance](#at-a-glance)
 - [Overview](#overview)
 - [Quick start](#quick-start)
-- [Taskfile workflows](#taskfile-workflows)
+- [Just workflows](#just-workflows)
 - [Run modes](#run-modes)
 - [Prerequisites](#prerequisites)
 - [What gets installed/configured](#what-gets-installedconfigured)
@@ -44,7 +44,7 @@ Private, personal, internal-only dotfiles SSOT for the `w4w-mbp` rig. Curated de
 
 This repository has two entrypoints:
 
-- `Taskfile.yml` for the full-rig macOS migration and validation workflow.
+- `justfile` for the full-rig macOS migration and validation workflow.
 - [`setup.sh`](./setup.sh) for the existing Debian/Ubuntu bootstrap path.
 
 The macOS target is intentionally layered: Homebrew Bundle for the large app/tool surface, nix-darwin/Home Manager for durable system/user state, Chezmoi-style templates for portable home configuration, MCPHub-first AI config, and a Fumadocs internal docs site for runbooks and validation.
@@ -65,14 +65,14 @@ Key goals:
 Treat the live Mac as inventory, not something to commit wholesale:
 
 ```bash
-task inventory:redacted          # refresh local/Brewfile.raw, config-dirs, zsh-inventory
-task brew:check && task home:diff
+just inventory-redacted          # refresh local/Brewfile.raw, config-dirs, zsh-inventory
+just brew-check && just home-diff
 # promote curated changes into brew/, home/, root dotfiles
-task check
-task bootstrap -- --apply
+just check
+just bootstrap --apply
 ```
 
-Operator runbooks: [`docs/content/docs/`](./docs/content/docs/) (build with `task docs:build`).
+Operator runbooks: [`docs/content/docs/`](./docs/content/docs/) (build with `just docs-build`).
 
 ---
 
@@ -81,7 +81,7 @@ Operator runbooks: [`docs/content/docs/`](./docs/content/docs/) (build with `tas
 ```bash
 git clone <your-fork-or-this-repo-url> ~/dev/projects/dotfiles
 cd ~/dev/projects/dotfiles
-task bootstrap -- --dry-run
+just bootstrap --dry-run
 exec zsh -l
 ```
 
@@ -91,7 +91,7 @@ exec zsh -l
 Checklist:
 
 - [ ] Clone repo to your preferred permanent location
-- [ ] Run `task bootstrap -- --dry-run` on macOS or `./setup.sh --dry-run --verbose` on Linux
+- [ ] Run `just bootstrap --dry-run` on macOS or `./setup.sh --dry-run --verbose` on Linux
 - [ ] Review planned changes before applying
 - [ ] Open a new terminal (or `exec zsh -l`)
 - [ ] Confirm links and tools with the verification steps below
@@ -109,32 +109,32 @@ gh extension list | rg gh-copilot
 
 ---
 
-## Taskfile workflows
+## Just workflows
 
-`Taskfile.yml` is the canonical command surface for the modernized repo:
+`justfile` is the canonical command surface for the modernized repo:
 
 ```bash
-task --list
-task check
-task ci
-task smoke
-task secrets:scan
-task ai:check
-task inventory:redacted
-task brew:check
-task darwin:check
-task home:diff
-task docs:check
-task docs:build
+just --list
+just check
+just ci
+just smoke
+just secrets-scan
+just ai-check
+just inventory-redacted
+just brew-check
+just darwin-check
+just home-diff
+just docs-check
+just docs-build
 ```
 
-`task ci` is the self-contained local equivalent of the GitHub Actions validation path. It runs static checks including zsh syntax validation, smoke checks, AI/MCP validation, installs docs dependencies with `pnpm install --frozen-lockfile`, then typechecks and builds the docs site.
+`just ci` is the self-contained local equivalent of the GitHub Actions validation path. It runs static checks including zsh syntax validation, smoke checks, AI/MCP validation, installs docs dependencies with `pnpm install --frozen-lockfile`, then typechecks and builds the docs site.
 
 The bootstrap dispatcher defaults to preview behavior unless `--apply` is explicitly supplied:
 
 ```bash
-task bootstrap -- --dry-run
-task bootstrap -- --apply
+just bootstrap --dry-run
+just bootstrap --apply
 ```
 
 The macOS apply path requires `darwin/flake.lock` so nix-darwin checks and fallback commands do not resolve moving upstream refs. Generate that lock with `nix flake lock ./darwin` before applying the bootstrap.
@@ -220,18 +220,18 @@ flowchart LR
 
 | File                                                                   | Role                                                                                            | Destination / usage                      |
 | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| [`Taskfile.yml`](./Taskfile.yml)                                       | Canonical workflow runner for bootstrap, validation, docs, Brew, Darwin, AI, and secrets checks | Run with `task <name>`                   |
-| [`bootstrap/`](./bootstrap)                                            | macOS full-rig bootstrap dispatcher and subsystem instructions                                  | Run through `task bootstrap`             |
-| [`brew/`](./brew)                                                      | Curated Homebrew Bundle desired state and package inventory notes                               | Validate with `task brew:check`          |
-| [`darwin/`](./darwin)                                                  | nix-darwin/Home Manager scaffold for Apple Silicon macOS                                        | Validate with `task darwin:check`        |
-| [`home/`](./home)                                                      | Chezmoi-style managed home configuration templates                                              | Preview with `task home:diff`            |
-| [`ai/`](./ai)                                                          | Sanitized MCPHub-first AI/MCP manifests and generated examples                                  | Validate with `task ai:check`            |
-| [`docs/`](./docs)                                                      | Internal Fumadocs site for runbooks and generated references                                    | Build with `task docs:build`             |
+| [`justfile`](./justfile)                                       | Canonical workflow runner for bootstrap, validation, docs, Brew, Darwin, AI, and secrets checks | Run with `just <recipe>`                 |
+| [`bootstrap/`](./bootstrap)                                            | macOS full-rig bootstrap dispatcher and subsystem instructions                                  | Run through `just bootstrap`             |
+| [`brew/`](./brew)                                                      | Curated Homebrew Bundle desired state and package inventory notes                               | Validate with `just brew-check`          |
+| [`darwin/`](./darwin)                                                  | nix-darwin/Home Manager scaffold for Apple Silicon macOS                                        | Validate with `just darwin-check`        |
+| [`home/`](./home)                                                      | Chezmoi-style managed home configuration templates                                              | Preview with `just home-diff`            |
+| [`ai/`](./ai)                                                          | Sanitized MCPHub-first AI/MCP manifests and generated examples                                  | Validate with `just ai-check`            |
+| [`docs/`](./docs)                                                      | Internal Fumadocs site for runbooks and generated references                                    | Build with `just docs-build`             |
 | [`openspec/`](./openspec)                                              | OpenSpec change proposal for the full-rig modernization                                         | Reference for migration scope            |
 | [`setup.sh`](./setup.sh)                                               | Bootstrap orchestrator                                                                          | Run manually to converge environment     |
 | [`.zshrc`](./.zshrc)                                                   | Shell runtime config, plugins, aliases, lazy `nvm`, fzf/zoxide/direnv hooks                     | Linked to `~/.zshrc`                     |
 | [`.p10k.zsh`](./.p10k.zsh)                                             | Lean Powerlevel10k prompt config                                                                | Linked to `~/.p10k.zsh`                  |
-| [`home/dot_zshrc.tmpl`](./home/dot_zshrc.tmpl)                         | Chezmoi parity mirror of `.zshrc` (chezmoiignored; bootstrap symlinks root file)                | Kept in sync via `task check:zsh`        |
+| [`home/dot_zshrc.tmpl`](./home/dot_zshrc.tmpl)                         | Chezmoi parity mirror of `.zshrc` (chezmoiignored; bootstrap symlinks root file)                | Kept in sync via `just check-zsh`        |
 | [`checks/zsh-inventory.sh`](./checks/zsh-inventory.sh)                 | Redacted local zsh surface inventory for overrides, functions, completions, and custom plugins  | Writes ignored `local/zsh-inventory.txt` |
 | [`.gitconfig`](./.gitconfig)                                           | Git defaults + aliases + delta integration                                                      | Linked to `~/.gitconfig`                 |
 | [`.ripgreprc`](./.ripgreprc)                                           | Ripgrep defaults (`--hidden`, smart-case, ignores)                                              | Linked to `~/.ripgreprc`                 |
@@ -320,7 +320,7 @@ This repo explicitly treats idempotency as a contract (see [`AGENTS.md`](./AGENT
 ### Customization guidance
 
 - Use `~/.zshrc.local` for machine-specific overrides (already sourced by `.zshrc`).
-- Run `task inventory:redacted` to list local zsh override/function/completion/plugin paths in ignored `local/zsh-inventory.txt`; it never copies file contents or environment values, and it scrubs sensitive-looking path components.
+- Run `just inventory-redacted` to list local zsh override/function/completion/plugin paths in ignored `local/zsh-inventory.txt`; it never copies file contents or environment values, and it scrubs sensitive-looking path components.
 - Tune prompt appearance in [`.p10k.zsh`](./.p10k.zsh).
 - Adjust defaults in [`.gitconfig`](./.gitconfig), [`.ripgreprc`](./.ripgreprc), and [`.editorconfig`](./.editorconfig).
 - Add/remove Claude MCP servers in [`.config/claude/mcp.json`](./.config/claude/mcp.json).
@@ -354,8 +354,8 @@ This repo explicitly treats idempotency as a contract (see [`AGENTS.md`](./AGENT
 
 - Do **not** commit secrets (tokens, API keys, private keys) to this repo.
 - Keep sensitive values in environment variables or untracked local files.
-- `task secrets:scan` scans tracked files only and reports matching filenames without printing secret-shaped values.
-- `task inventory:redacted` writes local inventory artifacts under ignored `local/` and intentionally records scrubbed paths only, not file contents or secret values.
+- `just secrets-scan` scans tracked files only and reports matching filenames without printing secret-shaped values.
+- `just inventory-redacted` writes local inventory artifacts under ignored `local/` and intentionally records scrubbed paths only, not file contents or secret values.
 - Review any `curl | bash` installer path before running in regulated environments.
 - Prefer least privilege; elevate only when setup needs system-level writes.
 

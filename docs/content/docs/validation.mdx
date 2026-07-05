@@ -3,51 +3,51 @@ title: Validation
 description: Commands that prove the repo is safe to commit and apply.
 ---
 
-Use `Taskfile.yml` as the canonical command surface. Checks fail fast on tracked regressions; optional-tool steps skip gracefully when binaries are missing.
+Use `justfile` as the canonical command surface. Checks fail fast on tracked regressions; optional-tool steps skip gracefully when binaries are missing.
 
 ## Quick reference
 
 | Task | What it validates |
 | --- | --- |
-| `task check` | Shell syntax, zsh parity, JSON schemas, secrets scan |
-| `task smoke` | Non-destructive runtime smoke checks |
-| `task ai:check` | AI/MCP manifest schemas + negative fixtures |
-| `task ci` | Full pipeline: `check` + `smoke` + `ai:check` + `docs:ci` |
-| `task secrets:scan` | Tracked files for secret-shaped patterns |
-| `task brew:check` | `brew bundle check` against curated Brewfile |
-| `task darwin:check` | `nix flake check` + `darwin-rebuild check` |
-| `task home:diff` | Chezmoi diff preview |
-| `task docs:ci` | `pnpm install --frozen-lockfile` + typecheck + build |
+| `just check` | Shell syntax, zsh parity, JSON schemas, secrets scan |
+| `just smoke` | Non-destructive runtime smoke checks |
+| `just ai-check` | AI/MCP manifest schemas + negative fixtures |
+| `just ci` | Full pipeline: `check` + `smoke` + `ai-check` + `docs-ci` |
+| `just secrets-scan` | Tracked files for secret-shaped patterns |
+| `just brew-check` | `brew bundle check` against curated Brewfile |
+| `just darwin-check` | `nix flake check` + `darwin-rebuild check` |
+| `just home-diff` | Chezmoi diff preview |
+| `just docs-ci` | `pnpm install --frozen-lockfile` + typecheck + build |
 
-## `task check` breakdown
+## `just check` breakdown
 
 ```bash
-task check:shell   # bash -n + shellcheck on scripts
-task check:zsh     # zsh -n + cmp .zshrc ↔ home/dot_zshrc.tmpl
-task check:json    # ./checks/validate-json.sh
-task secrets:scan  # ./checks/secrets-scan.sh (requires rg)
+just check-shell   # bash -n + shellcheck on scripts
+just check-zsh     # zsh -n + cmp .zshrc ↔ home/dot_zshrc.tmpl
+just check-json    # ./checks/validate-json.sh
+just secrets-scan  # ./checks/secrets-scan.sh (requires rg)
 ```
 
 ## CI parity
 
-GitHub Actions (`.github/workflows/ci.yml`) runs `task ci` on Ubuntu with zsh and pnpm installed. Local pre-push:
+GitHub Actions (`.github/workflows/ci.yml`) runs `just ci` on Ubuntu with zsh and pnpm installed. Local pre-push:
 
 ```bash
-task ci
+just ci
 ```
 
-Docs lockfile drift (`docs/pnpm-lock.yaml`) fails `docs:ci` — run `task docs:install` in `docs/` and commit lock updates when `package.json` changes.
+Docs lockfile drift (`docs/pnpm-lock.yaml`) fails `just docs-ci` — run `just docs-install` and commit lock updates when `package.json` changes.
 
 ## Pre-apply gate (macOS)
 
 ```bash
-task check
-task bootstrap -- --dry-run
+just check
+just bootstrap --dry-run
 # review output
-task bootstrap -- --apply
-task smoke
+just bootstrap --apply
+just smoke
 ```
 
 ## Optional skips
 
-When `brew`, `nix`, `chezmoi`, or `shellcheck` are not installed, the corresponding task prints a skip message and continues. CI installs zsh; macOS dev machines should have brew/nix for meaningful `brew:check` / `darwin:check` results.
+When `brew`, `nix`, `chezmoi`, or `shellcheck` are not installed, the corresponding recipe prints a skip message and continues. CI installs zsh; macOS dev machines should have brew/nix for meaningful `just brew-check` / `just darwin-check` results.

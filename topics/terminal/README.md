@@ -14,6 +14,6 @@ Background images under `~/.config/ghostty/backgrounds/` — not committed. Temp
 ## Validation
 
 ```bash
-task home:diff
-task brew:check   # font casks
+just home-diff
+just brew-check   # font casks
 ```

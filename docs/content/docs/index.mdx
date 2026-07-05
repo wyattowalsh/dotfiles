@@ -9,22 +9,22 @@ Private, personal SSOT for shell, git, Homebrew, nix-darwin, Chezmoi home config
 
 | Goal | Page | First command |
 | --- | --- | --- |
-| New or wiped Mac | [Fresh Mac runbook](/docs/fresh-mac) | `task bootstrap -- --dry-run` |
-| Promote live changes into git | [SSOT workflow](/docs/ssot-workflow) | `task inventory:redacted` |
-| Preview home config | [Home configuration](/docs/home-config) | `task home:diff` |
-| Pre-commit safety | [Validation](/docs/validation) | `task check` |
-| Package intent | [Package catalog](/docs/packages) | `task brew:check` |
-| AI/MCP policy | [AI and MCP matrix](/docs/ai-mcp) | `task ai:check` |
+| New or wiped Mac | [Fresh Mac runbook](/docs/fresh-mac) | `just bootstrap --dry-run` |
+| Promote live changes into git | [SSOT workflow](/docs/ssot-workflow) | `just inventory-redacted` |
+| Preview home config | [Home configuration](/docs/home-config) | `just home-diff` |
+| Pre-commit safety | [Validation](/docs/validation) | `just check` |
+| Package intent | [Package catalog](/docs/packages) | `just brew-check` |
+| AI/MCP policy | [AI and MCP matrix](/docs/ai-mcp) | `just ai-check` |
 
 ## Command surface
 
-`Taskfile.yml` is canonical. Prefer `task <name>` over ad hoc shell recipes.
+`justfile` is canonical. Prefer `just <name>` over ad hoc shell recipes.
 
 ```bash
-task --list
-task check          # static validation (shell, zsh parity, JSON, secrets scan)
-task ci             # full CI parity: check + smoke + ai + docs build
-task bootstrap -- --dry-run
+just --list
+just check          # static validation (shell, zsh parity, JSON, secrets scan)
+just ci             # full CI parity: check + smoke + ai + docs build
+just bootstrap --dry-run
 ```
 
 ## What belongs in Git
@@ -43,5 +43,5 @@ task bootstrap -- --dry-run
 
 | Platform | Bootstrap | Notes |
 | --- | --- | --- |
-| Apple Silicon macOS | `task bootstrap` → `bootstrap/macos.sh` | Brew + root symlinks + Chezmoi + nix-darwin |
+| Apple Silicon macOS | `just bootstrap` → `bootstrap/macos.sh` | Brew + root symlinks + Chezmoi + nix-darwin |
 | Debian/Ubuntu Linux | `./setup.sh` | apt-based legacy path; AI CLI + skills install |
