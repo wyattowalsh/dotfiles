@@ -7,6 +7,13 @@
 
 # Local machine state and generated scratch data
 .DS_Store
+.env
+.env.*
+*.pem
+id_rsa
+id_ed25519
+.netrc
+credentials.json
 local/
 docs/.next/
 docs/out/

@@ -14,7 +14,7 @@ const sections = [
   {
     href: "/docs/validation",
     title: "Validation",
-    description: "task check, task ci, and focused namespace checks."
+    description: "just check, just ci, and focused namespace checks."
   },
   {
     href: "/docs/packages",

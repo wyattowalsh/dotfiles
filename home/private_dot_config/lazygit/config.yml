@@ -3,5 +3,9 @@ gui:
   showCommandLog: false
 git:
   paging:
-    pager: delta --paging=never
-
+    pager: delta --dark --paging=never
+customCommands:
+  - key: '<c-o>'
+    context: 'commits'
+    command: 'gh browse {{.SelectedLocalCommit.Hash}}'
+    description: 'Open commit in GitHub'

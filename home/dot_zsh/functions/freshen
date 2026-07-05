@@ -1,0 +1,1955 @@
+# ~/.zsh/functions/freshen
+#compdef freshen
+# freshen v1.7.1 — System maintenance: brew + caches + App Store + storage planning
+
+typeset -g _FRESHEN_VERSION _FRESHEN_RELEASE_DATE
+if [[ -z "$_FRESHEN_VERSION" ]]; then
+    for _ff in ${^fpath}/freshen(.N[1]); do
+        _freshen_vf="${_ff:h}/freshen.VERSION"
+        if [[ -r "$_freshen_vf" ]]; then
+            _FRESHEN_VERSION="$(sed -n '1p' "$_freshen_vf")"
+            _FRESHEN_RELEASE_DATE="$(sed -n '2p' "$_freshen_vf")"
+        fi
+        break
+    done
+    [[ -n "$_FRESHEN_VERSION" ]] || _FRESHEN_VERSION="1.7.1"
+    [[ -n "$_FRESHEN_RELEASE_DATE" ]] || _FRESHEN_RELEASE_DATE="2026-07-04"
+fi
+
+# ── Helper: help text ──────────────────────────────────────────────────────
+__freshen_help() {
+    cat <<'EOF'
+freshen — fast, safe system maintenance for Homebrew, App Store, caches, and storage
+
+USAGE
+    freshen [flags]
+
+WHAT IT DOES
+    freshen inventories outdated Homebrew formulae, casks, and Mac App Store apps,
+    then upgrades them only after confirmation or --yes. It can also run cleanup,
+    prune tool caches, report storage opportunities, and optionally run brew doctor.
+
+SAFE FIRST RUN
+    freshen --dry-run --progress=plain --no-color
+        Refresh inventory and show the exact upgrade plan without mutations.
+
+    freshen --clean-only --dry-run --progress=plain --no-color
+        Preview cleanup/cache/dev-prune lanes without upgrade inventory.
+
+    freshen --storage-plan --restore-target-gib=170
+        Read-only free-space plan for large restores or local model downloads.
+
+CAPITAL SHORTCUTS
+    -N  --dry-run              No-op inventory preview
+    -C  --clean-only           Clean/cache/dev-prune/doctor only; no upgrades
+    -Y  --yes                  Yes to confirmation (same as -y)
+    -F  --formula-only         Formulae only
+    -K  --cask-only            Casks only
+    -G  --no-greedy            Standard cask outdated/upgrade behavior
+    -B  --no-cleanup           Bypass brew autoremove + cleanup
+    -A  --no-cache             Avoid cache cleanup
+    -S  --storage-plan         Storage report only
+    -P  --dev-prune            Prune regenerable dev dirs with gomi
+    -M  --no-mas               Skip Mac App Store inventory/update
+    -D  --doctor               Run brew doctor at the end
+    -L  --sequential           One package at a time for maximum visibility
+    -R=MODE  --progress=MODE   Renderer: auto, live, lines, or plain
+    -V  --version              Print version
+    -H  --help                 Show this help
+
+FLAGS
+    --dry-run, -N     Inventory only; show the plan and make no changes
+    --clean-only, -C  Only run cleanup, cache cleaning, optional dev-prune, and doctor
+    --yes, -y, -Y     Skip confirmation prompt
+    --formula-only, -F
+                      Only upgrade formulae
+    --cask-only, -K   Only upgrade casks
+    --no-greedy, -G   Don't pass --greedy for cask upgrades
+    --no-cleanup, -B  Skip brew cleanup + autoremove
+    --no-cache, -A    Skip dev tool cache cleaning
+    --storage-plan, -S
+                      Read-only storage savings plan; no updates or deletes
+    --storage-root=PATH
+                      Root label for --storage-plan (default: home)
+    --restore-target-gib=N
+                      Target free GiB for restore planning
+    --dev-prune, -P   Trash regenerable project-local dev dirs under the root
+    --dev-prune-root=PATH
+                      Root for --dev-prune (default: current directory)
+    --no-mas, -M      Skip Mac App Store updates
+    --doctor, -D      Run brew doctor at end
+    --sequential, -L  Upgrade packages one-by-one for more visibility
+    --progress=MODE, -R=MODE
+                      Progress renderer: auto, live, lines, or plain
+    --no-sudo-preflight
+                      Do not preflight sudo before cask upgrades
+    --verbose, -v     Show detailed command output
+    --quiet, -q       Suppress progress noise, but still show issues
+    --no-color        Disable color (also respects NO_COLOR env)
+    --version, -V     Show version and exit
+    --help, -h, -H    Show this help
+
+PROGRESS MODES
+    auto    Live dashboard on an interactive TTY; lines elsewhere.
+    live    Force the dashboard when possible, otherwise falls back to lines.
+    lines   Append-only phase updates with color when available.
+    plain   Append-only, no color, no cursor controls; best for logs and screen readers.
+
+EXAMPLES
+    freshen                    Full maintenance cycle with confirmation
+    freshen -N                 Preview the exact plan only
+    freshen -C                 Skip upgrade inventory; clean only
+    freshen -C -N              Preview cleanup and cache targets only
+    freshen -Y -A              Quick brew/App Store update, no cache cleanup
+    freshen -L -D              Sequential upgrades, then brew doctor
+    freshen -K -G              Casks only, no --greedy
+    freshen --storage-plan --restore-target-gib=170
+                               Plan free space for a large local restore with a readiness bar
+    freshen --dry-run --dev-prune --dev-prune-root=$HOME/dev
+                               Preview project-local dev dirs before trashing
+
+AUTOMATION
+    freshen --yes --progress=plain --no-color
+        Non-interactive friendly. Exit 0 means all enabled phases completed or were
+        intentionally skipped. Exit 1 means degraded/failed work needs review. Exit 2
+        means usage error. Exit 127 means a required dependency is missing.
+
+SAFETY MODEL
+    Dry-run never upgrades, cleans, prunes, or updates apps. Clean-only skips upgrade
+    inventory entirely. Dev-prune requires gomi and refuses rm fallback. Cask upgrades
+    preflight sudo once so password prompts do not corrupt progress output.
+
+CACHES CLEANED
+    npm, pnpm, yarn, bun, uv, pip, cargo, go, gem, docker
+    optional: node_modules, .venv, venv, .tox, tool caches under a chosen root
+    storage-plan: read-only size scan of common local reclaim surfaces
+    (only installed tools are detected and cleaned)
+
+ENVIRONMENT
+    FRESHEN_CACHE_TIMEOUT_SEC          Base cache timeout, default 120s
+    FRESHEN_HEAVY_CACHE_TIMEOUT_SEC    Heavy cache timeout, default 300s
+    FRESHEN_UV_CACHE_TIMEOUT_SEC       uv-specific cache timeout override
+    FRESHEN_CLEANUP_TIMEOUT_SEC        brew cleanup timeout, default 900s
+    FRESHEN_DOCTOR_TIMEOUT_SEC         brew doctor timeout, default 60s
+    FRESHEN_MAS_TIMEOUT_SEC            mas inventory/update timeout, default 1200s
+    FRESHEN_RENDER_INTERVAL_MS         Live dashboard throttle, default 500ms
+    FRESHEN_LOW_POWER=1                Plain progress, no bell/notification noise
+    FRESHEN_STORAGE_SCAN_SURFACES=1    Opt into bounded broad storage sizing
+    FRESHEN_STORAGE_DU_TIMEOUT_SEC     Per-surface du timeout, default 30s
+    FRESHEN_DEV_PRUNE_MAX_DEPTH        Dev-prune search depth, default 5
+    FRESHEN_DEV_PRUNE_MAX_SCAN         Dev-prune max candidates scanned, default 400
+    FRESHEN_DEV_PRUNE_MAX_ITEMS        Dev-prune max candidates kept, default 50
+    FRESHEN_DEV_PRUNE_DU_TIMEOUT_SEC   Per-candidate du timeout, default 10s
+    NO_COLOR                           Disable color
+    XDG_STATE_HOME                     Override log state directory on non-macOS
+    MAS_NO_AUTO_INDEX                  Passed to mas; defaults to 1 during freshen
+    BUN_INSTALL_CACHE_DIR              Bun cache path; defaults to ~/.bun/install/cache
+    TMPDIR                             Temporary inventory/output files
+
+TROUBLESHOOTING
+    degraded   Some work completed, but a lane timed out, failed, or was unresolved.
+    failed     A lane could not start or all work in that lane failed.
+    unresolved Batch output did not prove a package upgraded; inspect the log.
+    timeout    Increase the relevant FRESHEN_*_TIMEOUT_SEC only after checking logs.
+
+EXIT CODES
+    0   All enabled work completed or was intentionally skipped
+    1   One or more phases degraded or failed
+    2   Invalid option or argument
+    127 Required dependency missing for the requested lanes
+    130 Interrupted by user or signal
+
+LOG LOCATION
+    macOS:  ~/Library/Logs/freshen/
+    Linux:  ~/.local/state/freshen/
+    Logs are printed for verbose, degraded, or failed runs. Password-like command
+    output is redacted before terminal and log writes. Logs older than 30 days are
+    pruned best-effort from the selected freshen log directory.
+EOF
+}
+
+# ── Main function ──────────────────────────────────────────────────────────
+freshen() {
+    emulate -L zsh
+    setopt LOCAL_OPTIONS LOCAL_TRAPS NO_MONITOR PIPE_FAIL
+    zmodload zsh/datetime 2>/dev/null || true
+
+    local dry_run=0 assume_yes=0 verbose=0 quiet=0 sequential=0 storage_plan=0 clean_only=0
+    local do_formulae=1 do_casks=1 cask_greedy=1
+    local run_cleanup=1 run_cache=1 run_mas=1 run_doctor=0 run_dev_prune=0
+    local use_color=1 sudo_preflight=1 progress_mode="auto"
+    local dev_prune_root="$PWD" dev_prune_root_set=0
+    local storage_root="$HOME" restore_target_gib=0
+
+    local arg
+    for arg in "$@"; do
+        case "$arg" in
+            --dry-run|-N)    dry_run=1 ;;
+            --clean-only|-C) clean_only=1 ;;
+            --yes|-y|-Y)     assume_yes=1 ;;
+            --verbose|-v)    verbose=1 ;;
+            --quiet|-q)      quiet=1 ;;
+            --sequential|-L) sequential=1 ;;
+            --formula-only|-F) do_casks=0 ;;
+            --cask-only|-K)  do_formulae=0 ;;
+            --no-greedy|-G)  cask_greedy=0 ;;
+            --no-cleanup|-B) run_cleanup=0 ;;
+            --no-cache|-A)   run_cache=0 ;;
+            --storage-plan|-S) storage_plan=1 ;;
+            --storage-root=*)
+                storage_plan=1
+                storage_root="${arg#--storage-root=}"
+                ;;
+            --restore-target-gib=*)
+                storage_plan=1
+                restore_target_gib="${arg#--restore-target-gib=}"
+                ;;
+            --dev-prune|-P)  run_dev_prune=1 ;;
+            --dev-prune-root=*)
+                run_dev_prune=1
+                dev_prune_root_set=1
+                dev_prune_root="${arg#--dev-prune-root=}"
+                ;;
+            --no-mas|-M)     run_mas=0 ;;
+            --doctor|-D)     run_doctor=1 ;;
+            --progress=*)    progress_mode="${arg#--progress=}" ;;
+            -R=*)            progress_mode="${arg#-R=}" ;;
+            -R*)             progress_mode="${arg#-R}" ;;
+            --no-sudo-preflight) sudo_preflight=0 ;;
+            --no-color)      use_color=0 ;;
+            --version|-V)    print "freshen ${_FRESHEN_VERSION} (${_FRESHEN_RELEASE_DATE})"; return 0 ;;
+            -h|-H|--help)    __freshen_help; return 0 ;;
+            -*)              print -u2 "freshen: unknown option: $arg"; return 2 ;;
+        esac
+    done
+
+    case "$progress_mode" in
+        auto|live|lines|plain) ;;
+        *) print -u2 "freshen: --progress must be one of auto, live, lines, plain"; return 2 ;;
+    esac
+
+    if (( clean_only )); then
+        do_formulae=0
+        do_casks=0
+        run_mas=0
+    fi
+
+    if (( storage_plan )); then
+        run_dev_prune=1
+        if (( ! dev_prune_root_set )); then
+            if [[ -d "$HOME/dev" ]]; then
+                dev_prune_root="$HOME/dev"
+            else
+                dev_prune_root="$HOME"
+            fi
+        fi
+    fi
+
+    [[ -n "$NO_COLOR" ]] && use_color=0
+    [[ "$progress_mode" == "plain" ]] && use_color=0
+    [[ "${FRESHEN_LOW_POWER:-0}" == "1" ]] && use_color=0
+
+    local bold="" dim="" red="" grn="" ylw="" cyn="" blu="" rst=""
+    if (( use_color )) && [[ -t 1 && "${TERM:-dumb}" != "dumb" ]]; then
+        bold=$'\e[1m'
+        dim=$'\e[2m'
+        red=$'\e[31m'
+        grn=$'\e[32m'
+        ylw=$'\e[33m'
+        cyn=$'\e[36m'
+        blu=$'\e[34m'
+        rst=$'\e[0m'
+    fi
+
+    _positive_int_env() {
+        local name="$1" default_value="$2" value="${(P)1:-}"
+        if [[ -z "$value" ]]; then
+            print -r -- "$default_value"
+            return 0
+        fi
+        if [[ "$value" == <-> && "$value" -gt 0 ]]; then
+            print -r -- "$value"
+            return 0
+        fi
+        print -u2 "  ${ylw}!${rst} ${name} must be a positive integer; using ${default_value}"
+        print -r -- "$default_value"
+    }
+
+    local _is_tty=0 _is_interactive=0
+    local _render_mode="lines" _render_started=0 _last_render_ms=0 _render_interval_ms
+    _render_interval_ms="$(_positive_int_env FRESHEN_RENDER_INTERVAL_MS 500)"
+    [[ -t 1 ]] && _is_tty=1
+    [[ -t 0 && -t 1 ]] && _is_interactive=1
+
+    case "$progress_mode" in
+        auto)
+            if (( _is_tty && ! verbose && ! quiet )); then
+                _render_mode="live"
+            else
+                _render_mode="lines"
+            fi
+            ;;
+        live)
+            if (( _is_tty && ! verbose && ! quiet )); then
+                _render_mode="live"
+            else
+                _render_mode="lines"
+            fi
+            ;;
+        lines) _render_mode="lines" ;;
+        plain) _render_mode="plain" ;;
+    esac
+    [[ "${FRESHEN_LOW_POWER:-0}" == "1" ]] && _render_mode="plain"
+
+    local _timeout_cache _timeout_cleanup _timeout_doctor _timeout_mas
+    _timeout_cache="$(_positive_int_env FRESHEN_CACHE_TIMEOUT_SEC 120)"
+    _timeout_cleanup="$(_positive_int_env FRESHEN_CLEANUP_TIMEOUT_SEC 900)"
+    _timeout_doctor="$(_positive_int_env FRESHEN_DOCTOR_TIMEOUT_SEC 60)"
+    _timeout_mas="$(_positive_int_env FRESHEN_MAS_TIMEOUT_SEC 1200)"
+
+    local -a _errors=() _warnings=()
+    local -a dev_prune_paths=() dev_prune_sizes=()
+    local dev_prune_candidate_count=0
+    local dev_prune_root_refused=0
+    local _bun_cache_refusal=""
+    local _log_file="" _current_phase="" _current_label=""
+
+    local -a _phase_order=(inventory formulae casks apps cleanup caches doctor)
+    typeset -A _phase_label _phase_state _phase_detail _phase_elapsed
+    typeset -A _phase_attempted _phase_upgraded _phase_failed _phase_unknown
+    typeset -A _phase_skipped _phase_timeout _phase_log
+
+    _phase_label=(
+        inventory "Inventory"
+        formulae  "Formulae"
+        casks     "Casks"
+        apps      "App Store"
+        cleanup   "Cleanup"
+        caches    "Caches"
+        doctor    "Doctor"
+    )
+
+    local _run_output="" _run_rc=0 _run_timed_out=0 _run_elapsed=0
+    local _current_cmd_pid=0 _current_timeout_pid=0
+    local _inventory_formulae_pid=0 _inventory_casks_pid=0
+    local _inventory_tmp="" _active_run_tmpout="" _active_run_timeout_flag=""
+    local _dev_prune_tmp_candidates="" _dev_prune_validated_root=""
+    local _mas_outdated_pid=0 _mas_timeout_pid=0 _mas_timeout_flag=""
+    local _upgraded_total=0 _failed_total=0 _processed_total=0 _total_planned=0
+    local __quit_flag=0 __interrupt_flag=0
+    local _sudo_keepalive_pid=0 _sudo_ready=0
+    local t_start="$EPOCHSECONDS"
+    local t_update=0 t_formulae=0 t_casks=0 t_mas=0 t_cleanup=0 t_caches=0 t_doctor=0
+
+    local disk_before
+    disk_before=$(command df -k / | awk 'NR==2{print $4}')
+
+    local log_dir
+    if [[ -n "$XDG_STATE_HOME" ]]; then
+        log_dir="${XDG_STATE_HOME}/freshen"
+    elif [[ "$OSTYPE" == darwin* ]]; then
+        log_dir="$HOME/Library/Logs/freshen"
+    else
+        log_dir="$HOME/.local/state/freshen"
+    fi
+    command mkdir -p "$log_dir" 2>/dev/null
+
+    local stamp
+    stamp="$(strftime "%Y-%m-%d_%H-%M-%S" "$EPOCHSECONDS" 2>/dev/null || date '+%Y-%m-%d_%H-%M-%S')"
+    _log_file="${log_dir}/${stamp}.$$.log"
+    (umask 077; : >| "$_log_file") 2>/dev/null || {
+        print -u2 "freshen: could not create log file at ${_log_file}"
+        return 1
+    }
+    chmod 600 "$_log_file" 2>/dev/null || true
+    (
+        local old_log
+        for old_log in "${log_dir}"/*.log(Nm+30); do
+            [[ "${old_log:t}" == [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]_*.*.log ]] || continue
+            rm -f -- "$old_log" 2>/dev/null || true
+        done
+    ) &
+
+    local phase_key
+    for phase_key in "${_phase_order[@]}"; do
+        _phase_state[$phase_key]="queued"
+        _phase_detail[$phase_key]="waiting"
+        _phase_elapsed[$phase_key]=0
+        _phase_attempted[$phase_key]=0
+        _phase_upgraded[$phase_key]=0
+        _phase_failed[$phase_key]=0
+        _phase_unknown[$phase_key]=0
+        _phase_skipped[$phase_key]=0
+        _phase_timeout[$phase_key]=0
+        _phase_log[$phase_key]="$_log_file"
+    done
+
+    _fmt_dur() {
+        local s=$1
+        if (( s >= 3600 )); then
+            printf "%dh %dm %ds" $(( s / 3600 )) $(( (s % 3600) / 60 )) $(( s % 60 ))
+        elif (( s >= 60 )); then
+            printf "%dm %ds" $(( s / 60 )) $(( s % 60 ))
+        else
+            printf "%ds" "$s"
+        fi
+    }
+
+    _human_kb() {
+        local kb=$1
+        if (( kb >= 1048576 )); then
+            printf "%.1f GB" $(( kb / 1048576.0 ))
+        elif (( kb >= 1024 )); then
+            printf "%d MB" $(( kb / 1024 ))
+        elif (( kb > 0 )); then
+            printf "%d KB" "$kb"
+        else
+            printf "0 KB"
+        fi
+    }
+
+    _percent() {
+        local current=$1 total=$2
+        if (( total <= 0 )); then
+            printf "0"
+        elif (( current >= total )); then
+            printf "100"
+        else
+            printf "%d" $(( current * 100 / total ))
+        fi
+    }
+
+    _progress_bar() {
+        local current=$1 total=$2 width=${3:-24}
+        local pct filled empty
+        pct="$(_percent "$current" "$total")"
+        filled=$(( pct * width / 100 ))
+        empty=$(( width - filled ))
+        (( filled < 0 )) && filled=0
+        (( empty < 0 )) && empty=0
+        printf "%${filled}s" "" | tr ' ' '#'
+        printf "%${empty}s" "" | tr ' ' '-'
+    }
+
+    _progress_meter() {
+        local total="${_total_planned:-0}"
+        local done="${_processed_total:-0}"
+        local pct bar
+
+        if (( total <= 0 )); then
+            print -r -- "Progress: discovering work"
+            return 0
+        fi
+
+        (( done < 0 )) && done=0
+        (( done > total )) && done="$total"
+        pct="$(_percent "$done" "$total")"
+        bar="$(_progress_bar "$done" "$total" 18)"
+        print -r -- "Progress: [${bar}] ${pct}% (${done}/${total})"
+    }
+
+    _du_kb() {
+        local target="$1"
+        local timeout_s="${2:-${FRESHEN_DU_TIMEOUT_SEC:-20}}"
+        local output=""
+
+        if command -v timeout >/dev/null 2>&1; then
+            output="$(command timeout "$timeout_s" du -sk -- "$target" 2>/dev/null)" || return 1
+        elif command -v gtimeout >/dev/null 2>&1; then
+            output="$(command gtimeout "$timeout_s" du -sk -- "$target" 2>/dev/null)" || return 1
+        else
+            output="$(command du -sk -- "$target" 2>/dev/null)" || return 1
+        fi
+
+        print -r -- "$output" | awk 'NR==1{print $1}'
+    }
+
+    _count_items() {
+        local count=0 item
+        for item in "$@"; do
+            (( count++ ))
+        done
+        print -r -- "$count"
+    }
+
+    _is_safe_dev_prune_root() {
+        local root="$1"
+        local root_real home_real
+        local -a root_parts
+        [[ -n "$root" && -d "$root" ]] || return 1
+        root_real="${root:A}"
+        home_real="${HOME:A}"
+        [[ -n "$root_real" && -n "$home_real" ]] || return 1
+        [[ "$root_real" != "/" && "$root_real" != "$home_real" ]] || return 1
+        root_parts=("${(@s:/:)${root_real#/}}")
+        (( ${#root_parts} >= 3 )) || return 1
+        return 0
+    }
+
+    _is_safe_dev_prune_target() {
+        local target="$1" root="$2"
+        local target_real root_real
+        [[ -n "$target" && -e "$target" ]] || return 1
+        [[ -L "$target" ]] && return 1
+        target_real="${target:A}"
+        root_real="${root:A}"
+        [[ -n "$target_real" && -n "$root_real" ]] || return 1
+        [[ "$target_real" == "$root_real" || "$target_real" == "$root_real"/* ]] || return 1
+        [[ -d "$target_real" ]] || return 1
+        return 0
+    }
+
+    _collect_dev_prune_candidates() {
+        local root="$1"
+        local max_depth="${FRESHEN_DEV_PRUNE_MAX_DEPTH:-5}"
+        local max_items="${FRESHEN_DEV_PRUNE_MAX_ITEMS:-50}"
+        local max_scan="${FRESHEN_DEV_PRUNE_MAX_SCAN:-400}"
+        local candidate size_kb count=0 scanned=0
+        local tmp_candidates
+
+        dev_prune_paths=()
+        dev_prune_sizes=()
+        dev_prune_candidate_count=0
+        dev_prune_root_refused=0
+
+        if [[ ! -d "$root" ]]; then
+            _warn "--dev-prune root is not a directory: ${root}"
+            return 0
+        fi
+
+        if ! _is_safe_dev_prune_root "$root"; then
+            dev_prune_root_refused=1
+            _warn "--dev-prune root is too broad: ${root}"
+            return 0
+        fi
+
+        _dev_prune_validated_root="${root:A}"
+
+        tmp_candidates="$(mktemp "${TMPDIR:-/tmp}/freshen.dev-prune.XXXXXX")" || {
+            _warn "Could not create temporary dev-prune inventory"
+            return 0
+        }
+        _dev_prune_tmp_candidates="$tmp_candidates"
+
+        while IFS= read -r -d '' candidate; do
+            (( scanned >= max_scan )) && break
+            (( scanned++ ))
+            size_kb="$(_du_kb "$candidate" "${FRESHEN_DEV_PRUNE_DU_TIMEOUT_SEC:-10}")" || continue
+            [[ -z "$size_kb" ]] && continue
+            printf '%s\t%s\n' "$size_kb" "$candidate" >> "$tmp_candidates"
+        done < <(
+            command find "$root" -maxdepth "$max_depth" \
+                \( -name .git -o -name .hg -o -name .svn \) -prune -o \
+                -type d \( \
+                    -name node_modules -o \
+                    -name .venv -o \
+                    -name venv -o \
+                    -name .tox -o \
+                    -name .pytest_cache -o \
+                    -name .mypy_cache -o \
+                    -name .ruff_cache -o \
+                    -name .turbo -o \
+                    -name .parcel-cache -o \
+                    -path '*/.next/cache' \
+                \) -print0 -prune 2>/dev/null
+        )
+
+        while IFS=$'\t' read -r size_kb candidate; do
+            (( count >= max_items )) && break
+            [[ -z "$candidate" ]] && continue
+            dev_prune_paths+=("$candidate")
+            dev_prune_sizes+=("$size_kb")
+            (( count++ ))
+        done < <(command sort -nr "$tmp_candidates" 2>/dev/null)
+
+        dev_prune_candidate_count=$count
+
+        command rm -f "$tmp_candidates" 2>/dev/null
+        _dev_prune_tmp_candidates=""
+    }
+
+    _dev_prune_total_kb() {
+        local total=0 size_kb
+        for size_kb in "${dev_prune_sizes[@]}"; do
+            (( total += size_kb ))
+        done
+        print -r -- "$total"
+    }
+
+    _print_dev_prune_plan() {
+        local total_kb="$(_dev_prune_total_kb)"
+        local total_human="$(_human_kb "$total_kb")"
+        local idx limit=10 dev_count="$dev_prune_candidate_count"
+        local dev_size dev_path
+        print "  ${bold}Dev Prune${rst}"
+        print "     ${dim}Root:${rst} ${dev_prune_root}"
+        print "     ${dim}Candidates:${rst} ${dev_count} (${total_human})"
+        for (( idx = 1; idx <= dev_count && idx <= limit; idx++ )); do
+            dev_size="$(_human_kb "${dev_prune_sizes[$idx]}")"
+            dev_path="${dev_prune_paths[$idx]}"
+            print "        ${dev_size}  ${dev_path}"
+        done
+        (( dev_count > limit )) && print "        ... $(( dev_count - limit )) more"
+        print "     ${dim}Action:${rst} moved to Trash with gomi only after confirmation"
+        print
+    }
+
+    _print_storage_plan() {
+        local root="$1"
+        local target_gib="$2"
+        local available_kb target_kb gap_kb dev_total_kb restore_pct restore_bar df_root
+        local tmp_sizes storage_path size_kb shown=0 limit=12
+        local -a storage_paths=()
+
+        df_root="$root"
+        [[ -d "$df_root" ]] || df_root="$HOME"
+        available_kb="$(command df -k -- "$df_root" 2>/dev/null | awk 'NR==2{print $4}')"
+        [[ -z "$available_kb" ]] && available_kb=0
+        dev_total_kb="$(_dev_prune_total_kb)"
+
+        print "\n${cyn}freshen storage plan${rst}\n"
+        print "  ${bold}Free Space${rst}"
+        print "     ${dim}Volume path:${rst} ${df_root}"
+        print "     ${dim}Available:${rst} $(_human_kb "$available_kb")"
+        if [[ "$target_gib" == <-> && "$target_gib" -gt 0 ]]; then
+            target_kb=$(( target_gib * 1024 * 1024 ))
+            gap_kb=$(( target_kb - available_kb ))
+            restore_pct="$(_percent "$available_kb" "$target_kb")"
+            restore_bar="$(_progress_bar "$available_kb" "$target_kb" 28)"
+            print "     ${dim}Restore readiness:${rst} [${restore_bar}] ${restore_pct}%"
+            if (( gap_kb > 0 )); then
+                print "     ${dim}Restore target:${rst} ${target_gib} GiB free · need $(_human_kb "$gap_kb") more"
+            else
+                print "     ${dim}Restore target:${rst} ${target_gib} GiB free · already covered"
+            fi
+        elif [[ "$target_gib" != "0" ]]; then
+            _warn "--restore-target-gib must be a positive integer: ${target_gib}"
+        fi
+        print
+
+        storage_paths=(
+            "$HOME/Library/Caches"
+            "$HOME/.cache"
+            "$HOME/Downloads"
+            "$HOME/Library/Developer"
+            "$HOME/Library/Application Support/Google"
+            "$HOME/Library/Application Support/LM Studio"
+            "$HOME/.docker"
+        )
+        if [[ "$root" != "$HOME" && -d "$root" ]]; then
+            storage_paths=("$root" "${storage_paths[@]}")
+        fi
+
+        tmp_sizes=""
+        if [[ "${FRESHEN_STORAGE_SCAN_SURFACES:-0}" == "1" ]]; then
+            tmp_sizes="$(mktemp "${TMPDIR:-/tmp}/freshen.storage.XXXXXX")" || {
+                _warn "Could not create temporary storage inventory"
+                return 0
+            }
+
+            for storage_path in "${storage_paths[@]}"; do
+                [[ -d "$storage_path" ]] || continue
+                size_kb="$(_du_kb "$storage_path" "${FRESHEN_STORAGE_DU_TIMEOUT_SEC:-30}")" || continue
+                [[ -z "$size_kb" ]] && continue
+                printf '%s\t%s\n' "$size_kb" "$storage_path" >> "$tmp_sizes"
+            done
+        fi
+
+        print "  ${bold}Large Local Surfaces${rst}"
+        if [[ "${FRESHEN_STORAGE_SCAN_SURFACES:-0}" != "1" ]]; then
+            print "     ${dim}Skipped broad surface sizing by default; set FRESHEN_STORAGE_SCAN_SURFACES=1 for bounded du probes.${rst}"
+        elif [[ -s "$tmp_sizes" ]]; then
+            while IFS=$'\t' read -r size_kb storage_path; do
+                (( shown >= limit )) && break
+                [[ -z "$storage_path" ]] && continue
+                print "     $(_human_kb "$size_kb")  ${storage_path}"
+                (( shown++ ))
+            done < <(command sort -nr "$tmp_sizes" 2>/dev/null)
+        else
+            print "     ${dim}No configured local surfaces found.${rst}"
+        fi
+        [[ -n "$tmp_sizes" ]] && command rm -f "$tmp_sizes" 2>/dev/null
+        print
+
+        print "  ${bold}Regenerable Dev Dirs${rst}"
+        print "     ${dim}Root:${rst} ${dev_prune_root}"
+        local dev_count="$dev_prune_candidate_count"
+        local dev_total_human
+        dev_total_human="$(_human_kb "$dev_total_kb")"
+        print "     ${dim}Candidates:${rst} ${dev_count} (${dev_total_human})"
+        if (( dev_count > 0 )); then
+            local idx dev_limit=12 dev_size_human
+            for (( idx = 1; idx <= dev_count && idx <= dev_limit; idx++ )); do
+                dev_size_human="$(_human_kb "${dev_prune_sizes[$idx]}")"
+                print "        ${dev_size_human}  ${dev_prune_paths[$idx]}"
+            done
+            (( dev_count > dev_limit )) && print "        ... $(( dev_count - dev_limit )) more"
+        fi
+        print "     ${dim}Action:${rst} report only; use --dev-prune after reviewing"
+        print
+
+        print "  ${bold}Next Actions${rst}"
+        print "     ${dim}Safe report:${rst} freshen --storage-plan --restore-target-gib=${target_gib:-0}"
+        print "     ${dim}Dev preview:${rst} freshen --dry-run --dev-prune --dev-prune-root=PATH"
+        print "     ${dim}Dev cleanup:${rst} freshen --yes --dev-prune --dev-prune-root=PATH"
+        if [[ "$target_gib" == <-> && "$target_gib" -gt 0 && "$gap_kb" -gt 0 ]]; then
+            print "     ${ylw}!${rst} Restore is still short by $(_human_kb "$gap_kb"); do not start a large restore yet."
+        fi
+        print
+
+        print "  ${bold}Scan Bounds${rst}"
+        print "     ${dim}Dev max depth:${rst} ${FRESHEN_DEV_PRUNE_MAX_DEPTH:-5}"
+        print "     ${dim}Dev max scanned:${rst} ${FRESHEN_DEV_PRUNE_MAX_SCAN:-400}"
+        print "     ${dim}Dev max kept:${rst} ${FRESHEN_DEV_PRUNE_MAX_ITEMS:-50}"
+        print "     ${dim}Surface sizing:${rst} $([[ "${FRESHEN_STORAGE_SCAN_SURFACES:-0}" == "1" ]] && print enabled || print disabled)"
+        print
+    }
+
+    _phase_icon() {
+        case "$1" in
+            queued)   print -r -- "·" ;;
+            running)  print -r -- "↻" ;;
+            done)     print -r -- "✓" ;;
+            degraded) print -r -- "!" ;;
+            failed)   print -r -- "✗" ;;
+            skipped)  print -r -- "-" ;;
+            *)        print -r -- "·" ;;
+        esac
+    }
+
+    _phase_color() {
+        case "$1" in
+            done)     print -r -- "$grn" ;;
+            degraded) print -r -- "$ylw" ;;
+            failed)   print -r -- "$red" ;;
+            running)  print -r -- "$cyn" ;;
+            skipped)  print -r -- "$dim" ;;
+            *)        print -r -- "$rst" ;;
+        esac
+    }
+
+    _phase_status_word() {
+        case "$1" in
+            queued)   print -r -- "queued" ;;
+            running)  print -r -- "running" ;;
+            done)     print -r -- "done" ;;
+            degraded) print -r -- "degraded" ;;
+            failed)   print -r -- "failed" ;;
+            skipped)  print -r -- "skipped" ;;
+            *)        print -r -- "$1" ;;
+        esac
+    }
+
+    _now_ms() {
+        if [[ -n "${EPOCHREALTIME:-}" ]]; then
+            printf "%d" $(( EPOCHREALTIME * 1000 ))
+        else
+            printf "%d" $(( EPOCHSECONDS * 1000 ))
+        fi
+    }
+
+    _terminal_width() {
+        local cols="${COLUMNS:-80}"
+        [[ "$cols" == <-> && "$cols" -ge 40 ]] || cols=80
+        print -r -- "$cols"
+    }
+
+    _truncate() {
+        local text="$1" width="$2"
+        if (( ${#text} <= width )); then
+            print -r -- "$text"
+        elif (( width > 1 )); then
+            print -r -- "${text[1,$(( width - 1 ))]}…"
+        else
+            print -r -- ""
+        fi
+    }
+
+    _render_dashboard() {
+        [[ "$_render_mode" == live ]] || return 0
+
+        local cols="$(_terminal_width)"
+        local key state icon detail elapsed row
+        if (( ! _render_started )); then
+            printf '\e[?25l'
+            _render_started=1
+        fi
+
+        printf '\e[H\e[2J'
+        print "${cyn}🍃 freshen${rst}  ${dim}${_current_label:-system maintenance}${rst}"
+        print "${dim}Log:${rst} ${_log_file}"
+        print "${dim}$(_progress_meter)${rst}"
+        print
+        for key in "${_phase_order[@]}"; do
+            state="${_phase_state[$key]}"
+            icon="$(_phase_icon "$state")"
+            detail="${_phase_detail[$key]}"
+            elapsed="${_phase_elapsed[$key]}"
+            [[ -n "$elapsed" && "$elapsed" != "0" ]] && detail="${detail:+${detail} · }$(_fmt_dur "$elapsed")"
+            row="  ${icon} ${_phase_label[$key]}: $(_phase_status_word "$state")${detail:+ — ${detail}}"
+            print -r -- "$(_truncate "$row" "$cols")"
+        done
+        print
+        print "${dim}Press q between phases to stop after the current phase.${rst}"
+    }
+
+    _render_tick() {
+        local force="${1:-0}"
+        [[ "$_render_mode" == live ]] || return 0
+        local now="$(_now_ms)"
+        if (( ! force && now - _last_render_ms < _render_interval_ms )); then
+            return 0
+        fi
+        _last_render_ms="$now"
+        _render_dashboard
+    }
+
+    _finish_render() {
+        if (( _render_started )); then
+            printf '\e[?25h\e[H\e[2J'
+            _render_started=0
+        fi
+    }
+
+    _sanitize_output() {
+        local line
+        while IFS= read -r line; do
+            if [[ "${line:l}" == *password* ]]; then
+                print -r -- "[redacted credential prompt]"
+            elif [[ "${line:l}" == *token* || "${line:l}" == *bearer* || "${line:l}" == *authorization* || "${line:l}" == *secret* || "${line:l}" == *api_key* || "${line:l}" == *api-key* || "${line:l}" == *x-api-key* || "${line:l}" == *apikey* || "${line:l}" == *credential* ]]; then
+                print -r -- "[redacted sensitive output]"
+            else
+                print -r -- "$line"
+            fi
+        done <<< "$1"
+    }
+
+    _load_mas_outdated() {
+        local file="$1"
+        local line
+        out_mas=()
+        [[ -f "$file" ]] || return 0
+        while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            if [[ "$line" == [0-9]*[[:space:]]* ]]; then
+                out_mas+=("$line")
+            else
+                print -r -- "[mas outdated] $(_sanitize_output "$line")" >> "$_log_file"
+            fi
+        done < "$file"
+    }
+
+    _mas_account_is_available() {
+        env MAS_NO_AUTO_INDEX="${MAS_NO_AUTO_INDEX:-1}" mas account >/dev/null
+    }
+
+    _cache_timeout_for() {
+        case "$1" in
+            pnpm|uv|gem|docker) _positive_int_env FRESHEN_HEAVY_CACHE_TIMEOUT_SEC 300 ;;
+            *)                  print -r -- "$_timeout_cache" ;;
+        esac
+    }
+
+    _is_safe_cache_path() {
+        local path="$1"
+        local home_real path_real bun_default_real
+        [[ -n "$path" ]] || return 1
+        [[ "$path" != "/" && "$path" != "$HOME" ]] || return 1
+        [[ "$path" != *'|'* ]] || return 1
+        [[ "$path" == "$HOME"/* ]] || return 1
+        [[ "$path" != *"/.."* && "$path" != *"/../"* ]] || return 1
+        home_real="${HOME:A}"
+        path_real="${path:A}"
+        bun_default_real="${home_real}/.bun/install/cache"
+        [[ -n "$home_real" && -n "$path_real" ]] || return 1
+        [[ "$path_real" != "$home_real" && "$path_real" == "$home_real"/* ]] || return 1
+        [[ "$path_real" == "$bun_default_real" ]] || return 1
+        return 0
+    }
+
+    __freshen_refuse_bun_cache() {
+        print -u2 -r -- "bun: refusing unsafe cache path ${_bun_cache_refusal}"
+        return 1
+    }
+
+    _prepare_sudo_for_casks() {
+        (( sudo_preflight )) || return 0
+        (( _sudo_ready )) && return 0
+        command -v sudo >/dev/null 2>&1 || {
+            _err "sudo not found; cannot preflight cask installer privileges"
+            return 1
+        }
+        (( quiet )) || print "  ${dim}Cask installers may need admin privileges; validating sudo once before upgrades.${rst}"
+        if ! sudo -v; then
+            _err "sudo preflight failed; cask upgrades skipped before starting installers"
+            return 1
+        fi
+        _sudo_ready=1
+        (
+            while true; do
+                sleep 60
+                sudo -n -v >/dev/null 2>&1 || exit 0
+            done
+        ) &
+        _sudo_keepalive_pid=$!
+        return 0
+    }
+
+    _stop_sudo_keepalive() {
+        if (( _sudo_keepalive_pid > 0 )); then
+            kill "$_sudo_keepalive_pid" 2>/dev/null
+            wait "$_sudo_keepalive_pid" 2>/dev/null
+            _sudo_keepalive_pid=0
+        fi
+    }
+
+    _log_phase() {
+        local key="$1" message="$2"
+        printf '[%s] [%s] %s\n' \
+            "$(strftime '%Y-%m-%d %H:%M:%S' "$EPOCHSECONDS" 2>/dev/null || date '+%Y-%m-%d %H:%M:%S')" \
+            "${_phase_label[$key]}" \
+            "$message" >> "$_log_file"
+    }
+
+    _print_prefixed_output() {
+        local output="$1"
+        [[ -z "$output" ]] && return 0
+        local line
+        while IFS= read -r line; do
+            print "     ${dim}│${rst} ${line}"
+        done <<< "$output"
+    }
+
+    _emit_phase() {
+        local key="$1"
+        local state="${_phase_state[$key]}"
+        local detail="${_phase_detail[$key]}"
+        local elapsed="${_phase_elapsed[$key]}"
+        local attempts="${_phase_attempted[$key]}"
+        local upgraded="${_phase_upgraded[$key]}"
+        local failed="${_phase_failed[$key]}"
+        local unknown="${_phase_unknown[$key]}"
+        local skipped="${_phase_skipped[$key]}"
+
+        if (( quiet )) && [[ "$state" != "failed" && "$state" != "degraded" ]]; then
+            return 0
+        fi
+
+        local icon="$(_phase_icon "$state")"
+        local color="$(_phase_color "$state")"
+        local state_word="$(_phase_status_word "$state")"
+        local extra=""
+
+        if (( attempts > 0 )); then
+            extra="attempted ${attempts}"
+            (( upgraded > 0 )) && extra="${extra}, confirmed ${upgraded}"
+            (( failed > 0 )) && extra="${extra}, failed ${failed}"
+            (( unknown > 0 )) && extra="${extra}, unresolved ${unknown}"
+        elif (( skipped > 0 )); then
+            extra="skipped ${skipped}"
+        fi
+
+        local detail_has_counts=0
+        [[ "$detail" == *attempted* || "$detail" == *confirmed* || "$detail" == *failed* || "$detail" == *unresolved* || "$detail" == *skipped* ]] && detail_has_counts=1
+        [[ -n "$extra" && -n "$detail" && $detail_has_counts -eq 0 ]] && detail="${detail} · ${extra}"
+        [[ -z "$detail" ]] && detail="$extra"
+        [[ -n "$elapsed" && "$elapsed" != "0" ]] && detail="${detail:+${detail} · }$(_fmt_dur "$elapsed")"
+        [[ "$_render_mode" != live && "${_total_planned:-0}" -gt 0 ]] && detail="${detail:+${detail} · }$(_progress_meter)"
+
+        if [[ "$_render_mode" == live ]]; then
+            _render_tick 1
+            return 0
+        fi
+
+        print "  ${color}${icon}${rst} ${bold}${_phase_label[$key]}${rst}: ${state_word}${detail:+ — ${detail}}"
+    }
+
+    _phase_attention_detail() {
+        local key="$1"
+        local detail="${_phase_detail[$key]}"
+        local attempts="${_phase_attempted[$key]}"
+        local upgraded="${_phase_upgraded[$key]}"
+        local failed="${_phase_failed[$key]}"
+        local unknown="${_phase_unknown[$key]}"
+        local extra=""
+
+        if (( attempts > 0 )); then
+            extra="attempted ${attempts}"
+            (( upgraded > 0 )) && extra="${extra}, confirmed ${upgraded}"
+            (( failed > 0 )) && extra="${extra}, failed ${failed}"
+            (( unknown > 0 )) && extra="${extra}, unresolved ${unknown}"
+        fi
+
+        local detail_has_counts=0
+        [[ "$detail" == *attempted* || "$detail" == *confirmed* || "$detail" == *failed* || "$detail" == *unresolved* ]] && detail_has_counts=1
+        [[ -n "$extra" && -n "$detail" && $detail_has_counts -eq 0 ]] && detail="${detail} · ${extra}"
+        [[ -z "$detail" ]] && detail="$extra"
+        [[ -n "$detail" ]] && print -r -- "$detail" || print -r -- "review log"
+    }
+
+    _set_phase() {
+        local key="$1" state="$2" detail="$3" elapsed="$4"
+        _phase_state[$key]="$state"
+        _phase_detail[$key]="$detail"
+        _phase_elapsed[$key]="${elapsed:-${_phase_elapsed[$key]}}"
+        _emit_phase "$key"
+    }
+
+    _mark_skipped() {
+        local key="$1" reason="$2"
+        _phase_skipped[$key]=1
+        _phase_state[$key]="skipped"
+        _phase_detail[$key]="$reason"
+        _phase_elapsed[$key]=0
+    }
+
+    _warn() {
+        _warnings+=("$1")
+        print -u2 "  ${ylw}!${rst} $1"
+    }
+
+    _err() {
+        _errors+=("$1")
+        print -u2 "  ${red}✗${rst} $1"
+    }
+
+    _classify_batch_item() {
+        local pkg="$1" output="$2"
+        local lower_output="${output:l}"
+        local lower_pkg="${pkg:l}"
+
+        if [[ "$lower_output" == *"error:"*"${lower_pkg}"* || "$lower_output" == *"failed during:"*"${lower_pkg}"* ]]; then
+            REPLY="failed"
+            return 0
+        fi
+        if print -r -- "$output" | grep -Eq "^${pkg//./\\.}([[:space:]:]).*->" 2>/dev/null; then
+            REPLY="upgraded"
+            return 0
+        fi
+        if [[ "$output" == *"==> Upgrading ${pkg}"* || "$output" == *"==> Upgrading Cask ${pkg}"* ]]; then
+            REPLY="upgraded"
+            return 0
+        fi
+        REPLY="unknown"
+    }
+
+    _classify_batch_items() {
+        local output="$1"
+        shift
+
+        typeset -gA _batch_status
+        local pkg line lower_line candidate original
+        local -A pkg_lookup
+
+        _batch_status=()
+        pkg_lookup=()
+        for pkg in "$@"; do
+            _batch_status[$pkg]="unknown"
+            pkg_lookup[${pkg:l}]="$pkg"
+        done
+
+        while IFS= read -r line; do
+            lower_line="${line:l}"
+
+            case "$line" in
+                "==> Upgrading Cask "*)
+                    candidate="${line#==> Upgrading Cask }"
+                    candidate="${candidate%%[[:space:]:]*}"
+                    original="${pkg_lookup[${candidate:l}]}"
+                    [[ -n "$original" ]] && _batch_status[$original]="upgraded"
+                    ;;
+                "==> Upgrading "*)
+                    candidate="${line#==> Upgrading }"
+                    candidate="${candidate%%[[:space:]:]*}"
+                    original="${pkg_lookup[${candidate:l}]}"
+                    [[ -n "$original" ]] && _batch_status[$original]="upgraded"
+                    ;;
+                *" -> "*)
+                    candidate="${line%%[[:space:]:]*}"
+                    original="${pkg_lookup[${candidate:l}]}"
+                    [[ -n "$original" ]] && _batch_status[$original]="upgraded"
+                    ;;
+            esac
+
+            if [[ "$lower_line" == *error:* || "$lower_line" == *"failed during:"* || "$lower_line" == *failed* ]]; then
+                for pkg in "$@"; do
+                    [[ "$lower_line" == *"${pkg:l}"* ]] && _batch_status[$pkg]="failed"
+                done
+            fi
+        done <<< "$output"
+    }
+
+    _run_with_timeout() {
+        local key="$1" label="$2" timeout_s="$3"
+        shift 3
+
+        local tmpout timeout_flag
+        tmpout="$(mktemp "${TMPDIR:-/tmp}/freshen.${key}.XXXXXX")" || {
+            _run_output=""
+            _run_rc=1
+            _run_timed_out=0
+            _run_elapsed=0
+            _phase_state[$key]="failed"
+            _phase_detail[$key]="could not create temporary command output"
+            _phase_failed[$key]=1
+            [[ -n "$_log_file" ]] && _log_phase "$key" "SETUP FAILED ${label}: tmpout"
+            return 1
+        }
+        timeout_flag="$(mktemp "${TMPDIR:-/tmp}/freshen.${key}.timeout.XXXXXX")" || {
+            rm -f "$tmpout"
+            _run_output=""
+            _run_rc=1
+            _run_timed_out=0
+            _run_elapsed=0
+            _phase_state[$key]="failed"
+            _phase_detail[$key]="could not create temporary timeout marker"
+            _phase_failed[$key]=1
+            [[ -n "$_log_file" ]] && _log_phase "$key" "SETUP FAILED ${label}: timeout flag"
+            return 1
+        }
+        rm -f "$timeout_flag"
+        _active_run_tmpout="$tmpout"
+        _active_run_timeout_flag="$timeout_flag"
+
+        _current_phase="$key"
+        _current_label="$label"
+        _phase_state[$key]="running"
+        _phase_detail[$key]="$label"
+        _emit_phase "$key"
+        _log_phase "$key" "START ${label} :: $(printf '%q ' "$@")"
+
+        local started=$EPOCHSECONDS
+        "$@" > "$tmpout" 2>&1 &
+        local cmd_pid=$!
+        local killer_pid=0
+        _current_cmd_pid=$cmd_pid
+
+        if (( timeout_s > 0 )); then
+            (
+                sleep "$timeout_s"
+                print -r -- "1" >| "$timeout_flag"
+                kill -TERM "$cmd_pid" 2>/dev/null || exit 0
+                sleep 2
+                kill -KILL "$cmd_pid" 2>/dev/null || exit 0
+            ) &
+            killer_pid=$!
+            _current_timeout_pid=$killer_pid
+        fi
+
+        wait "$cmd_pid"
+        local rc=$?
+
+        if (( killer_pid > 0 )); then
+            kill "$killer_pid" 2>/dev/null
+            wait "$killer_pid" 2>/dev/null
+        fi
+
+        local elapsed=$(( EPOCHSECONDS - started ))
+        local output=""
+        if [[ -f "$tmpout" ]]; then
+            output="$(_sanitize_output "$(< "$tmpout")")"
+        fi
+        rm -f "$tmpout"
+        _active_run_tmpout=""
+
+        local timed_out=0
+        [[ -f "$timeout_flag" ]] && timed_out=1
+        rm -f "$timeout_flag"
+        _active_run_timeout_flag=""
+
+        if [[ -n "$output" ]]; then
+            print -r -- "$output" >> "$_log_file"
+            (( verbose )) && _print_prefixed_output "$output"
+        fi
+
+        (( __interrupt_flag )) && rc=130
+        _run_output="$output"
+        _run_rc="$rc"
+        _run_timed_out="$timed_out"
+        _run_elapsed="$elapsed"
+        _phase_timeout[$key]="$timed_out"
+        _log_phase "$key" "END rc=${rc} timeout=${timed_out} elapsed=${elapsed}s"
+
+        _current_cmd_pid=0
+        _current_timeout_pid=0
+        _current_phase=""
+        _current_label=""
+        _render_tick 1
+        return 0
+    }
+
+    _quit_if_requested() {
+        if (( __quit_flag )); then
+            return 0
+        fi
+        return 1
+    }
+
+    _check_quit() {
+        (( __quit_flag )) && return 0
+        (( ! _is_interactive )) && return 1
+        local qkey=""
+        read -t 0 -k 1 qkey 2>/dev/null || return 1
+        if [[ "$qkey" == "q" || "$qkey" == "Q" ]]; then
+            __quit_flag=1
+            return 0
+        fi
+        return 1
+    }
+
+    __freshen_teardown() {
+        (( _current_timeout_pid > 0 )) && kill "$_current_timeout_pid" 2>/dev/null
+        (( _current_cmd_pid > 0 )) && kill -TERM "$_current_cmd_pid" 2>/dev/null
+        (( _inventory_formulae_pid > 0 )) && kill -TERM "$_inventory_formulae_pid" 2>/dev/null
+        (( _inventory_casks_pid > 0 )) && kill -TERM "$_inventory_casks_pid" 2>/dev/null
+        (( _mas_timeout_pid > 0 )) && kill "$_mas_timeout_pid" 2>/dev/null
+        (( _mas_outdated_pid > 0 )) && kill -TERM "$_mas_outdated_pid" 2>/dev/null
+        _inventory_formulae_pid=0
+        _inventory_casks_pid=0
+        [[ -n "$_inventory_tmp" && -d "$_inventory_tmp" ]] && rm -rf -- "$_inventory_tmp"
+        _inventory_tmp=""
+        [[ -n "$_active_run_tmpout" ]] && rm -f -- "$_active_run_tmpout"
+        _active_run_tmpout=""
+        [[ -n "$_active_run_timeout_flag" ]] && rm -f -- "$_active_run_timeout_flag"
+        _active_run_timeout_flag=""
+        [[ -n "$_dev_prune_tmp_candidates" ]] && rm -f -- "$_dev_prune_tmp_candidates"
+        _dev_prune_tmp_candidates=""
+        _stop_sudo_keepalive
+        _finish_render
+    }
+
+    __freshen_cleanup() {
+        (( __interrupt_flag )) && return 0
+        __interrupt_flag=1
+        __quit_flag=1
+        __freshen_teardown
+        local completed="${_processed_total}"
+        local remaining=$(( _total_planned - completed ))
+        (( remaining < 0 )) && remaining=0
+        print
+        _warn "Interrupted — completed ${completed}, remaining ${remaining}, active phase ${_current_phase:-none}"
+        [[ -n "$_log_file" ]] && print "     ${dim}Log: ${_log_file}${rst}"
+    }
+
+    __freshen_exit() {
+        __freshen_teardown
+    }
+
+    trap '__freshen_cleanup; return 130' INT TERM
+    trap '__freshen_exit' EXIT
+
+    if (( storage_plan )); then
+        _collect_dev_prune_candidates "$dev_prune_root"
+        _print_storage_plan "$storage_root" "$restore_target_gib"
+        return 0
+    fi
+
+    if (( quiet && ! assume_yes && ! dry_run )); then
+        _err "--quiet mutation runs require --yes; use --dry-run to preview"
+        return 1
+    fi
+
+    local needs_brew=0
+    (( do_formulae || do_casks || run_cleanup || run_doctor )) && needs_brew=1
+
+    if (( needs_brew )) && ! command -v brew >/dev/null 2>&1; then
+        _err "Homebrew not found — install from https://brew.sh"
+        return 127
+    fi
+
+    if (( ! do_formulae )); then
+        (( clean_only )) && _mark_skipped formulae "disabled by --clean-only" || _mark_skipped formulae "disabled by --cask-only"
+    fi
+    if (( ! do_casks )); then
+        (( clean_only )) && _mark_skipped casks "disabled by --clean-only" || _mark_skipped casks "disabled by --formula-only"
+    fi
+    if (( ! run_mas )); then
+        (( clean_only )) && _mark_skipped apps "disabled by --clean-only" || _mark_skipped apps "disabled by --no-mas"
+    elif ! command -v mas >/dev/null 2>&1; then
+        _mark_skipped apps "mas not available"
+        run_mas=0
+    fi
+    if (( ! run_cleanup )); then
+        _mark_skipped cleanup "disabled by --no-cleanup"
+    fi
+    if (( ! run_cache )); then
+        _mark_skipped caches "disabled by --no-cache"
+    fi
+    if (( ! run_doctor )); then
+        _mark_skipped doctor "not requested"
+    fi
+
+    (( quiet )) || print "\n${cyn}🍃 freshen${rst}\n"
+    (( ! quiet )) && print "  ${dim}Log: ${_log_file}${rst}"
+    (( _is_interactive && ! quiet )) && print "  ${dim}Press q between phases to stop after the current phase.${rst}\n"
+
+    local mode_label="batch"
+    (( clean_only )) && mode_label="clean-only"
+    (( sequential )) && mode_label="sequential"
+    (( quiet )) || {
+        print "  ${bold}Plan${rst}"
+        print "     ${dim}Mode:${rst} ${mode_label}"
+        print "     ${dim}Casks:${rst} $([[ $cask_greedy -eq 1 ]] && print 'greedy' || print 'standard')"
+        print "     ${dim}Mac App Store:${rst} $([[ $run_mas -eq 1 ]] && print 'enabled' || print 'disabled')"
+        print "     ${dim}Cleanup:${rst} $([[ $run_cleanup -eq 1 ]] && print 'enabled' || print 'disabled')"
+        print "     ${dim}Caches:${rst} $([[ $run_cache -eq 1 ]] && print 'enabled' || print 'disabled')"
+        print "     ${dim}Dev prune:${rst} $([[ $run_dev_prune -eq 1 ]] && print "enabled (${dev_prune_root})" || print 'disabled')"
+        print "     ${dim}Doctor:${rst} $([[ $run_doctor -eq 1 ]] && print 'enabled' || print 'disabled')"
+        print
+    }
+
+    local -a out_formulae=() out_casks=() out_mas=()
+    local nf=0 nc=0 nm=0
+
+    local inventory_degraded=0
+
+    if (( clean_only )); then
+        _mark_skipped inventory "disabled by --clean-only"
+    else
+    local tmp
+    tmp="$(mktemp -d "${TMPDIR:-/tmp}/freshen.inventory.XXXXXX")" || {
+        _err "Could not create temporary inventory workspace"
+        return 1
+    }
+    _inventory_tmp="$tmp"
+
+    local t0="$EPOCHSECONDS"
+    local mas_outdated_timed_out=0
+
+    _run_with_timeout inventory "Updating Homebrew metadata" 0 brew update
+    _quit_if_requested && return 130
+    t_update=$(( EPOCHSECONDS - t0 ))
+
+    if (( _run_rc != 0 )); then
+        inventory_degraded=1
+        _warn "brew update reported issues; continuing with inventory"
+    fi
+
+    local formulae_rc=0 casks_rc=0 mas_outdated_rc=0
+    _inventory_formulae_pid=0
+    _inventory_casks_pid=0
+    (( do_formulae )) && brew outdated --formula --quiet > "$tmp/formulae" 2>"$tmp/formulae.err" &
+    (( do_formulae )) && _inventory_formulae_pid=$!
+    if (( do_casks && cask_greedy )); then
+        brew outdated --cask --greedy --quiet > "$tmp/casks" 2>"$tmp/casks.err" &
+    elif (( do_casks )); then
+        brew outdated --cask --quiet > "$tmp/casks" 2>"$tmp/casks.err" &
+    fi
+    (( do_casks )) && _inventory_casks_pid=$!
+
+    if (( run_mas )); then
+        _run_with_timeout inventory "Checking Mac App Store inventory" "$_timeout_mas" env MAS_NO_AUTO_INDEX="${MAS_NO_AUTO_INDEX:-1}" mas outdated
+        mas_outdated_rc=$_run_rc
+        mas_outdated_timed_out=$_run_timed_out
+        [[ -n "$_run_output" ]] && print -r -- "$_run_output" >| "$tmp/mas"
+        (( __interrupt_flag )) && return 130
+    fi
+
+    (( do_formulae )) && wait "$_inventory_formulae_pid"
+    (( do_formulae )) && formulae_rc=$?
+    _inventory_formulae_pid=0
+    (( do_casks )) && wait "$_inventory_casks_pid"
+    (( do_casks )) && casks_rc=$?
+    _inventory_casks_pid=0
+
+    [[ -s "$tmp/formulae" ]] && out_formulae=("${(@f)$(< "$tmp/formulae")}")
+    [[ -s "$tmp/casks" ]] && out_casks=("${(@f)$(< "$tmp/casks")}")
+    if (( run_mas )) && [[ -s "$tmp/mas" ]]; then
+        if (( mas_outdated_rc == 0 )); then
+            _load_mas_outdated "$tmp/mas"
+        else
+            print -r -- "$(_sanitize_output "$(< "$tmp/mas")")" >> "$_log_file"
+        fi
+    fi
+    [[ -s "$tmp/formulae.err" ]] && print -r -- "$(_sanitize_output "$(< "$tmp/formulae.err")")" >> "$_log_file"
+    [[ -s "$tmp/casks.err" ]] && print -r -- "$(_sanitize_output "$(< "$tmp/casks.err")")" >> "$_log_file"
+    rm -rf "$tmp" 2>/dev/null
+    _inventory_tmp=""
+
+    (( formulae_rc != 0 )) && inventory_degraded=1
+    (( casks_rc != 0 )) && inventory_degraded=1
+    (( run_mas && mas_outdated_rc != 0 )) && inventory_degraded=1
+
+    nf=${#out_formulae}
+    nc=${#out_casks}
+    nm=${#out_mas}
+    _total_planned=$(( nf + nc + nm ))
+    _phase_attempted[inventory]=$_total_planned
+    _phase_detail[inventory]="formulae ${nf}, casks ${nc}, apps ${nm}"
+    _phase_elapsed[inventory]=$t_update
+
+    if (( inventory_degraded )); then
+        _set_phase inventory degraded "formulae ${nf}, casks ${nc}, apps ${nm}" "$t_update"
+    else
+        _set_phase inventory done "formulae ${nf}, casks ${nc}, apps ${nm}" "$t_update"
+    fi
+
+    _phase_attempted[formulae]=$nf
+    _phase_attempted[casks]=$nc
+    _phase_attempted[apps]=$nm
+
+    if (( do_formulae && nf == 0 )); then
+        _set_phase formulae done "nothing outdated" 0
+    fi
+    if (( do_casks && nc == 0 )); then
+        _set_phase casks done "nothing outdated" 0
+    fi
+    if (( run_mas && nm == 0 )); then
+        _set_phase apps done "nothing outdated" 0
+    fi
+    fi
+
+    (( run_cache && run_dev_prune )) && _collect_dev_prune_candidates "$dev_prune_root"
+
+    (( quiet || clean_only )) || {
+        print
+        print "  ${bold}Outdated${rst}"
+        print "     ${dim}Formulae:${rst} ${nf}"
+        (( nf > 0 )) && print "        ${(j:, :)out_formulae}"
+        print "     ${dim}Casks:${rst} ${nc}"
+        (( nc > 0 )) && print "        ${(j:, :)out_casks}"
+        print "     ${dim}App Store:${rst} ${nm}"
+        (( nm > 0 )) && print "        ${(j:, :)out_mas}"
+        print
+    }
+
+    (( run_cache && run_dev_prune && ! quiet )) && _print_dev_prune_plan
+
+    if (( dry_run )); then
+        if (( quiet == 0 )); then
+            if (( clean_only )); then
+                print "  ${blu}-${rst} Clean-only dry run: no changes made"
+            else
+                print "  ${blu}-${rst} Dry run: inventory only, no changes made"
+            fi
+            print
+        fi
+        _finish_render
+        return $(( (inventory_degraded || dev_prune_root_refused) ? 1 : 0 ))
+    fi
+
+    if (( ! assume_yes )); then
+        if (( ! _is_interactive )); then
+            _err "Non-interactive — use --yes to proceed"
+            return 1
+        fi
+        printf "  ${bold}Proceed?${rst} [Y/n/q] "
+        local reply=""
+        read -k 1 reply
+        [[ "$reply" == $'\n' ]] || print
+        if [[ "$reply" == [nNqQ] ]]; then
+            _warn "Cancelled"
+            return 0
+        fi
+        print
+    fi
+
+    if (( ! sequential )); then
+        if (( nf > 0 )); then
+            _run_with_timeout formulae "Upgrading ${nf} formulae" 0 brew upgrade "${out_formulae[@]}"
+            t_formulae=$_run_elapsed
+            local f_output="$_run_output" f_rc=$_run_rc
+            local f_upgraded=0 f_failed=0 f_unknown=0
+            local pkg item_status
+            _classify_batch_items "$f_output" "${out_formulae[@]}"
+            for pkg in "${out_formulae[@]}"; do
+                item_status="${_batch_status[$pkg]:-unknown}"
+                case "$item_status" in
+                    upgraded) (( f_upgraded++ )) ;;
+                    failed)
+                        (( f_failed++ ))
+                        _err "${pkg}: formula upgrade failed"
+                        ;;
+                    *)
+                        (( f_unknown++ ))
+                        ;;
+                esac
+            done
+
+            _phase_upgraded[formulae]=$f_upgraded
+            _phase_failed[formulae]=$f_failed
+            _phase_unknown[formulae]=$f_unknown
+            _processed_total=$(( _processed_total + nf ))
+            _upgraded_total=$(( _upgraded_total + f_upgraded ))
+            _failed_total=$(( _failed_total + f_failed ))
+
+            local formula_detail="attempted ${nf}, confirmed ${f_upgraded}"
+            (( f_failed > 0 )) && formula_detail="${formula_detail}, failed ${f_failed}"
+            (( f_unknown > 0 )) && formula_detail="${formula_detail}, unresolved ${f_unknown}"
+
+            if (( f_failed == 0 && f_unknown == 0 && f_upgraded == nf )); then
+                (( f_rc != 0 )) && formula_detail="${formula_detail}, caveats in log"
+                _set_phase formulae done "$formula_detail" "$t_formulae"
+            elif (( f_upgraded > 0 || f_failed > 0 || f_unknown > 0 )); then
+                _set_phase formulae degraded "$formula_detail" "$t_formulae"
+            else
+                _set_phase formulae failed "formula lane failed before confirmation" "$t_formulae"
+            fi
+            print
+            _check_quit
+            _quit_if_requested && return 130
+        fi
+
+        if (( nc > 0 )); then
+            if ! _prepare_sudo_for_casks; then
+                _phase_failed[casks]=$nc
+                _processed_total=$(( _processed_total + nc ))
+                _failed_total=$(( _failed_total + nc ))
+                _set_phase casks failed "sudo preflight failed; skipped ${nc} casks" 0
+            else
+            local -a cask_cmd=(brew upgrade --cask)
+            (( cask_greedy )) && cask_cmd+=(--greedy)
+            cask_cmd+=("${out_casks[@]}")
+            _run_with_timeout casks "Upgrading ${nc} casks" 0 "${cask_cmd[@]}"
+            t_casks=$_run_elapsed
+            local c_output="$_run_output" c_rc=$_run_rc
+            local c_upgraded=0 c_failed=0 c_unknown=0
+            local c_pkg c_status
+            _classify_batch_items "$c_output" "${out_casks[@]}"
+            for c_pkg in "${out_casks[@]}"; do
+                c_status="${_batch_status[$c_pkg]:-unknown}"
+                case "$c_status" in
+                    upgraded) (( c_upgraded++ )) ;;
+                    failed)
+                        (( c_failed++ ))
+                        _err "${c_pkg}: cask upgrade failed"
+                        ;;
+                    *)
+                        (( c_unknown++ ))
+                        ;;
+                esac
+            done
+
+            _phase_upgraded[casks]=$c_upgraded
+            _phase_failed[casks]=$c_failed
+            _phase_unknown[casks]=$c_unknown
+            _processed_total=$(( _processed_total + nc ))
+            _upgraded_total=$(( _upgraded_total + c_upgraded ))
+            _failed_total=$(( _failed_total + c_failed ))
+
+            local cask_detail="attempted ${nc}, confirmed ${c_upgraded}"
+            (( c_failed > 0 )) && cask_detail="${cask_detail}, failed ${c_failed}"
+            (( c_unknown > 0 )) && cask_detail="${cask_detail}, unresolved ${c_unknown}"
+
+            if (( c_failed == 0 && c_unknown == 0 && c_upgraded == nc )); then
+                (( c_rc != 0 )) && cask_detail="${cask_detail}, caveats in log"
+                _set_phase casks done "$cask_detail" "$t_casks"
+            elif (( c_upgraded > 0 || c_failed > 0 || c_unknown > 0 )); then
+                _set_phase casks degraded "$cask_detail" "$t_casks"
+            else
+                _set_phase casks failed "cask lane failed before confirmation" "$t_casks"
+            fi
+            fi
+            print
+            _check_quit
+            _quit_if_requested && return 130
+        fi
+    else
+        local total_formulae_casks=$(( nf + nc ))
+        local overall_index=0
+
+        if (( nf > 0 )); then
+            _phase_state[formulae]="running"
+            _phase_detail[formulae]="upgrading one-by-one"
+            _emit_phase formulae
+            local t_f0="$EPOCHSECONDS"
+            local pkg f_step_up=0 f_step_fail=0
+            for pkg in "${out_formulae[@]}"; do
+                (( overall_index++ ))
+                _current_phase="formulae"
+                _current_label="$pkg"
+                (( ! quiet )) && printf "     %s[%d/%d total]%s %s\n" "$dim" "$overall_index" "$total_formulae_casks" "$rst" "$pkg"
+                _run_with_timeout formulae "Upgrading formula ${pkg}" 0 brew upgrade "$pkg"
+                if (( _run_rc == 0 )); then
+                    (( f_step_up++ ))
+                    _upgraded_total=$(( _upgraded_total + 1 ))
+                else
+                    (( f_step_fail++ ))
+                    _failed_total=$(( _failed_total + 1 ))
+                    _err "${pkg}: formula upgrade failed (rc=${_run_rc})"
+                fi
+                _processed_total=$(( _processed_total + 1 ))
+                _phase_upgraded[formulae]=$f_step_up
+                _phase_failed[formulae]=$f_step_fail
+                _phase_unknown[formulae]=0
+                _check_quit
+                _quit_if_requested && return 130
+            done
+            t_formulae=$(( EPOCHSECONDS - t_f0 ))
+            if (( f_step_fail > 0 )); then
+                _set_phase formulae degraded "attempted ${nf}, confirmed ${f_step_up}, failed ${f_step_fail}" "$t_formulae"
+            else
+                _set_phase formulae done "attempted ${nf}, confirmed ${f_step_up}" "$t_formulae"
+            fi
+            print
+        fi
+
+        if (( nc > 0 )); then
+            _phase_state[casks]="running"
+            _phase_detail[casks]="upgrading one-by-one"
+            _emit_phase casks
+            local t_c0="$EPOCHSECONDS"
+            local c_pkg c_step_up=0 c_step_fail=0
+            if ! _prepare_sudo_for_casks; then
+                c_step_fail=$nc
+                _failed_total=$(( _failed_total + nc ))
+                _processed_total=$(( _processed_total + nc ))
+                _phase_failed[casks]=$c_step_fail
+                _set_phase casks failed "sudo preflight failed; skipped ${nc} casks" 0
+            else
+            for c_pkg in "${out_casks[@]}"; do
+                (( overall_index++ ))
+                _current_phase="casks"
+                _current_label="$c_pkg"
+                (( ! quiet )) && printf "     %s[%d/%d total]%s %s\n" "$dim" "$overall_index" "$total_formulae_casks" "$rst" "$c_pkg"
+                local -a cask_step_cmd=(brew upgrade --cask)
+                (( cask_greedy )) && cask_step_cmd+=(--greedy)
+                cask_step_cmd+=("$c_pkg")
+                _run_with_timeout casks "Upgrading cask ${c_pkg}" 0 "${cask_step_cmd[@]}"
+                if (( _run_rc == 0 )); then
+                    (( c_step_up++ ))
+                    _upgraded_total=$(( _upgraded_total + 1 ))
+                else
+                    (( c_step_fail++ ))
+                    _failed_total=$(( _failed_total + 1 ))
+                    _err "${c_pkg}: cask upgrade failed (rc=${_run_rc})"
+                fi
+                _processed_total=$(( _processed_total + 1 ))
+                _phase_upgraded[casks]=$c_step_up
+                _phase_failed[casks]=$c_step_fail
+                _phase_unknown[casks]=0
+                _check_quit
+                _quit_if_requested && return 130
+            done
+            t_casks=$(( EPOCHSECONDS - t_c0 ))
+            if (( c_step_fail > 0 )); then
+                _set_phase casks degraded "attempted ${nc}, confirmed ${c_step_up}, failed ${c_step_fail}" "$t_casks"
+            else
+                _set_phase casks done "attempted ${nc}, confirmed ${c_step_up}" "$t_casks"
+            fi
+            fi
+            print
+        fi
+    fi
+
+    _stop_sudo_keepalive
+
+    if (( nm > 0 )); then
+        _run_with_timeout apps "Updating ${nm} App Store apps" "$_timeout_mas" env "MAS_NO_AUTO_INDEX=${MAS_NO_AUTO_INDEX:-1}" mas update
+        _quit_if_requested && return 130
+        t_mas=$_run_elapsed
+        _phase_upgraded[apps]=0
+        _phase_failed[apps]=0
+        _phase_unknown[apps]=$nm
+        _processed_total=$(( _processed_total + nm ))
+        if (( _run_rc == 0 && ! _run_timed_out )); then
+            _phase_upgraded[apps]=$nm
+            _phase_unknown[apps]=0
+            _upgraded_total=$(( _upgraded_total + nm ))
+            _set_phase apps done "attempted ${nm}, confirmed ${nm}" "$t_mas"
+        else
+            _failed_total=$(( _failed_total + nm ))
+            _phase_failed[apps]=$nm
+            _phase_unknown[apps]=0
+            local app_detail="attempted ${nm}, failed ${nm}"
+            (( _run_timed_out )) && app_detail="${app_detail}, timed out"
+            _set_phase apps degraded "$app_detail" "$t_mas"
+        fi
+        print
+    fi
+
+    if (( run_cleanup )); then
+        _run_with_timeout cleanup "Running autoremove + cleanup" "$_timeout_cleanup" brew autoremove
+        _quit_if_requested && return 130
+        local cleanup_output="$_run_output" cleanup_rc=$_run_rc
+        local cleanup_elapsed=$_run_elapsed
+        local cleanup_degraded=0
+        local cleanup_detail="brew autoremove"
+
+        if (( cleanup_rc != 0 || _run_timed_out )); then
+            cleanup_degraded=1
+        fi
+
+        local ar_count
+        ar_count=$(print -r -- "$cleanup_output" | grep -c 'Uninstalling' 2>/dev/null || true)
+        [[ -z "$ar_count" ]] && ar_count=0
+        (( ar_count > 0 )) && cleanup_detail="${cleanup_detail}, removed ${ar_count} orphaned"
+
+        if (( cleanup_degraded )); then
+            _phase_attempted[cleanup]=1
+            _phase_failed[cleanup]=1
+            (( _run_timed_out )) && cleanup_detail="${cleanup_detail}, timed out"
+            _set_phase cleanup degraded "$cleanup_detail" "$cleanup_elapsed"
+        else
+            _run_with_timeout cleanup "Running brew cleanup -s" "$_timeout_cleanup" brew cleanup -s
+            _quit_if_requested && return 130
+            cleanup_elapsed=$(( cleanup_elapsed + _run_elapsed ))
+            if (( _run_rc != 0 || _run_timed_out )); then
+                _phase_attempted[cleanup]=1
+                _phase_failed[cleanup]=1
+                (( _run_timed_out )) && cleanup_detail="${cleanup_detail}, cleanup issues, timed out" || cleanup_detail="${cleanup_detail}, cleanup issues"
+                _set_phase cleanup degraded "$cleanup_detail" "$cleanup_elapsed"
+            else
+                _phase_attempted[cleanup]=1
+                _set_phase cleanup done "$cleanup_detail" "$cleanup_elapsed"
+            fi
+        fi
+        t_cleanup=${_phase_elapsed[cleanup]}
+        print
+    fi
+
+    if (( run_cache )); then
+        local -a cache_names=()
+        local -a cache_commands=()
+
+        if command -v npm >/dev/null 2>&1; then
+            cache_names+=("npm")
+            cache_commands+=("npm|cache|clean|--force")
+        fi
+        if command -v pnpm >/dev/null 2>&1; then
+            cache_names+=("pnpm")
+            cache_commands+=("pnpm|store|prune")
+        fi
+        if command -v yarn >/dev/null 2>&1; then
+            cache_names+=("yarn")
+            cache_commands+=("yarn|cache|clean")
+        fi
+        if command -v bun >/dev/null 2>&1; then
+            local bun_cache_dir="${BUN_INSTALL_CACHE_DIR:-$HOME/.bun/install/cache}"
+            cache_names+=("bun")
+            if _is_safe_cache_path "$bun_cache_dir"; then
+                cache_commands+=("command|rm|-rf|--|${bun_cache_dir}")
+            else
+                _bun_cache_refusal="$bun_cache_dir"
+                cache_commands+=("__freshen_refuse_bun_cache")
+            fi
+        fi
+        if command -v uv >/dev/null 2>&1; then
+            cache_names+=("uv")
+            cache_commands+=("uv|cache|clean")
+        fi
+        if command -v pip >/dev/null 2>&1; then
+            cache_names+=("pip")
+            cache_commands+=("pip|cache|purge")
+        fi
+        if command -v cargo >/dev/null 2>&1 && command -v cargo-cache >/dev/null 2>&1 && [[ -d "$HOME/.cargo/registry/cache" ]]; then
+            cache_names+=("cargo")
+            cache_commands+=("cargo|cache|--autoclean")
+        fi
+        if command -v go >/dev/null 2>&1; then
+            cache_names+=("go")
+            cache_commands+=("go|clean|-cache")
+        fi
+        if command -v gem >/dev/null 2>&1; then
+            cache_names+=("gem")
+            cache_commands+=("gem|cleanup")
+        fi
+        if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+            cache_names+=("docker")
+            cache_commands+=("docker|system|prune|-f")
+        fi
+
+        local dev_prune_count=0 dev_prune_attempt_count=0
+        if (( run_dev_prune )); then
+            dev_prune_count=$dev_prune_candidate_count
+            (( dev_prune_root_refused )) && dev_prune_attempt_count=1 || dev_prune_attempt_count=$dev_prune_count
+        fi
+
+        _phase_attempted[caches]=$(( ${#cache_names} + dev_prune_attempt_count ))
+        if (( ${#cache_names} == 0 && dev_prune_attempt_count == 0 )); then
+            _set_phase caches skipped "no cache targets detected" 0
+        else
+            _phase_state[caches]="running"
+            _phase_detail[caches]="cleaning $(( ${#cache_names} + dev_prune_attempt_count )) cache target(s)"
+            _emit_phase caches
+            local cache_started="$EPOCHSECONDS"
+            local cache_idx cache_name cache_encoded
+            local -a cache_failed_names=()
+            local cache_ok=0 cache_fail=0 cache_unknown=0
+            for (( cache_idx = 1; cache_idx <= ${#cache_names}; cache_idx++ )); do
+                cache_name="${cache_names[$cache_idx]}"
+                cache_encoded="${cache_commands[$cache_idx]}"
+                local -a cache_cmd=("${(@s:|:)cache_encoded}")
+                local cache_timeout="$(_cache_timeout_for "$cache_name")"
+                [[ "$cache_name" == "uv" && -n "${FRESHEN_UV_CACHE_TIMEOUT_SEC:-}" ]] && cache_timeout="$(_positive_int_env FRESHEN_UV_CACHE_TIMEOUT_SEC "$cache_timeout")"
+                (( ! quiet )) && print "     ${dim}[${cache_idx}/${#cache_names} cache]${rst} ${cache_name}"
+                _run_with_timeout caches "Cleaning ${cache_name} cache" "$cache_timeout" "${cache_cmd[@]}"
+                _quit_if_requested && return 130
+                if (( _run_rc == 0 && ! _run_timed_out )); then
+                    (( cache_ok++ ))
+                    (( ! quiet )) && print "     ${grn}✓${rst} ${cache_name}"
+                else
+                    (( cache_fail++ ))
+                    cache_failed_names+=("$cache_name")
+                    local cache_err="${cache_name}: cache cleanup failed"
+                    [[ "${cache_cmd[1]}" == "__freshen_refuse_bun_cache" && -n "$_run_output" ]] && cache_err="$_run_output"
+                    (( _run_timed_out )) && cache_err="${cache_err} (timed out)"
+                    _err "$cache_err"
+                fi
+            done
+
+            if (( run_dev_prune && dev_prune_root_refused )); then
+                (( cache_fail++ ))
+                _err "dev-prune: refusing broad root ${dev_prune_root}"
+            elif (( run_dev_prune && dev_prune_count > 0 )); then
+                [[ -n "$_dev_prune_validated_root" ]] || _dev_prune_validated_root="${dev_prune_root:A}"
+                if ! command -v gomi >/dev/null 2>&1; then
+                    (( cache_fail += dev_prune_count ))
+                    _err "dev-prune: gomi is required; refusing to use rm fallback"
+                else
+                    local dev_idx=0 dev_path dev_label
+                    for dev_path in "${dev_prune_paths[@]}"; do
+                        (( dev_idx++ ))
+                        if ! _is_safe_dev_prune_target "$dev_path" "$_dev_prune_validated_root"; then
+                            (( cache_fail++ ))
+                            _err "dev-prune: refusing unsafe target ${dev_path}"
+                            continue
+                        fi
+                        dev_label="Trashing ${dev_path:t}"
+                        (( ! quiet )) && print "     ${dim}[${dev_idx}/${dev_prune_count} dev-prune]${rst} ${dev_path}"
+                        _run_with_timeout caches "$dev_label" "$(_cache_timeout_for dev-prune)" gomi -- "$dev_path"
+                        _quit_if_requested && return 130
+                        if (( _run_rc == 0 && ! _run_timed_out )); then
+                            (( cache_ok++ ))
+                            (( ! quiet )) && print "     ${grn}✓${rst} dev-prune ${dev_path}"
+                        else
+                            (( cache_fail++ ))
+                            local dev_err="dev-prune: failed to trash ${dev_path}"
+                            (( _run_timed_out )) && dev_err="${dev_err} (timed out)"
+                            _err "$dev_err"
+                        fi
+                    done
+                fi
+            fi
+
+            t_caches=$(( EPOCHSECONDS - cache_started ))
+            _phase_upgraded[caches]=$cache_ok
+            _phase_failed[caches]=$cache_fail
+            _phase_unknown[caches]=$cache_unknown
+            if (( cache_fail > 0 )); then
+                local cache_detail="attempted $(( ${#cache_names} + dev_prune_attempt_count )), cleaned ${cache_ok}, failed ${cache_fail}"
+                (( ${#cache_failed_names} > 0 )) && cache_detail="${cache_detail}, failed: ${(j:, :)cache_failed_names}"
+                _set_phase caches degraded "$cache_detail" "$t_caches"
+            else
+                _set_phase caches done "attempted $(( ${#cache_names} + dev_prune_attempt_count )), cleaned ${cache_ok}" "$t_caches"
+            fi
+        fi
+        print
+    fi
+
+    if (( run_doctor )); then
+        _run_with_timeout doctor "Running brew doctor" "$_timeout_doctor" brew doctor
+        _quit_if_requested && return 130
+        t_doctor=$_run_elapsed
+        _phase_attempted[doctor]=1
+        if (( _run_rc == 0 && ! _run_timed_out )); then
+            _set_phase doctor done "system healthy" "$t_doctor"
+        else
+            _phase_failed[doctor]=1
+            local doctor_detail="brew doctor reported issues"
+            (( _run_timed_out )) && doctor_detail="${doctor_detail}, timed out"
+            _set_phase doctor degraded "$doctor_detail" "$t_doctor"
+        fi
+        print
+    fi
+
+    local duration=$(( EPOCHSECONDS - t_start ))
+    _stop_sudo_keepalive
+    _finish_render
+    local disk_after
+    disk_after=$(command df -k / | awk 'NR==2{print $4}')
+    local freed=$(( disk_after - disk_before ))
+    local freed_str=""
+    (( freed > 0 )) && freed_str="$(_human_kb "$freed")"
+
+    local -a skipped_lanes=()
+    for phase_key in "${_phase_order[@]}"; do
+        [[ "${_phase_state[$phase_key]}" == "skipped" ]] && skipped_lanes+=("${_phase_label[$phase_key]}")
+    done
+
+    local overall_state="done"
+    for phase_key in "${_phase_order[@]}"; do
+        case "${_phase_state[$phase_key]}" in
+            failed) overall_state="failed" ;;
+            degraded)
+                [[ "$overall_state" != "failed" ]] && overall_state="degraded"
+                ;;
+        esac
+    done
+    (( ${#_errors} > 0 )) && overall_state="degraded"
+
+    print "  ${bold}Summary${rst}"
+    if [[ "${_phase_state[inventory]}" == failed || "${_phase_state[inventory]}" == degraded ]] || (( verbose )); then
+        _emit_phase inventory
+    fi
+    for phase_key in formulae casks apps cleanup caches doctor; do
+        _emit_phase "$phase_key"
+    done
+    print "  ${bold}Total${rst}: duration $(_fmt_dur "$duration")${freed_str:+ · disk freed ${freed_str}}"
+    (( ${#skipped_lanes} > 0 && ! quiet )) && print "  ${bold}Skipped${rst}: ${(j:, :)skipped_lanes}"
+    if [[ "$overall_state" != "done" ]]; then
+        print "  ${bold}Attention${rst}"
+        for phase_key in "${_phase_order[@]}"; do
+            case "${_phase_state[$phase_key]}" in
+                degraded|failed)
+                    print "     ${ylw}!${rst} ${_phase_label[$phase_key]}: $(_phase_attention_detail "$phase_key")"
+                    ;;
+            esac
+        done
+    fi
+    if [[ "$overall_state" != "done" ]] || (( verbose )); then
+        print "  ${bold}Log${rst}: ${_log_file}"
+    fi
+    print
+
+    if (( ! quiet && _is_interactive )) && [[ "${FRESHEN_LOW_POWER:-0}" != "1" ]]; then
+        printf '\a'
+        if [[ "$OSTYPE" == darwin* ]]; then
+            local notif_title notif_body
+            if [[ "$overall_state" == "done" ]]; then
+                notif_title="freshen — all fresh!"
+                notif_body="${_upgraded_total} confirmed${freed_str:+ · ${freed_str} freed} · $(_fmt_dur "$duration")"
+            else
+                notif_title="freshen — attention needed"
+                notif_body="${_upgraded_total} confirmed, ${_failed_total} failed · $(_fmt_dur "$duration")"
+            fi
+            osascript -e "display notification \"${notif_body}\" with title \"${notif_title}\" sound name \"Glass\"" >/dev/null 2>&1 &!
+        fi
+    fi
+
+    [[ "$overall_state" == "done" ]] && return 0
+    return 1
+}
+
+# ── Completion ─────────────────────────────────────────────────────────────
+_freshen() {
+    _arguments \
+        '(--dry-run -N)'{--dry-run,-N}'[Inventory only; show the plan without making changes]' \
+        '(--clean-only -C)'{--clean-only,-C}'[Only run cleanup, cache cleaning, optional dev-prune, and doctor]' \
+        '(--yes -y -Y)'{--yes,-y,-Y}'[Skip confirmation]' \
+        '(--formula-only -F)'{--formula-only,-F}'[Only upgrade formulae]' \
+        '(--cask-only -K)'{--cask-only,-K}'[Only upgrade casks]' \
+        '(--no-greedy -G)'{--no-greedy,-G}'[Do not use --greedy for casks]' \
+        '(--no-cleanup -B)'{--no-cleanup,-B}'[Skip brew autoremove and cleanup]' \
+        '(--no-cache -A)'{--no-cache,-A}'[Skip cache cleaning]' \
+        '(--storage-plan -S)'{--storage-plan,-S}'[Read-only storage savings plan]' \
+        '--storage-root=[Root label for --storage-plan]:path:_files -/' \
+        '--restore-target-gib=[Target free GiB for restore planning]:GiB:' \
+        '(--dev-prune -P)'{--dev-prune,-P}'[Trash regenerable project-local dev directories under the root]' \
+        '--dev-prune-root=[Root for --dev-prune]:path:_files -/' \
+        '(--no-mas -M)'{--no-mas,-M}'[Skip App Store updates]' \
+        '(--doctor -D)'{--doctor,-D}'[Run brew doctor]' \
+        '(--sequential -L)'{--sequential,-L}'[Upgrade packages one-by-one for more visibility]' \
+        '(--progress -R)--progress=[Progress renderer]:mode:(auto live lines plain)' \
+        '(-R --progress)-R=[Progress renderer]:mode:(auto live lines plain)' \
+        '--no-sudo-preflight[Do not preflight sudo before cask upgrades]' \
+        '(--verbose -v)'{--verbose,-v}'[Show detailed command output]' \
+        '(--quiet -q)'{--quiet,-q}'[Suppress routine progress output]' \
+        '--no-color[Disable color]' \
+        '(--version -V)'{--version,-V}'[Show version]' \
+        '(--help -h -H)'{--help,-h,-H}'[Show help]'
+}
+
+(( $+functions[compdef] )) && compdef _freshen freshen
+
+freshen "$@"

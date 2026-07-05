@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-bash -n setup.sh bootstrap/macos.sh checks/ai-check.sh checks/ai-negative-check.sh checks/secrets-scan.sh checks/smoke.sh checks/validate-json.sh
+bash -n setup.sh bootstrap/macos.sh checks/ai-check.sh checks/ai-negative-check.sh checks/secrets-scan.sh checks/smoke.sh checks/validate-json.sh checks/zsh-inventory.sh
 
 if [ "$(uname -s)" = "Darwin" ]; then
   ./bootstrap/macos.sh --dry-run >/dev/null

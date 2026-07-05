@@ -87,6 +87,11 @@ jq -e '
   exit 1
 }
 
+if ! command -v rg >/dev/null 2>&1; then
+  echo "ripgrep (rg) is required for AI manifest secret scanning" >&2
+  exit 1
+fi
+
 if rg -n 'MCPHUB_BEARER_TOKEN": "[^$<]' "$AI_DIR" .copilot .config/claude 2>/dev/null; then
   echo "Literal MCPHub bearer token detected; use \${MCPHUB_BEARER_TOKEN}." >&2
   exit 1

@@ -1,4 +1,4 @@
-@https://raw.githubusercontent.com/wyattowalsh/agents/main/instructions/global.md
+@./AGENTS.md
 
 ## Codespaces / Dotfiles Context
 - Use uv for all Python ops.

@@ -1,0 +1,208 @@
+#compdef sync-cursor
+# sync-cursor v1.0.0 — Sync VS Code Insiders profile into Cursor (settings + extensions superset)
+
+__sync_cursor_help() {
+    cat <<'EOF'
+sync-cursor — merge VS Code Insiders into Cursor without losing Cursor-only config
+
+USAGE
+    sync-cursor [flags]
+    sync-cursor-from-vscode-insiders   # alias
+
+WHAT IT DOES
+    Merges Insiders settings/keybindings/snippets/MCP into Cursor while preserving
+    Cursor-specific keys. Rebuilds the global extension registry from on-disk
+    extension folders, unions Insiders Settings Sync + current Cursor profile into
+    a superset extensions list, then installs only what is missing.
+
+WHY REBUILD REGISTRY?
+    Cursor tracks installed extensions in ~/.cursor/extensions/extensions.json.
+    If that registry is truncated (e.g. by repeated `cursor --install-extension`
+    while Cursor is running), extensions remain on disk but do not load. The default
+    sync path always rebuilds the registry from disk first.
+
+PROFILE extensions.json
+    Profile files must be an array of extension objects (same shape as the global
+    registry), not a string ID list. String arrays trigger:
+    "Invalid extensions content in .../profiles/<id>/extensions.json".
+    sync-cursor rebuilds profile extensions from the global registry on every run.
+
+SAFE FIRST RUN
+    sync-cursor --status
+        Compare disk folders vs global registry vs profile list.
+
+    sync-cursor --dry-run
+        Preview settings merge, registry rebuild, and install plan.
+
+    sync-cursor --recover
+        Emergency repair: rebuild registry only (no settings changes).
+
+CAPITAL SHORTCUTS
+    -N  --dry-run              Preview only
+    -Y  --yes                  Skip confirmation
+    -R  --recover              Registry rebuild only
+    -S  --status               Report counts and mismatches
+    -H  --help                 Show this help
+
+FLAGS
+    --dry-run, -N               No writes; show plan
+    --yes, -y, -Y               Skip confirmation
+    --recover, -R               Rebuild ~/.cursor/extensions/extensions.json only
+    --status, -S                Print disk/registry/profile/CLI counts
+    --settings-only             Merge settings/keybindings/snippets/MCP only
+    --extensions-only           Extensions path only (includes registry rebuild)
+    --no-backup                 Skip timestamped backup under Cursor User/
+    --profile=ID                Override Cursor profile id (default: auto-detect)
+    --no-install                Rebuild registry + profile list; skip marketplace/VSIX installs
+    --help, -h, -H              Show this help
+
+EXTENSION POLICY
+    Superset merge: current Cursor profile ∪ Insiders Settings Sync ∪ on-disk ∪ CLI list
+    Cursor builtins preserved: anysphere.cursorpyright, anysphere.remote-*
+
+    Unavailable in Cursor marketplace (skipped with note):
+      github.copilot-chat, github.remotehub, ms-vscode.anycode*, ms-vscode.cpptools,
+      ms-vsliveshare.vsliveshare, ms-dotnettools.csharp, and similar MS-only extensions
+
+    Mapped equivalents:
+      ms-python.vscode-pylance        → anysphere.cursorpyright
+      ms-vscode-remote.remote-*       → anysphere.remote-*
+
+    VSIX fallback: installs from Insiders CachedExtensionVSIXs when present.
+
+SYMLINK / PROFILE IMPORT?
+    Do NOT symlink ~/.cursor/extensions to Insiders — Insiders has few local copies;
+    Cursor already has the bulk on disk. Profile export/import is settings-friendly
+    but extension import is unreliable in Cursor; this tool uses registry rebuild +
+    targeted installs instead.
+
+AFTER SYNC
+    Reload Cursor: Cmd+Shift+P → Developer: Reload Window
+    Quit Cursor before sync when possible so `cursor --install-extension --profile`
+    writes both global and profile registries.
+
+EXAMPLES
+    sync-cursor --status
+    sync-cursor --dry-run
+    sync-cursor --recover
+    sync-cursor --yes
+    sync-cursor --settings-only --yes
+    sync-cursor --extensions-only --no-install
+
+CORE
+    ~/dev/tools/scripts/sync_cursor_core.py
+    Override with SYNC_CURSOR_CORE=/path/to/sync_cursor_core.py
+
+LOG / BACKUP
+    ~/Library/Application Support/Cursor/User/sync-backup-YYYYMMDD-HHMMSS/
+    Includes settings, profile extensions.json, and global extensions registry.
+EOF
+}
+
+sync-cursor() {
+    emulate -L zsh
+    setopt LOCAL_OPTIONS LOCAL_TRAPS
+
+    local dry_run=0 assume_yes=0 recover_only=0 status_only=0
+    local settings_only=0 extensions_only=0 no_backup=0 no_install=0
+    local profile_id=""
+
+    local core="${SYNC_CURSOR_CORE:-$HOME/dev/tools/scripts/sync_cursor_core.py}"
+    if [[ ! -f "$core" ]]; then
+        print -u2 "sync-cursor: core not found at $core"
+        return 127
+    fi
+
+    local arg
+    for arg in "$@"; do
+        case "$arg" in
+            --dry-run|-N)        dry_run=1 ;;
+            --yes|-y|-Y)         assume_yes=1 ;;
+            --recover|-R)        recover_only=1 ;;
+            --status|-S)         status_only=1 ;;
+            --settings-only)     settings_only=1 ;;
+            --extensions-only)   extensions_only=1 ;;
+            --no-backup)         no_backup=1 ;;
+            --no-install)        no_install=1 ;;
+            --profile=*)         profile_id="${arg#--profile=}" ;;
+            --help|-h|-H)        __sync_cursor_help; return 0 ;;
+            -*)                  print -u2 "sync-cursor: unknown option: $arg"; return 2 ;;
+        esac
+    done
+
+    if (( status_only )); then
+        local -a status_cmd=(python3 "$core")
+        [[ -n "$profile_id" ]] && status_cmd+=(--profile "$profile_id")
+        status_cmd+=(status)
+        "${status_cmd[@]}"
+        return $?
+    fi
+
+    if (( recover_only )); then
+        local -a recover_cmd=(python3 "$core")
+        (( dry_run )) && recover_cmd+=(--dry-run)
+        [[ -n "$profile_id" ]] && recover_cmd+=(--profile "$profile_id")
+        recover_cmd+=(recover)
+        "${recover_cmd[@]}"
+        return $?
+    fi
+
+    if (( ! assume_yes && ! dry_run )); then
+        if [[ ! -t 0 ]]; then
+            print -u2 "sync-cursor: non-interactive run requires --yes"
+            return 1
+        fi
+        print "sync-cursor will backup Cursor state, merge Insiders settings, rebuild"
+        print "the extension registry from disk, and install missing extensions."
+        printf "Proceed? [Y/n] "
+        local reply=""
+        read -r reply
+        if [[ "$reply" == [nN] ]]; then
+            print "cancelled."
+            return 0
+        fi
+    fi
+
+    if pgrep -x "Cursor" >/dev/null 2>&1; then
+        print -u2 "sync-cursor: Cursor is running. Quit Cursor first for reliable extension installs."
+        if (( ! assume_yes && ! dry_run )); then
+            printf "Continue anyway? [y/N] "
+            local cont=""
+            read -r cont
+            [[ "$cont" == [yY] ]] || return 1
+        fi
+    fi
+
+    local -a sync_cmd=(python3 "$core")
+    (( dry_run )) && sync_cmd+=(--dry-run)
+    (( no_backup )) && sync_cmd+=(--no-backup)
+    [[ -n "$profile_id" ]] && sync_cmd+=(--profile "$profile_id")
+    sync_cmd+=(sync --recover-registry)
+    (( settings_only )) && sync_cmd+=(--settings-only)
+    (( extensions_only )) && sync_cmd+=(--extensions-only)
+    (( no_install )) && sync_cmd+=(--no-install)
+    "${sync_cmd[@]}"
+}
+
+# Backward-compatible entrypoint name from prior bash script.
+sync-cursor-from-vscode-insiders() {
+    sync-cursor "$@"
+}
+
+_sync-cursor() {
+    _arguments \
+        '(--dry-run -N)'{--dry-run,-N}'[Preview only]' \
+        '(--yes -y -Y)'{--yes,-y,-Y}'[Skip confirmation]' \
+        '(--recover -R)'{--recover,-R}'[Rebuild extension registry only]' \
+        '(--status -S)'{--status,-S}'[Show disk/registry/profile counts]' \
+        '--settings-only[Merge settings only]' \
+        '--extensions-only[Extensions path only]' \
+        '--no-backup[Skip backup]' \
+        '--no-install[Skip marketplace/VSIX installs]' \
+        '--profile=[Cursor profile id]:profile:' \
+        '(--help -h -H)'{--help,-h,-H}'[Show help]'
+}
+
+(( $+functions[compdef] )) && compdef _sync-cursor sync-cursor sync-cursor-from-vscode-insiders
+
+sync-cursor "$@"

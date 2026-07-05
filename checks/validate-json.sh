@@ -6,10 +6,12 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
-find . \
-  -path './.git' -prune -o \
-  -path './docs/node_modules' -prune -o \
-  -path './docs/.next' -prune -o \
-  -name '*.json' -print0 \
-  | xargs -0 -r -n 1 jq empty
-
+while IFS= read -r -d '' json_file; do
+  jq empty "$json_file"
+done < <(
+  find . \
+    -path './.git' -prune -o \
+    -path './docs/node_modules' -prune -o \
+    -path './docs/.next' -prune -o \
+    -name '*.json' -print0
+)

@@ -1210,13 +1210,20 @@ link_file() {
     return
   fi
 
+  if [ -e "$target" ] && [ ! -L "$target" ]; then
+    if [ "$DRY_RUN" -eq 1 ]; then
+      skip_action "Existing non-symlink path requires manual resolution before linking: $target"
+      return
+    fi
+
+    error "Refusing to overwrite existing non-symlink path: $target"
+    error "Move or back up the existing path, then re-run setup. Expected link target: $source"
+    return 1
+  fi
+
   if [ "$DRY_RUN" -eq 1 ]; then
     skip_action "Would link $target -> $source"
     return
-  fi
-
-  if [ -e "$target" ] && [ ! -L "$target" ]; then
-    warn "Replacing existing path with symlink: $target"
   fi
 
   ln -sfn "$source" "$target"
@@ -1257,12 +1264,9 @@ sync_universal_skill_links() {
       target_path="$target_dir/$skill_name"
 
       if [ -e "$target_path" ] && [ ! -L "$target_path" ]; then
-        if [ "$DRY_RUN" -eq 1 ]; then
-          skip_action "Would replace non-symlink path at $target_path"
-        else
-          rm -rf "$target_path"
-          mark_action_run
-        fi
+        warn "Skipping existing non-symlink skill path to avoid overwriting user data: $target_path"
+        mark_action_skipped
+        continue
       fi
 
       link_file "$skill_dir" "$target_path"
@@ -1434,7 +1438,9 @@ main() {
   create_symlinks
   set_zsh_default_shell
 
-  if [ "$VERBOSE" -eq 1 ]; then
+  if [ "$DRY_RUN" -eq 0 ]; then
+    run_smoke_checks
+  elif [ "$VERBOSE" -eq 1 ]; then
     run_smoke_checks || warn "Post-run smoke checks reported issues."
   fi
 }

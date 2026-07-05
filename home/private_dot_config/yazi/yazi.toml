@@ -1,12 +1,25 @@
-[manager]
-ratio = [1, 2, 5]
-
 [plugin]
 prepend_previewers = [
   { name = "*.csv", run = "duckdb" },
   { name = "*.tsv", run = "duckdb" },
   { name = "*.json", run = "duckdb" },
   { name = "*.parquet", run = "duckdb" },
-  { name = "*.ipynb", run = "nbpreview" }
+  { name = "*.txt", run = "duckdb" },
+  { name = "*.xlsx", run = "duckdb" },
+  { name = "*.db", run = "duckdb" },
+  { name = "*.duckdb", run = "duckdb" },
+  { name = "*.ipynb", run = "nbpreview" }, # https://github.com/AnirudhG07/nbpreview.yazi
+  { mime = "application/bittorrent", run = "torrent-preview" } # https://github.com/kirasok/torrent-preview.yazi
 ]
 
+prepend_preloaders = [
+  { name = "*.csv", run = "duckdb", multi = false },
+  { name = "*.tsv", run = "duckdb", multi = false },
+  { name = "*.json", run = "duckdb", multi = false },
+  { name = "*.parquet", run = "duckdb", multi = false },
+  { name = "*.txt", run = "duckdb", multi = false },
+  { name = "*.xlsx", run = "duckdb", multi = false }
+]
+
+[manager]
+ratio = [1, 2, 5]

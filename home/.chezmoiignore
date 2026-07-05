@@ -1,0 +1,3 @@
+# Mirrored from repo root; deployed via bootstrap/setup symlinks, not Chezmoi apply.
+dot_zshrc.tmpl
+dot_p10k.zsh

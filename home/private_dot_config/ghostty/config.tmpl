@@ -1,9 +1,156 @@
-# Ghostty portable baseline.
-# Machine-specific theme assets should be configured in ~/.config/ghostty/config.local.
+# Ghostty configuration — promoted from live rig (w4w-mbp).
+# Machine-specific overrides: ~/.config/ghostty/config.local
+#
+# Validate:
+#   ghostty +validate-config
+#   ghostty +show-config --changes-only
 
-font-family = {{ .ghostty.fontFamily | default "MonaspiceNe Nerd Font Mono" }}
-font-size = {{ .ghostty.fontSize | default "14" }}
 theme = {{ .ghostty.theme | default "APEX Light Ultra" }}
+
+font-family = {{ .ghostty.fontFamily | default "Monaspace Xenon NF" }}
+font-size = {{ .ghostty.fontSize | default "14" }}
+font-thicken = true
+font-thicken-strength = 80
+adjust-cell-height = 2
+
+minimum-contrast = 1.1
+
+selection-foreground = cell-background
+selection-background = cell-foreground
+selection-clear-on-typing = true
+selection-clear-on-copy = false
+
+link-url = true
+link-previews = true
+
+background-opacity = 0.96
+background-opacity-cells = true
+background-blur = 20
+
+background-image = {{ .chezmoi.homeDir }}/.config/ghostty/backgrounds/apex-terminal-bg-v3.png
+background-image-fit = cover
+background-image-position = center
+background-image-opacity = 0.85
+
+cursor-style = block
+cursor-style-blink = true
+cursor-click-to-move = true
+
+mouse-hide-while-typing = true
+mouse-reporting = true
+
 shell-integration = detect
 shell-integration-features = cursor,sudo,title,ssh-env,ssh-terminfo,path
 
+notify-on-command-finish = unfocused
+notify-on-command-finish-action = no-bell,notify
+notify-on-command-finish-after = 8s
+
+desktop-notifications = true
+progress-style = true
+
+window-width = 120
+window-height = 35
+
+window-padding-x = 12
+window-padding-y = 10
+window-padding-balance = true
+
+window-step-resize = true
+window-save-state = always
+undo-timeout = 15s
+
+window-inherit-working-directory = true
+tab-inherit-working-directory = true
+split-inherit-working-directory = true
+window-inherit-font-size = true
+window-new-tab-position = current
+
+confirm-close-surface = true
+
+scrollback-limit = 67108864
+scrollbar = system
+
+resize-overlay = always
+resize-overlay-position = top-right
+resize-overlay-duration = 750ms
+
+unfocused-split-opacity = 0.85
+split-preserve-zoom = navigation
+
+macos-titlebar-style = tabs
+macos-window-buttons = visible
+macos-window-shadow = true
+macos-hidden = never
+macos-option-as-alt = left
+macos-auto-secure-input = true
+macos-secure-input-indication = true
+macos-applescript = false
+macos-shortcuts = ask
+
+title-report = false
+
+quick-terminal-position = top
+quick-terminal-size = 38%,100%
+quick-terminal-screen = main
+quick-terminal-animation-duration = 0.12
+quick-terminal-autohide = true
+quick-terminal-space-behavior = move
+
+copy-on-select = clipboard
+
+clipboard-read = ask
+clipboard-write = allow
+clipboard-trim-trailing-spaces = true
+
+clipboard-paste-protection = true
+clipboard-paste-bracketed-safe = true
+
+right-click-action = context-menu
+
+bell-features = attention,title
+
+auto-update = download
+auto-update-channel = stable
+
+keybind = global:ctrl+backquote=toggle_quick_terminal
+
+keybind = cmd+,=open_config
+keybind = cmd+shift+r=reload_config
+keybind = cmd+shift+p=toggle_command_palette
+keybind = cmd+alt+i=inspector:toggle
+
+keybind = cmd+alt+z=toggle_background_opacity
+keybind = cmd+ctrl+z=toggle_split_zoom
+
+keybind = cmd+f=start_search
+keybind = performable:cmd+g=navigate_search:next
+keybind = performable:cmd+shift+g=navigate_search:previous
+keybind = performable:escape=end_search
+keybind = performable:cmd+e=search_selection
+
+keybind = cmd+alt+o=write_scrollback_file:open
+keybind = cmd+alt+c=write_scrollback_file:copy
+
+keybind = cmd+alt+up=jump_to_prompt:-1
+keybind = cmd+alt+down=jump_to_prompt:1
+
+keybind = performable:ctrl+h=goto_split:left
+keybind = performable:ctrl+j=goto_split:down
+keybind = performable:ctrl+k=goto_split:up
+keybind = performable:ctrl+l=goto_split:right
+
+keybind = cmd+d=new_split:right
+keybind = cmd+shift+d=new_split:down
+keybind = cmd+shift+e=equalize_splits
+
+keybind = cmd+ctrl+h=resize_split:left,20
+keybind = cmd+ctrl+j=resize_split:down,20
+keybind = cmd+ctrl+k=resize_split:up,20
+keybind = cmd+ctrl+l=resize_split:right,20
+
+keybind = cmd+alt+t=prompt_tab_title
+keybind = cmd+alt+s=prompt_surface_title
+
+keybind = cmd+alt+m=toggle_mouse_reporting
+keybind = cmd+alt+r=toggle_readonly
