@@ -22,9 +22,9 @@ const sections = [
     description: "Curated Brewfile groups and promotion policy."
   },
   {
-    href: "/docs/ai-mcp",
-    title: "AI & MCP",
-    description: "MCPHub-first control plane and fallback surfaces."
+    href: "/docs/ai-harness",
+    title: "AI harness",
+    description: "Configs live in wyattowalsh/agents; env vars documented here."
   }
 ] as const;
 

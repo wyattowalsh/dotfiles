@@ -1,6 +1,6 @@
 # Dotfiles Bootstrap
 
-Private, personal, internal-only dotfiles SSOT for the `w4w-mbp` rig. Curated desired state for shell, git, Homebrew, nix-darwin, Chezmoi home config, and AI/MCP bootstrap — not a public template repo.
+Private, personal, internal-only dotfiles SSOT for the `w4w-mbp` rig. Curated desired state for shell, git, Homebrew, nix-darwin, and Chezmoi home config. AI/MCP harness configs live in [wyattowalsh/agents](https://github.com/wyattowalsh/agents).
 
 <!-- BADGES:START -->
 
@@ -13,13 +13,13 @@ Private, personal, internal-only dotfiles SSOT for the `w4w-mbp` rig. Curated de
 <!-- BADGES:END -->
 
 > [!NOTE]
-> The legacy `setup.sh` path remains tuned for Debian/Ubuntu-style systems. The full-rig macOS path is now scaffolded around `justfile`, Homebrew Bundle, nix-darwin/Home Manager, Chezmoi-style templates, MCPHub-first AI config, and internal Fumadocs documentation.
+> The legacy `setup.sh` path remains tuned for Debian/Ubuntu-style systems. The full-rig macOS path is scaffolded around `justfile`, Homebrew Bundle, nix-darwin/Home Manager, Chezmoi-style templates, and internal Fumadocs documentation.
 
 ## At a glance
 
 | Platform                              | Entrypoint                                                     | Re-run safety                                                                  |
 | ------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Apple Silicon macOS                   | `just bootstrap --dry-run` then `just bootstrap --apply` | Dry-run-first preview with curated Brew, Nix, Chezmoi, AI/MCP, and docs checks |
+| Apple Silicon macOS                   | `just bootstrap --dry-run` then `just bootstrap --apply` | Dry-run-first preview with curated Brew, Nix, Chezmoi, and docs checks |
 | Debian/Ubuntu-style Linux (`apt-get`) | [`setup.sh`](./setup.sh)                                       | Safe to re-run with idempotent guards and convergence checks                   |
 
 ## Table of contents
@@ -33,7 +33,7 @@ Private, personal, internal-only dotfiles SSOT for the `w4w-mbp` rig. Curated de
 - [What gets installed/configured](#what-gets-installedconfigured)
 - [Reference](#reference)
   - [File map](#file-map)
-  - [AI tooling + MCP servers](#ai-tooling--mcp-servers)
+  - [AI harness (external repo)](#ai-harness-external-repo)
   - [Idempotency guarantees](#idempotency-guarantees)
   - [Customization guidance](#customization-guidance)
   - [Troubleshooting](#troubleshooting)
@@ -47,13 +47,13 @@ This repository has two entrypoints:
 - `justfile` for the full-rig macOS migration and validation workflow.
 - [`setup.sh`](./setup.sh) for the existing Debian/Ubuntu bootstrap path.
 
-The macOS target is intentionally layered: Homebrew Bundle for the large app/tool surface, nix-darwin/Home Manager for durable system/user state, Chezmoi-style templates for portable home configuration, MCPHub-first AI config, and a Fumadocs internal docs site for runbooks and validation.
+The macOS target is intentionally layered: Homebrew Bundle for the large app/tool surface, nix-darwin/Home Manager for durable system/user state, Chezmoi-style templates for portable home configuration, and a Fumadocs internal docs site for runbooks and validation.
 
 Key goals:
 
 - ✅ **Repeatable setup** (safe to re-run)
 - ✅ **Minimal manual steps**
-- ✅ **Clear ownership** of shell/editor/git/AI config
+- ✅ **Clear ownership** of shell/editor/git config (AI harness in [wyattowalsh/agents](https://github.com/wyattowalsh/agents))
 
 > [!TIP]
 > Keep this repo in a stable path on disk; symlinks point to the clone location.
@@ -119,7 +119,6 @@ just check
 just ci
 just smoke
 just secrets-scan
-just ai-check
 just inventory-redacted
 just brew-check
 just darwin-check
@@ -128,7 +127,7 @@ just docs-check
 just docs-build
 ```
 
-`just ci` is the self-contained local equivalent of the GitHub Actions validation path. It runs static checks including zsh syntax validation, smoke checks, AI/MCP validation, installs docs dependencies with `pnpm install --frozen-lockfile`, then typechecks and builds the docs site.
+`just ci` is the self-contained local equivalent of the GitHub Actions validation path. It runs static checks including zsh syntax validation, smoke checks, installs docs dependencies with `pnpm install --frozen-lockfile`, then typechecks and builds the docs site.
 
 The bootstrap dispatcher defaults to preview behavior unless `--apply` is explicitly supplied:
 
@@ -220,13 +219,13 @@ flowchart LR
 
 | File                                                                   | Role                                                                                            | Destination / usage                      |
 | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| [`justfile`](./justfile)                                       | Canonical workflow runner for bootstrap, validation, docs, Brew, Darwin, AI, and secrets checks | Run with `just <recipe>`                 |
+| [`justfile`](./justfile)                                       | Canonical workflow runner for bootstrap, validation, docs, Brew, Darwin, and secrets checks | Run with `just <recipe>`                 |
 | [`bootstrap/`](./bootstrap)                                            | macOS full-rig bootstrap dispatcher and subsystem instructions                                  | Run through `just bootstrap`             |
 | [`brew/`](./brew)                                                      | Curated Homebrew Bundle desired state and package inventory notes                               | Validate with `just brew-check`          |
 | [`darwin/`](./darwin)                                                  | nix-darwin/Home Manager scaffold for Apple Silicon macOS                                        | Validate with `just darwin-check`        |
 | [`home/`](./home)                                                      | Chezmoi-style managed home configuration templates                                              | Preview with `just home-diff`            |
-| [`ai/`](./ai)                                                          | Sanitized MCPHub-first AI/MCP manifests and generated examples                                  | Validate with `just ai-check`            |
-| [`docs/`](./docs)                                                      | Internal Fumadocs site for runbooks and generated references                                    | Build with `just docs-build`             |
+| [`.env.example`](./.env.example)                                       | Documented env var names for AI/MCP (values stay local)                                         | Copy exports to `~/.zshrc.local`         |
+| [`docs/`](./docs)                                                      | Internal Fumadocs site for runbooks                                                             | Build with `just docs-build`             |
 | [`openspec/`](./openspec)                                              | OpenSpec change proposal for the full-rig modernization                                         | Reference for migration scope            |
 | [`setup.sh`](./setup.sh)                                               | Bootstrap orchestrator                                                                          | Run manually to converge environment     |
 | [`.zshrc`](./.zshrc)                                                   | Shell runtime config, plugins, aliases, lazy `nvm`, fzf/zoxide/direnv hooks                     | Linked to `~/.zshrc`                     |
@@ -236,62 +235,21 @@ flowchart LR
 | [`.gitconfig`](./.gitconfig)                                           | Git defaults + aliases + delta integration                                                      | Linked to `~/.gitconfig`                 |
 | [`.ripgreprc`](./.ripgreprc)                                           | Ripgrep defaults (`--hidden`, smart-case, ignores)                                              | Linked to `~/.ripgreprc`                 |
 | [`.editorconfig`](./.editorconfig)                                     | Cross-editor formatting defaults                                                                | Linked to `~/.editorconfig`              |
-| [`.copilot/lsp-config.json`](./.copilot/lsp-config.json)               | Copilot CLI LSP configuration                                                                   | Linked to `~/.copilot/lsp-config.json`   |
-| [`.copilot/mcp-config.json`](./.copilot/mcp-config.json)               | Copilot CLI MCP server configuration                                                            | Linked to `~/.copilot/mcp-config.json`   |
 | [`.github/lsp.json`](./.github/lsp.json)                               | Repo-level LSP configuration for GitHub tooling                                                 | Used in-repo                             |
-| [`.github/copilot-instructions.md`](./.github/copilot-instructions.md) | Repo instructions for Copilot agents                                                            | Used in-repo                             |
-| [`.claude/CLAUDE.md`](./.claude/CLAUDE.md)                             | Claude guidance + environment conventions                                                       | Linked to `~/.claude/CLAUDE.md`          |
-| [`.config/claude/mcp.json`](./.config/claude/mcp.json)                 | Claude MCP server configuration                                                                 | Linked to `~/.config/claude/mcp.json`    |
+| [`.github/copilot-instructions.md`](./.github/copilot-instructions.md) | Repo instructions for Copilot when editing this repo                                            | Used in-repo                             |
+| [`.claude/CLAUDE.md`](./.claude/CLAUDE.md)                             | Claude hint for this repo (delegates to `AGENTS.md`)                                            | Linked to `~/.claude/CLAUDE.md`          |
 | [`AGENTS.md`](./AGENTS.md)                                             | Repo conventions, idempotency contract, safety policies                                         | Human/automation reference               |
 | [`GEMINI.md`](./GEMINI.md)                                             | Gemini guidance delegating to `AGENTS.md`                                                       | Human/automation reference               |
 
 ---
 
-### AI tooling + MCP servers
+### AI harness (external repo)
 
-### CLI tools
+MCP servers, client JSON, skills manifests, and agent harness configs are **not** tracked here. SSOT: [wyattowalsh/agents](https://github.com/wyattowalsh/agents).
 
-- **Claude Code CLI** (`claude`) via npm global `@anthropic-ai/claude-code`
-- **Gemini CLI** (`gemini`) via npm global `@google/gemini-cli`
-- **GitHub Copilot CLI** (`copilot`) via npm global `@github/copilot`
-- **Codex CLI** (`codex`) via npm global `@openai/codex`
-- **GitHub Copilot extension for `gh`** when GitHub CLI is already installed
-- Startup shim links for `claude`, `gemini`, `copilot`, `codex` in `~/.local/bin` so commands resolve on fresh shells before `nvm` is initialized
+This repo only documents env var **names** in [`.env.example`](./.env.example). Set values in `~/.zshrc.local` or untracked env files.
 
-### Shared skills bootstrap
-
-- Source: non-interactive `npx -y skills add --yes wyattowalsh/agents` (no `gh:` prefix)
-- Skills: `add-badges`, `agent-conventions`, `email-whiz`, `frontend-designer`, `honest-review`, `host-panel`, `javascript-conventions`, `learn`, `mcp-creator`, `orchestrator`, `prompt-engineer`, `python-conventions`, `research`, `skill-creator`
-- Agent targets (limited): `claude-code`, `codex`, `gemini-cli`, `github-copilot` (only when each CLI is installed)
-- Universal skill mirroring: `~/.agents/skills` is symlinked into `~/.copilot/skills`, `~/.codex/skills`, and `~/.gemini/skills` for installed CLIs so skills are discoverable by each agent runtime
-- Skills install uses a dedicated longer timeout (`SKILLS_INSTALL_TIMEOUT_SECONDS=300`)
-
-> [!NOTE]
-> `copilot`/`codex` installs provide binaries, but first-run authentication is still required by each provider (and Codex may rely on provider env auth such as API keys depending on your setup).  
-> Skills installation requires npm/network access and can be blocked by auth/network/time constraints; `setup.sh` logs a warning and continues in that case.
-
-### Copilot MCP configuration
-
-`~/.copilot/mcp-config.json` is symlinked from this repo (`.copilot/mcp-config.json`) and uses the same portable MCP server set as the Claude config.
-
-### Claude MCP configuration
-
-`~/.config/claude/mcp.json` is symlinked from this repo and includes a broad set of servers for:
-
-- structured reasoning (`sequential-thinking`, `shannon-thinking`, `structured-thinking`, `cascade-thinking`)
-- docs/web/research (`fetch`, `fetcher`, `deepwiki`, `wikipedia`, `wayback`, `duckduckgo-search`, `arxiv`, etc.)
-- browser automation (`playwright`)
-- retrieval/search (`context7`, `brave-search`, `exa`, `g-search`)
-
-<details>
-<summary><strong>Configured MCP server names (from <code>mcp.json</code>)</strong></summary>
-
-`sequential-thinking`, `shannon-thinking`, `structured-thinking`, `cascade-thinking`, `crash`, `lotus-wisdom-mcp`, `think-strategies`, `default`, `playwright`, `docling`, `fetch`, `fetcher`, `context7`, `repomix`, `brave-search`, `exa`, `deepwiki`, `wikipedia`, `wayback`, `g-search`, `duckduckgo-search`, `arxiv`
-
-</details>
-
-> [!IMPORTANT]
-> Some servers require environment variables (`CONTEXT7_API_KEY`, `BRAVE_API_KEY`, `EXA_API_KEY`, `PLAYWRIGHT_MCP_EXTENSION_TOKEN`) and use `${...}` placeholders in config.[^mcp]
+On Linux, `setup.sh` still installs AI CLIs and pulls skills from `wyattowalsh/agents` — but MCP/client config comes from the agents repo on your machine, not from dotfiles symlinks.
 
 ---
 
@@ -323,7 +281,7 @@ This repo explicitly treats idempotency as a contract (see [`AGENTS.md`](./AGENT
 - Run `just inventory-redacted` to list local zsh override/function/completion/plugin paths in ignored `local/zsh-inventory.txt`; it never copies file contents or environment values, and it scrubs sensitive-looking path components.
 - Tune prompt appearance in [`.p10k.zsh`](./.p10k.zsh).
 - Adjust defaults in [`.gitconfig`](./.gitconfig), [`.ripgreprc`](./.ripgreprc), and [`.editorconfig`](./.editorconfig).
-- Add/remove Claude MCP servers in [`.config/claude/mcp.json`](./.config/claude/mcp.json).
+- Change MCP/agent harness in [wyattowalsh/agents](https://github.com/wyattowalsh/agents), not in this repo.
 - Keep bootstrap logic in [`setup.sh`](./setup.sh) idempotent when adding tools.
 
 ---
@@ -340,7 +298,7 @@ This repo explicitly treats idempotency as a contract (see [`AGENTS.md`](./AGENT
 | `gh-copilot` extension not installed                  | `gh` not present                                              | Install GitHub CLI, then re-run `./setup.sh`                                    |
 | `copilot`/`codex` auth errors                         | CLI installed but not authenticated for your account/provider | Run each CLI login flow, then retry                                             |
 | Skills install warning about auth/network constraints | npm/network outage or missing auth for `wyattowalsh/agents`   | Restore connectivity/auth and re-run `./setup.sh`                               |
-| MCP server auth errors                                | Missing API key env vars                                      | Export required keys before launching Claude                                    |
+| MCP server auth errors                                | Missing API key env vars                                      | Set vars from `.env.example`; manage MCP config in wyattowalsh/agents          |
 | New shell not using zsh                               | Codespaces/non-interactive session or `chsh` not permitted    | Run `chsh -s "$(command -v zsh)"` manually in an interactive shell (if allowed) |
 
 </details>

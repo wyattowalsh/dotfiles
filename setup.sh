@@ -457,10 +457,7 @@ run_preflight_checks() {
     "$REPO_DIR/.gitconfig"
     "$REPO_DIR/.ripgreprc"
     "$REPO_DIR/.editorconfig"
-    "$REPO_DIR/.copilot/lsp-config.json"
-    "$REPO_DIR/.copilot/mcp-config.json"
     "$REPO_DIR/.claude/CLAUDE.md"
-    "$REPO_DIR/.config/claude/mcp.json"
   )
 
   if ! command -v git >/dev/null 2>&1; then
@@ -526,10 +523,7 @@ run_smoke_checks() {
     "$REPO_DIR/.gitconfig:$HOME/.gitconfig"
     "$REPO_DIR/.ripgreprc:$HOME/.ripgreprc"
     "$REPO_DIR/.editorconfig:$HOME/.editorconfig"
-    "$REPO_DIR/.copilot/lsp-config.json:$HOME/.copilot/lsp-config.json"
-    "$REPO_DIR/.copilot/mcp-config.json:$HOME/.copilot/mcp-config.json"
     "$REPO_DIR/.claude/CLAUDE.md:$HOME/.claude/CLAUDE.md"
-    "$REPO_DIR/.config/claude/mcp.json:$HOME/.config/claude/mcp.json"
   )
 
   local mapping source target
@@ -1322,10 +1316,7 @@ create_symlinks() {
   link_file "$REPO_DIR/.gitconfig" "$HOME/.gitconfig"
   link_file "$REPO_DIR/.ripgreprc" "$HOME/.ripgreprc"
   link_file "$REPO_DIR/.editorconfig" "$HOME/.editorconfig"
-  link_file "$REPO_DIR/.copilot/lsp-config.json" "$HOME/.copilot/lsp-config.json"
-  link_file "$REPO_DIR/.copilot/mcp-config.json" "$HOME/.copilot/mcp-config.json"
   link_file "$REPO_DIR/.claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
-  link_file "$REPO_DIR/.config/claude/mcp.json" "$HOME/.config/claude/mcp.json"
 }
 
 set_zsh_default_shell() {

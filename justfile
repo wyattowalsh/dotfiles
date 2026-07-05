@@ -2,7 +2,7 @@
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
-shell_files := "setup.sh bootstrap/macos.sh checks/ai-check.sh checks/ai-negative-check.sh checks/config-dirs-inventory.sh checks/freshen-smoke.sh checks/freshen-version.sh checks/secrets-scan.sh checks/smoke.sh checks/validate-json.sh checks/zsh-inventory.sh"
+shell_files := "setup.sh bootstrap/macos.sh checks/config-dirs-inventory.sh checks/freshen-smoke.sh checks/freshen-version.sh checks/secrets-scan.sh checks/smoke.sh checks/validate-json.sh checks/zsh-inventory.sh"
 
 # List available recipes (default).
 default:
@@ -16,7 +16,7 @@ bootstrap *ARGS:
 check: check-shell check-zsh check-freshen check-json secrets-scan
 
 # Run the validation suite used by CI.
-ci: check smoke ai-check docs-ci
+ci: check smoke docs-ci
 
 # Validate shell scripts with bash -n and shellcheck when available.
 check-shell:
@@ -57,11 +57,6 @@ darwin-check:
 # Preview Chezmoi-managed home config when Chezmoi is available.
 home-diff:
     command -v chezmoi >/dev/null 2>&1 && chezmoi --source home data && chezmoi --source home diff || echo "chezmoi not installed; skipping"
-
-# Validate sanitized AI/MCP config manifests.
-ai-check:
-    ./checks/ai-check.sh
-    ./checks/ai-negative-check.sh
 
 # Install docs dependencies.
 [working-directory: 'docs']

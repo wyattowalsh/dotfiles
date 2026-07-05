@@ -2,11 +2,11 @@
 
 ## Scope
 
-Internal Fumadocs documentation site (`docs/`). Serves runbooks for the macOS full-rig bootstrap, SSOT workflow, validation, packages, and AI/MCP policy.
+Internal Fumadocs documentation site (`docs/`). Serves runbooks for the macOS full-rig bootstrap, SSOT workflow, validation, packages, and AI harness pointers.
 
 ## Content rules
 
-- Ground pages in tracked manifests (`brew/Brewfile`, `ai/`, `justfile`, `bootstrap/macos.sh`) — not live `~` inventory
+- Ground pages in tracked manifests (`brew/Brewfile`, `justfile`, `bootstrap/macos.sh`) — not live `~` inventory
 - Keep `content/docs/meta.json` sidebar order aligned when adding or renaming pages
 - Use MDX frontmatter `title` + `description` on every page
 - Prefer tables and command blocks over prose lists for scanability
@@ -20,7 +20,7 @@ Internal Fumadocs documentation site (`docs/`). Serves runbooks for the macOS fu
 | Bootstrap behavior | `fresh-mac.mdx` |
 | Brewfile group changes | `packages.mdx` |
 | Chezmoi/home layout | `home-config.mdx` + `home/README.md` |
-| AI/MCP policy | `ai-mcp.mdx` + `ai/README.md` |
+| AI harness pointer | `ai-harness.mdx` (SSOT: wyattowalsh/agents) |
 | SSOT promotion flow | `ssot-workflow.mdx` + root `AGENTS.md` |
 
 ## Validation

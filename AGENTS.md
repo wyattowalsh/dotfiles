@@ -1,7 +1,9 @@
 # AGENTS
 
 ## Purpose
-This repository is a **private, personal, internal-only** dotfiles SSOT for the `w4w-mbp` rig (`/Users/ww`). It captures curated desired state for shell, editor, git, Homebrew, nix-darwin, Chezmoi-managed home config, and AI/MCP bootstrap. Treat the live Mac as inventory (`just inventory-redacted` → `local/`), promote intentional changes into tracked files, and keep secrets out of git.
+This repository is a **private, personal, internal-only** dotfiles SSOT for the `w4w-mbp` rig (`/Users/ww`). It captures curated desired state for shell, editor, git, Homebrew, nix-darwin, and Chezmoi-managed home config. Treat the live Mac as inventory (`just inventory-redacted` → `local/`), promote intentional changes into tracked files, and keep secrets out of git.
+
+**AI harness, MCP servers, and agent client configs** live in [wyattowalsh/agents](https://github.com/wyattowalsh/agents) — not here. This repo may document env var *names* (`.env.example`) only.
 
 ## SSOT workflow
 1. Run `just inventory-redacted` to refresh ignored `local/Brewfile.raw` and config-dir inventory.
@@ -11,12 +13,11 @@ This repository is a **private, personal, internal-only** dotfiles SSOT for the 
 
 ## Files overview
 - `setup.sh`: main bootstrap entrypoint (should converge system state when re-run; supports `--dry-run`, `--verbose`, and `--smoke-check`).
-- `justfile`: canonical workflow runner for bootstrap, checks, docs, Brew, Darwin, AI/MCP, inventory, and secret scans.
+- `justfile`: canonical workflow runner for bootstrap, checks, docs, Brew, Darwin, inventory, and secret scans.
 - `bootstrap/`: macOS full-rig bootstrap scripts.
 - `brew/`: curated Homebrew Bundle desired state and package notes.
 - `darwin/`: nix-darwin/Home Manager scaffold for Apple Silicon macOS.
 - `home/`: Chezmoi-style home configuration templates.
-- `ai/`: sanitized MCPHub-first AI/MCP manifests and generated examples.
 - `docs/`: internal Fumadocs documentation site.
 - `checks/`: validation and smoke-check scripts invoked by justfile recipes.
 - `openspec/`: OpenSpec change notes for non-trivial workflow/public structure changes.
@@ -25,14 +26,12 @@ This repository is a **private, personal, internal-only** dotfiles SSOT for the 
 - `.gitconfig`: shared Git configuration defaults.
 - `.ripgreprc`: default ripgrep options.
 - `.editorconfig`: cross-editor formatting defaults.
-- `.copilot/lsp-config.json`: Copilot CLI LSP configuration (symlinked to `~/.copilot/lsp-config.json`).
-- `.copilot/mcp-config.json`: Copilot CLI MCP server configuration (symlinked to `~/.copilot/mcp-config.json`).
+- `.env.example`: documented env var names for AI/MCP (values stay local).
 - `.github/lsp.json`: repository LSP configuration used by GitHub tooling.
-- `.github/copilot-instructions.md`: repository instructions used by GitHub Copilot.
-- `.claude/CLAUDE.md`: Claude-specific usage guidance.
-- `.config/claude/mcp.json`: Claude MCP server configuration.
+- `.github/copilot-instructions.md`: repository instructions used by GitHub Copilot when editing **this repo**.
+- `.claude/CLAUDE.md`: Claude hint for this repo (delegates to `AGENTS.md`).
 - `AGENTS.md`: repository conventions for humans and automation.
-- `GEMINI.md`: Gemini-specific usage guidance.
+- `GEMINI.md`: Gemini hint for this repo (delegates to `AGENTS.md`).
 - `LICENSE`: licensing terms.
 
 ## `setup.sh` idempotency contract
@@ -45,14 +44,12 @@ This repository is a **private, personal, internal-only** dotfiles SSOT for the 
 - Use retry + backoff + command timeouts for network-sensitive operations.
 - Use safer apt privilege handling: explicit privilege checks + `run_privileged` + noninteractive apt options.
 
-## AI bootstrap notes
+## Linux AI bootstrap notes (CLIs only — configs in agents repo)
 - `setup.sh` installs `@anthropic-ai/claude-code`, `@google/gemini-cli`, `@github/copilot`, and `@openai/codex` via npm when missing, and installs `github/gh-copilot` for `gh` when available.
-- `setup.sh` also maintains startup shim links for `claude`, `gemini`, `copilot`, and `codex` in `~/.local/bin` so those commands resolve before `nvm` lazy initialization.
-- `setup.sh` installs skills from `wyattowalsh/agents` (no `gh:` prefix) via non-interactive `npx -y skills add --yes` with a dedicated longer timeout (`SKILLS_INSTALL_TIMEOUT_SECONDS=300`) and: `add-badges`, `agent-conventions`, `email-whiz`, `frontend-designer`, `honest-review`, `host-panel`, `javascript-conventions`, `learn`, `mcp-creator`, `orchestrator`, `prompt-engineer`, `python-conventions`, `research`, `skill-creator`.
-- Skills target agents are limited to: `claude-code`, `codex`, `gemini-cli`, and `github-copilot` (only if each CLI is installed).
-- Universal skills from `~/.agents/skills` are mirrored into `~/.copilot/skills`, `~/.codex/skills`, and `~/.gemini/skills` (for installed CLIs) to improve skill detection.
-- Copilot/Codex require provider authentication after install; skills install may warn and continue when blocked by auth/network constraints.
-- `setup.sh` installs `wagents` as an optional step: it tries `uv tool install wagents`, falls back to `uv tool install --from "$HOME/dev/tools/agents" wagents`, and warns/continues if still unavailable.
+- `setup.sh` maintains startup shim links for `claude`, `gemini`, `copilot`, and `codex` in `~/.local/bin`.
+- `setup.sh` installs skills from `wyattowalsh/agents` via non-interactive `npx -y skills add --yes` when CLIs exist.
+- Universal skills from `~/.agents/skills` are mirrored into per-agent skill dirs for installed CLIs.
+- Do **not** add MCP JSON, client manifests, or harness configs to this repo — change `wyattowalsh/agents` instead.
 - `setup.sh` skips `chsh` default-shell updates in Codespaces or non-interactive sessions.
 
 ## Bash safety conventions
@@ -71,7 +68,6 @@ This repository is a **private, personal, internal-only** dotfiles SSOT for the 
 - Curate Homebrew packages by intent before promoting them to `brew/Brewfile`.
 - Keep nix-darwin/Home Manager host-specific values in `darwin/hosts/`.
 - Keep portable home configuration in `home/` and private values in local Chezmoi data or untracked overrides.
-- MCPHub is the default AI/MCP control plane; direct MCP configs are fallback/bootstrap only.
 
 ## No secrets policy
 - Never commit passwords, tokens, API keys, private keys, or other secrets.
@@ -79,7 +75,6 @@ This repository is a **private, personal, internal-only** dotfiles SSOT for the 
 
 ## Documentation maintenance
 - Internal runbooks: `docs/content/docs/` (Fumadocs). Sidebar order: `docs/content/docs/meta.json`.
-- When changing justfile recipes, bootstrap phases, Brewfile groups, home layout, or AI/MCP policy — update the matching MDX page and nested `AGENTS.md` in the same change.
-- Root `README.md` stays the public-facing overview; `docs/` is the operator deep-dive.
+- When changing justfile recipes, bootstrap phases, Brewfile groups, or home layout — update the matching MDX page and nested `AGENTS.md` in the same change.
+- AI harness docs point to `wyattowalsh/agents`; only env var names belong in dotfiles.
 - Validate doc changes with `just docs-ci` before merge.
-- `topics/` READMEs are lightweight ownership maps; link to canonical SSOT paths instead of duplicating manifest content.

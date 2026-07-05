@@ -9,6 +9,7 @@
 .DS_Store
 .env
 .env.*
+!.env.example
 *.pem
 id_rsa
 id_ed25519

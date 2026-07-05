@@ -24,5 +24,5 @@ GitHub Copilot instructions, path-specific `.github/instructions/`, LSP config, 
 
 ```yaml
 # .github/workflows/ci.yml → just ci
-# check + smoke + ai-check + docs-ci
+# check + smoke + docs-ci
 ```

@@ -1,22 +1,19 @@
 # AI Topic
 
-Owns AI client configuration strategy, agent/skill boundaries, and generated config review.
+Owns AI client **strategy** — implementation SSOT is [wyattowalsh/agents](https://github.com/wyattowalsh/agents).
 
-## Canonical SSOT
+## In dotfiles
 
-- `ai/` — MCPHub manifests, client surfaces, templates
-- `setup.sh` — Linux path installs CLIs + skills (`claude`, `gemini`, `copilot`, `codex`)
+- `.env.example` — env var names only
+- `setup.sh` (Linux) — optional CLI + skills install from agents repo
+- Repo hints: `AGENTS.md`, `.github/copilot-instructions.md`, `.claude/CLAUDE.md`
 
-macOS full-rig bootstrap does not yet install AI CLIs; install manually or extend bootstrap when promoted.
+## Not in dotfiles
 
-## Policy
-
-- Skills from `wyattowalsh/agents` via `setup.sh` on Linux
-- Universal skills mirrored to per-agent skill dirs when CLIs exist
-- Provider auth remains manual after install
+- MCP JSON, MCPHub manifests, client surfaces, skills catalogs
 
 ## Validation
 
 ```bash
-just ai-check
+just check
 ```

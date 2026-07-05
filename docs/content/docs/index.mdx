@@ -3,7 +3,7 @@ title: Dotfiles Full Rig
 description: Internal guide for the w4w-mbp dotfiles SSOT and macOS bootstrap.
 ---
 
-Private, personal SSOT for shell, git, Homebrew, nix-darwin, Chezmoi home config, and AI/MCP bootstrap. This site documents **tracked desired state** — not live auth, caches, or machine-private inventory.
+Private, personal SSOT for shell, git, Homebrew, nix-darwin, and Chezmoi home config. AI/MCP harness configs live in [wyattowalsh/agents](https://github.com/wyattowalsh/agents). This site documents **tracked desired state** — not live auth, caches, or machine-private inventory.
 
 ## Start here
 
@@ -14,7 +14,7 @@ Private, personal SSOT for shell, git, Homebrew, nix-darwin, Chezmoi home config
 | Preview home config | [Home configuration](/docs/home-config) | `just home-diff` |
 | Pre-commit safety | [Validation](/docs/validation) | `just check` |
 | Package intent | [Package catalog](/docs/packages) | `just brew-check` |
-| AI/MCP policy | [AI and MCP matrix](/docs/ai-mcp) | `just ai-check` |
+| AI harness (external) | [AI harness](/docs/ai-harness) | See agents repo |
 
 ## Command surface
 
@@ -23,13 +23,13 @@ Private, personal SSOT for shell, git, Homebrew, nix-darwin, Chezmoi home config
 ```bash
 just --list
 just check          # static validation (shell, zsh parity, JSON, secrets scan)
-just ci             # full CI parity: check + smoke + ai + docs build
+just ci             # full CI parity: check + smoke + docs build
 just bootstrap --dry-run
 ```
 
 ## What belongs in Git
 
-- Curated manifests: `brew/Brewfile`, `darwin/`, `home/`, root dotfiles, `ai/` manifests
+- Curated manifests: `brew/Brewfile`, `darwin/`, `home/`, root dotfiles, `.env.example` (names only)
 - Runbooks and agent instructions in `docs/`, `AGENTS.md`, and `.github/instructions/`
 
 ## What stays local

@@ -187,10 +187,7 @@ link_root_dotfiles() {
   link_repo_file "$REPO_DIR/.gitconfig" "$HOME/.gitconfig"
   link_repo_file "$REPO_DIR/.ripgreprc" "$HOME/.ripgreprc"
   link_repo_file "$REPO_DIR/.editorconfig" "$HOME/.editorconfig"
-  link_repo_file "$REPO_DIR/.copilot/lsp-config.json" "$HOME/.copilot/lsp-config.json"
-  link_repo_file "$REPO_DIR/.copilot/mcp-config.json" "$HOME/.copilot/mcp-config.json"
   link_repo_file "$REPO_DIR/.claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
-  link_repo_file "$REPO_DIR/.config/claude/mcp.json" "$HOME/.config/claude/mcp.json"
 }
 
 ensure_command_plan() {

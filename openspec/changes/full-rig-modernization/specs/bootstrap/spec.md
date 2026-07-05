@@ -2,7 +2,7 @@
 
 ### Requirement: Justfile Orchestration
 
-The repository SHALL expose bootstrap, validation, inventory, docs, package, AI, and secrets workflows through `justfile`.
+The repository SHALL expose bootstrap, validation, inventory, docs, package, and secrets workflows through `justfile`.
 
 #### Scenario: Run aggregate checks
 
@@ -12,7 +12,7 @@ The repository SHALL expose bootstrap, validation, inventory, docs, package, AI,
 #### Scenario: Run CI checks
 
 - **WHEN** `just ci` is run
-- **THEN** static checks, smoke checks, AI/MCP validation, docs dependency installation, docs typechecking, and docs production build validation are executed.
+- **THEN** static checks, smoke checks, docs dependency installation, docs typechecking, and docs production build validation are executed.
 
 #### Scenario: Generate redacted local inventory
 
@@ -46,11 +46,6 @@ The repository SHALL include a macOS bootstrap path that can run in dry-run mode
 - **THEN** the bootstrap uses the pinned nix-darwin revision from `darwin/flake.lock`.
 - **AND** if `darwin/flake.lock` is missing, setup fails before applying system changes with an actionable lock-generation command instead of resolving a moving branch.
 
-### Requirement: Secret-Safe AI Config
+### Requirement: External AI Harness SSOT
 
-The repository SHALL model AI and MCP client configuration through sanitized manifests with placeholders for secrets.
-
-#### Scenario: Scan AI manifests
-
-- **WHEN** `just ai-check` is run
-- **THEN** manifests validate as JSON and no literal MCP bearer token is accepted.
+AI and MCP client configuration SHALL live in `wyattowalsh/agents`. This repository MAY document env var names in `.env.example` only.

@@ -1,0 +1,40 @@
+---
+title: AI Harness
+description: Agent and MCP configuration lives in wyattowalsh/agents — not dotfiles.
+---
+
+## SSOT
+
+**Agent harness, MCP servers, skills manifests, and client configs** are maintained in [wyattowalsh/agents](https://github.com/wyattowalsh/agents). This dotfiles repo does not track those files.
+
+Dotfiles only documents which **environment variables** you may need locally and how Linux bootstrap installs CLIs/skills.
+
+## Environment variables
+
+Set values in `~/.zshrc.local`, a private env file, or your shell profile — never commit literals.
+
+| Variable | Used for |
+| --- | --- |
+| `MCPHUB_BEARER_TOKEN` | MCPHub group endpoints |
+| `BRAVE_API_KEY` | Brave Search MCP (when enabled in agents repo) |
+| Provider auth | Claude, Gemini, Copilot, Codex — OAuth/API via each CLI |
+
+See `.env.example` at the repo root for a starter list.
+
+## Linux bootstrap (`setup.sh`)
+
+On Debian/Ubuntu, `setup.sh` optionally:
+
+- Installs AI CLIs (`claude`, `gemini`, `copilot`, `codex`) via npm when missing
+- Installs skills from `wyattowalsh/agents` via `npx skills add`
+- Mirrors `~/.agents/skills` into per-agent skill dirs when CLIs exist
+
+macOS full-rig bootstrap does not install AI CLIs — manage harness via the agents repo after bootstrap.
+
+## Repo-local agent hints only
+
+These files give **this repository** context to coding agents; they are not MCP config:
+
+- `AGENTS.md` — dotfiles conventions
+- `.github/copilot-instructions.md` — Copilot when editing this repo
+- `.claude/CLAUDE.md` — delegates to `AGENTS.md`

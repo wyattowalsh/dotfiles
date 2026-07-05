@@ -11,8 +11,7 @@ Use `justfile` as the canonical command surface. Checks fail fast on tracked reg
 | --- | --- |
 | `just check` | Shell syntax, zsh parity, JSON schemas, secrets scan |
 | `just smoke` | Non-destructive runtime smoke checks |
-| `just ai-check` | AI/MCP manifest schemas + negative fixtures |
-| `just ci` | Full pipeline: `check` + `smoke` + `ai-check` + `docs-ci` |
+| `just ci` | Full pipeline: `check` + `smoke` + `docs-ci` |
 | `just secrets-scan` | Tracked files for secret-shaped patterns |
 | `just brew-check` | `brew bundle check` against curated Brewfile |
 | `just darwin-check` | `nix flake check` + `darwin-rebuild check` |

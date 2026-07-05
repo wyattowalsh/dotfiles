@@ -12,8 +12,8 @@ Topic directories group related dotfile concerns in the style of mature topic-or
 | [editors](editors/) | IDE/editor portable config | Chezmoi templates (future) |
 | [macos](macos/) | macOS defaults, services | `darwin/hosts/` |
 | [packages](packages/) | Package curation policy | `brew/Brewfile`, `darwin/` |
-| [ai](ai/) | AI client strategy | `ai/`, `setup.sh` (Linux) |
-| [mcp](mcp/) | MCPHub + fallbacks | `ai/mcphub.manifest.json` |
+| [ai](ai/) | AI client strategy | wyattowalsh/agents |
+| [mcp](mcp/) | MCPHub + fallbacks | `wyattowalsh/agents` |
 | [docs](docs/) | Internal docs workflow | `docs/` Fumadocs site |
 | [security](security/) | No-secrets, scanning | `checks/secrets-scan.sh`, `AGENTS.md` |
 

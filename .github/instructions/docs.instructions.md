@@ -13,7 +13,7 @@ applyTo: "docs/**,README.md,**/AGENTS.md,topics/**"
 
 ## Content graph
 
-`index` → `fresh-mac` → `ssot-workflow` → `home-config` → `validation` → `packages` → `ai-mcp`
+`index` → `fresh-mac` → `ssot-workflow` → `home-config` → `validation` → `packages` → `ai-harness`
 
 ## Validate
 

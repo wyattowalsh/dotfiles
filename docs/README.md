@@ -27,7 +27,7 @@ cd docs && pnpm dev
 | `home-config` | Chezmoi + root symlink layout |
 | `validation` | justfile check matrix |
 | `packages` | Brewfile group reference |
-| `ai-mcp` | MCPHub-first policy |
+| `ai-harness` | Pointer to wyattowalsh/agents + env vars |
 
 Sidebar order is defined in `content/docs/meta.json`.
 
