@@ -534,13 +534,17 @@ freshen() {
         while IFS= read -r -d '' candidate; do
             (( scanned >= max_scan )) && break
             (( scanned++ ))
-            size_kb="$(_du_kb "$candidate" "${FRESHEN_DEV_PRUNE_DU_TIMEOUT_SEC:-10}")" || continue
-            [[ -z "$size_kb" ]] && continue
+            if [[ -L "$candidate" ]]; then
+                size_kb=0
+            else
+                size_kb="$(_du_kb "$candidate" "${FRESHEN_DEV_PRUNE_DU_TIMEOUT_SEC:-10}")" || continue
+                [[ -z "$size_kb" ]] && continue
+            fi
             printf '%s\t%s\n' "$size_kb" "$candidate" >> "$tmp_candidates"
         done < <(
             command find "$root" -maxdepth "$max_depth" \
                 \( -name .git -o -name .hg -o -name .svn \) -prune -o \
-                -type d \( \
+                \( -type d -o -type l \) \( \
                     -name node_modules -o \
                     -name .venv -o \
                     -name venv -o \
