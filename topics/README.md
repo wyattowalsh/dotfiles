@@ -1,6 +1,6 @@
 # Topics
 
-Topic directories group related dotfile concerns in the style of mature topic-oriented repos. They are **scaffolding** today — canonical desired state still lives in `brew/`, `home/`, `darwin/`, `ai/`, and root dotfiles.
+Topic directories group related dotfile concerns in the style of mature topic-oriented repos. They are **scaffolding** today — canonical desired state still lives in `brew/`, `home/`, `darwin/`, root dotfiles, and `.env.example`. AI/MCP harness configs live in [wyattowalsh/agents](https://github.com/wyattowalsh/agents) (`topics/ai/` is the pointer).
 
 ## Topic map
 

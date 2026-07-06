@@ -37,7 +37,19 @@ brew "wget"
 brew "yazi"
 brew "zoxide"
 
+# shell-plugins (sourced from .zshrc Homebrew paths)
+brew "zsh-autosuggestions"
+brew "zsh-syntax-highlighting"
+brew "rbenv"
+
+# shell-aliases (aliases/functions in tracked zshrc)
+brew "cloudflared"
+brew "yt-dlp"
+brew "dust"
+brew "duf"
+
 # dev-languages
+# node/pnpm versions: mise (brew "mise") is canonical on w4w-mbp
 brew "bun"
 brew "deno"
 brew "docker"
@@ -46,7 +58,6 @@ brew "docker-compose"
 brew "go"
 brew "mise"
 brew "node"
-brew "pnpm"
 
 # ai-tools
 brew "ollama"
@@ -60,7 +71,7 @@ brew "lazygit"
 # browsers/productivity/media
 cask "brave-browser"
 cask "claude"
-cask "codex"
+cask "codex-app"
 cask "cursor"
 cask "figma"
 cask "firefox"

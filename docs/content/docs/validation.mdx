@@ -9,27 +9,34 @@ Use `justfile` as the canonical command surface. Checks fail fast on tracked reg
 
 | Task | What it validates |
 | --- | --- |
-| `just check` | Shell syntax, zsh parity, JSON schemas, secrets scan |
+| `just check` | Shell syntax, zsh parity, freshen SSOT smoke, JSON schemas, secrets scan |
+| `just check-freshen` | Freshen version SSOT + 272-case zsh smoke harness |
 | `just smoke` | Non-destructive runtime smoke checks |
 | `just ci` | Full pipeline: `check` + `smoke` + `docs-ci` |
 | `just secrets-scan` | Tracked files for secret-shaped patterns |
 | `just brew-check` | `brew bundle check` against curated Brewfile |
 | `just darwin-check` | `nix flake check` + `darwin-rebuild check` |
 | `just home-diff` | Chezmoi diff preview |
+| `just inventory-redacted` | Redacted live-rig inventory under ignored `local/` |
+| `just docs-install` | Install docs site dependencies |
+| `just docs-check` | Typecheck Fumadocs site |
+| `just docs-build` | Production build of docs site |
 | `just docs-ci` | `pnpm install --frozen-lockfile` + typecheck + build |
+| `just bootstrap` | macOS full-rig bootstrap (`--dry-run` default) |
 
 ## `just check` breakdown
 
 ```bash
-just check-shell   # bash -n + shellcheck on scripts
-just check-zsh     # zsh -n + cmp .zshrc ↔ home/dot_zshrc.tmpl
-just check-json    # ./checks/validate-json.sh
-just secrets-scan  # ./checks/secrets-scan.sh (requires rg)
+just check-shell    # bash -n + shellcheck on scripts
+just check-zsh      # zsh -n + cmp .zshrc ↔ home/dot_zshrc.tmpl
+just check-freshen  # ./checks/freshen-smoke.sh (version SSOT + 272 tests)
+just check-json     # ./checks/validate-json.sh
+just secrets-scan   # ./checks/secrets-scan.sh (requires rg)
 ```
 
 ## CI parity
 
-GitHub Actions (`.github/workflows/ci.yml`) runs `just ci` on Ubuntu with zsh and pnpm installed. Local pre-push:
+GitHub Actions (`.github/workflows/ci.yml`) runs `just ci` on Ubuntu with `zsh` and `ripgrep` installed. Local pre-push:
 
 ```bash
 just ci
@@ -49,4 +56,4 @@ just smoke
 
 ## Optional skips
 
-When `brew`, `nix`, `chezmoi`, or `shellcheck` are not installed, the corresponding recipe prints a skip message and continues. CI installs zsh; macOS dev machines should have brew/nix for meaningful `just brew-check` / `just darwin-check` results.
+When `brew`, `nix`, `chezmoi`, or `shellcheck` are not installed, the corresponding recipe prints a skip message and continues. CI installs `zsh` and `ripgrep`; macOS dev machines should have brew/nix for meaningful `just brew-check` / `just darwin-check` results.

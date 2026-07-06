@@ -1,7 +1,10 @@
 --smart-case
 --hidden
---glob=!.git/
---glob=!node_modules/
---glob=!.venv/
---glob=!__pycache__/
---colors=line:style:bold
+--follow
+--max-columns=150
+--max-columns-preview
+--glob=!{.git,node_modules,vendor,target,dist,build,__pycache__,.venv,venv}
+--glob=!*.min.js
+--glob=!package-lock.json
+--glob=!uv.lock
+--glob=!poetry.lock

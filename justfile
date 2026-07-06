@@ -47,7 +47,13 @@ secrets-scan:
 
 # Check the curated Brewfile when Homebrew is available.
 brew-check:
-    command -v brew >/dev/null 2>&1 && brew bundle check --file brew/Brewfile || echo "brew not installed; skipping"
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v brew >/dev/null 2>&1; then
+      echo "brew not installed; skipping"
+      exit 0
+    fi
+    brew bundle check --file brew/Brewfile
 
 # Check Nix flakes and nix-darwin when available.
 darwin-check:

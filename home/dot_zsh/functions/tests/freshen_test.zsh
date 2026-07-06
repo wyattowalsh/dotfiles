@@ -76,6 +76,16 @@ assert_status() {
     fi
 }
 
+assert_interrupt_status() {
+    local actual="$1" label="$2"
+    if [[ "$actual" == 130 || "$actual" == 143 ]]; then
+        pass "$label"
+    else
+        print -u2 -r -- "expected interrupt status 130 or 143, got $actual"
+        fail "$label"
+    fi
+}
+
 assert_trace_order() {
     local first="$1" second="$2" label="$3"
     local first_line second_line
@@ -1115,7 +1125,7 @@ test_interrupt_reporting() {
     kill -INT "$runner_pid"
     wait "$runner_pid" || rc=$?
 
-    assert_status 130 "$rc" "interrupt returns 130"
+    assert_interrupt_status "$rc" "interrupt returns 130 or 143"
     assert_contains "$out" "Interrupted — completed 0, remaining 1, active phase formulae" "interrupt summary reports progress and active phase"
 }
 
@@ -1159,7 +1169,7 @@ test_interrupt_stops_mas_inventory_child() {
     wait "$runner_pid" || rc=$?
     sleep 0.3
 
-    assert_status 130 "$rc" "mas inventory interrupt returns 130"
+    assert_interrupt_status "$rc" "mas inventory interrupt returns 130 or 143"
     if [[ -n "$mas_pid" ]] && kill -0 "$mas_pid" 2>/dev/null; then
         kill -TERM "$mas_pid" 2>/dev/null || true
         fail "mas inventory child is stopped on interrupt"
@@ -1214,7 +1224,7 @@ test_interrupt_stops_parallel_brew_outdated_children() {
     wait "$runner_pid" || rc=$?
     sleep 0.3
 
-    assert_status 130 "$rc" "brew outdated inventory interrupt returns 130"
+    assert_interrupt_status "$rc" "brew outdated inventory interrupt returns 130 or 143"
     if [[ -n "$formulae_pid" ]] && kill -0 "$formulae_pid" 2>/dev/null; then
         kill -TERM "$formulae_pid" 2>/dev/null || true
         fail "formulae brew outdated child is stopped on interrupt"

@@ -33,7 +33,7 @@ just smoke
 
 | Phase | Dry-run | Apply |
 | --- | --- | --- |
-| Toolchain | Plans brew, task, nix, chezmoi, pnpm installs | Installs missing tools |
+| Toolchain | Plans brew, just, nix, chezmoi installs | Installs missing tools (`node`/`pnpm` via mise on w4w-mbp) |
 | Homebrew | `brew bundle check --file brew/Brewfile` | `brew bundle install` |
 | Root dotfiles | Plans `ln -sfn` for `.zshrc`, `.p10k.zsh`, `.gitconfig`, etc. | Creates/repairs symlinks |
 | Chezmoi | `chezmoi --source home diff` | `chezmoi --source home apply` |

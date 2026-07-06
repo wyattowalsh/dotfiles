@@ -241,7 +241,6 @@ main() {
   ensure_command_plan just 'brew install just'
   ensure_command_plan nix 'curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install'
   ensure_command_plan chezmoi 'brew install chezmoi'
-  ensure_command_plan pnpm 'brew install pnpm'
 
   if [ "$APPLY" -eq 1 ]; then
     run_or_print "Install curated Brewfile" brew bundle install --file "$BREWFILE"

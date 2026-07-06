@@ -7,7 +7,7 @@ The repository SHALL expose bootstrap, validation, inventory, docs, package, and
 #### Scenario: Run aggregate checks
 
 - **WHEN** `just check` is run
-- **THEN** shell syntax, shell lint, zsh runtime syntax, JSON validation, and secret scanning are executed without mutating managed files.
+- **THEN** shell syntax, shell lint, zsh runtime syntax, freshen version SSOT smoke, JSON validation, and secret scanning are executed without mutating managed files.
 
 #### Scenario: Run CI checks
 
@@ -23,7 +23,7 @@ The repository SHALL expose bootstrap, validation, inventory, docs, package, and
 #### Scenario: Scan hidden tracked configuration
 
 - **WHEN** `just secrets-scan` is run
-- **THEN** tracked dot-directories such as `.github`, `.claude`, `.copilot`, and `.config` are included while untracked local files, VCS metadata, and generated local artifacts remain excluded.
+- **THEN** all tracked files from `git ls-files` are scanned while untracked local files, VCS metadata, lockfiles, and generated local artifacts remain excluded.
 - **AND** secret-shaped matches are reported by filename without printing matching secret-shaped values.
 
 #### Scenario: Preserve existing user files during setup

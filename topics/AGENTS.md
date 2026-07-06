@@ -8,7 +8,8 @@
 
 Scaffolding for future topic-owned install notes and validation. Canonical SSOT today lives in:
 
-- `brew/`, `darwin/`, `home/`, `ai/`, `docs/`, root dotfiles
+- `brew/`, `darwin/`, `home/`, `topics/ai/` (pointer), `.env.example`, `docs/`, root dotfiles
+- AI/MCP harness SSOT: [wyattowalsh/agents](https://github.com/wyattowalsh/agents)
 
 ## Rules
 
