@@ -312,7 +312,7 @@ freshen() {
     local dev_prune_candidate_count=0
     local dev_prune_root_refused=0
     local _bun_cache_refusal=""
-    local _log_file="" _current_phase="" _current_label=""
+    local _log_file="" _current_phase="" _current_label="" _last_active_phase="" _last_active_label=""
 
     local -a _phase_order=(inventory formulae casks apps cleanup caches doctor)
     typeset -A _phase_label _phase_state _phase_detail _phase_elapsed
@@ -1117,6 +1117,8 @@ freshen() {
 
         _current_phase="$key"
         _current_label="$label"
+        _last_active_phase="$key"
+        _last_active_label="$label"
         _phase_state[$key]="running"
         _phase_detail[$key]="$label"
         _emit_phase "$key"
@@ -1231,7 +1233,8 @@ freshen() {
         local remaining=$(( _total_planned - completed ))
         (( remaining < 0 )) && remaining=0
         print
-        _warn "Interrupted — completed ${completed}, remaining ${remaining}, active phase ${_current_phase:-none}"
+        local active_phase="${_current_phase:-${_last_active_phase:-none}}"
+        _warn "Interrupted — completed ${completed}, remaining ${remaining}, active phase ${active_phase}"
         [[ -n "$_log_file" ]] && print "     ${dim}Log: ${_log_file}${rst}"
     }
 
@@ -1562,6 +1565,8 @@ freshen() {
                 (( overall_index++ ))
                 _current_phase="formulae"
                 _current_label="$pkg"
+                _last_active_phase="formulae"
+                _last_active_label="$pkg"
                 (( ! quiet )) && printf "     %s[%d/%d total]%s %s\n" "$dim" "$overall_index" "$total_formulae_casks" "$rst" "$pkg"
                 _run_with_timeout formulae "Upgrading formula ${pkg}" 0 brew upgrade "$pkg"
                 if (( _run_rc == 0 )); then
@@ -1605,6 +1610,8 @@ freshen() {
                 (( overall_index++ ))
                 _current_phase="casks"
                 _current_label="$c_pkg"
+                _last_active_phase="casks"
+                _last_active_label="$c_pkg"
                 (( ! quiet )) && printf "     %s[%d/%d total]%s %s\n" "$dim" "$overall_index" "$total_formulae_casks" "$rst" "$c_pkg"
                 local -a cask_step_cmd=(brew upgrade --cask)
                 (( cask_greedy )) && cask_step_cmd+=(--greedy)
