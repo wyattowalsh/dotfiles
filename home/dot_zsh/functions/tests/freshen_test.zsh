@@ -146,6 +146,7 @@ setup_env() {
     write_tool_stub cargo-cache
     write_tool_stub go
     write_tool_stub gem
+    write_docker_stub
 }
 
 write_tool_stub() {
@@ -332,6 +333,28 @@ print -r -- "gomi $*" >> "${TRACE_FILE}"
 exit "${GOMI_RC:-0}"
 EOF
     chmod +x "${TEST_BIN}/gomi"
+}
+
+write_docker_stub() {
+    cat > "${TEST_BIN}/docker" <<'EOF'
+#!/usr/bin/env zsh
+emulate -L zsh
+
+print -r -- "docker $*" >> "${TRACE_FILE}"
+
+case "$1" in
+    info)
+        exit "${STUB_DOCKER_INFO_RC:-1}"
+        ;;
+    system)
+        shift
+        [[ "$1" == "prune" ]] && exit "${STUB_DOCKER_PRUNE_RC:-0}"
+        ;;
+esac
+
+exit "${STUB_DOCKER_RC:-0}"
+EOF
+    chmod +x "${TEST_BIN}/docker"
 }
 
 run_freshen() {
