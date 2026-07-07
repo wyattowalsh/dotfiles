@@ -22,6 +22,10 @@ while IFS= read -r -d '' tracked_file; do
       ;;
   esac
 
+  if [ ! -f "$tracked_file" ]; then
+    continue
+  fi
+
   if rg -q -i "$patterns" -- "$tracked_file"; then
     printf '%s\n' "$tracked_file" >>"$matches_file"
   fi

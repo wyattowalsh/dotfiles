@@ -7,7 +7,7 @@
 ## Behavior
 
 - **Default:** dry-run preview when neither `--dry-run` nor `--apply` is passed
-- **Apply:** requires `darwin/flake.lock`; refuses to replace non-symlink home targets
+- **Apply:** requires `darwin/flake.lock`; creates missing parent directories for nested symlink targets; refuses to replace non-symlink home targets
 - **Phases:** Xcode CLT → brew/just/nix/chezmoi → Brewfile → root symlinks → Chezmoi → nix-darwin
 
 Does not install AI CLIs, skills, or build docs. See `setup.sh` for Linux AI bootstrap.

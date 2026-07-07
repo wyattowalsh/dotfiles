@@ -178,6 +178,12 @@ link_repo_file() {
     return 1
   fi
 
+  local target_dir
+  target_dir="$(dirname "$target_path")"
+  if [ ! -d "$target_dir" ]; then
+    run_or_print "Create directory $target_dir" mkdir -p "$target_dir"
+  fi
+
   run_or_print "Link $(basename "$target_path")" ln -sfn "$source_path" "$target_path"
 }
 

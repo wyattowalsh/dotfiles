@@ -35,7 +35,7 @@ just smoke
 | --- | --- | --- |
 | Toolchain | Plans brew, just, nix, chezmoi installs | Installs missing tools (`node`/`pnpm` via mise on w4w-mbp) |
 | Homebrew | `brew bundle check --file brew/Brewfile` | `brew bundle install` |
-| Root dotfiles | Plans `ln -sfn` for `.zshrc`, `.p10k.zsh`, `.gitconfig`, etc. | Creates/repairs symlinks |
+| Root dotfiles | Plans parent directory creation and `ln -sfn` for `.zshrc`, `.p10k.zsh`, `.gitconfig`, nested agent hints, etc. | Creates missing parent directories and repairs symlinks |
 | Chezmoi | `chezmoi --source home diff` | `chezmoi --source home apply` |
 | nix-darwin | `darwin-rebuild check` or flake check | `darwin-rebuild switch --flake ./darwin#w4w-mbp` |
 

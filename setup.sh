@@ -1024,13 +1024,20 @@ link_ai_cli_shim() {
     return
   fi
 
+  if [ -e "$target_path" ] && [ ! -L "$target_path" ]; then
+    if [ "$DRY_RUN" -eq 1 ]; then
+      skip_action "Existing non-symlink startup shim requires manual resolution before linking: $target_path"
+      return
+    fi
+
+    error "Refusing to overwrite existing non-symlink path: $target_path"
+    error "Move or back up the existing path, then re-run setup. Expected link target: $source_path"
+    return 1
+  fi
+
   if [ "$DRY_RUN" -eq 1 ]; then
     skip_action "Would link ${target_path} -> ${source_path}"
     return
-  fi
-
-  if [ -e "$target_path" ] && [ ! -L "$target_path" ]; then
-    warn "Replacing existing path with symlink: $target_path"
   fi
 
   ln -sfn "$source_path" "$target_path"

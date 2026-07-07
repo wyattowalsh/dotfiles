@@ -23,4 +23,3 @@ Preview:
 just home-diff
 just bootstrap --dry-run
 ```
-

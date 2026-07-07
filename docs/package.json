@@ -25,12 +25,5 @@
 		"@types/react": "^19.2.7",
 		"typescript": "^5.9.3"
 	},
-	"packageManager": "pnpm@11.9.0",
-	"pnpm": {
-		"onlyBuiltDependencies": [
-			"esbuild",
-			"nx",
-			"sharp"
-		]
-	}
+	"packageManager": "pnpm@11.9.0"
 }

@@ -14,4 +14,3 @@ The current repo is a compact Linux-oriented bootstrap. The live machine is a ma
 - Public repo structure changes substantially.
 - Bootstrap entrypoints become `just bootstrap` for orchestration and `setup.sh` for the Linux compatibility path.
 - AI/MCP harness remains in wyattowalsh/agents; dotfiles documents env var names only.
-

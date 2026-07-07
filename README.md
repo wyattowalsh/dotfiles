@@ -119,6 +119,9 @@ just check
 just ci
 just smoke
 just secrets-scan
+just hooks-install
+just hooks-run
+just hooks-update
 just inventory-redacted
 just brew-check
 just darwin-check
@@ -127,7 +130,15 @@ just docs-check
 just docs-build
 ```
 
-`just ci` is the self-contained local equivalent of the GitHub Actions validation path. It runs static checks including zsh syntax validation, smoke checks, installs docs dependencies with `pnpm install --frozen-lockfile`, then typechecks and builds the docs site.
+`just ci` is the self-contained local equivalent of the GitHub Actions validation path. It runs static checks including pre-commit config validation, zsh syntax validation, smoke checks, installs docs dependencies with `pnpm install --frozen-lockfile`, then typechecks and builds the docs site.
+
+Install the local git hooks after cloning:
+
+```bash
+just hooks-install
+```
+
+The tracked [`.pre-commit-config.yaml`](./.pre-commit-config.yaml) runs structural file checks and repo-specific validation before commits, then runs full `just ci` before pushes. Run every hook across the repository with `just hooks-run`; refresh pinned hook revisions with `just hooks-update`.
 
 The bootstrap dispatcher defaults to preview behavior unless `--apply` is explicitly supplied:
 
@@ -202,7 +213,7 @@ flowchart LR
 | Node runtime           | `nvm install --lts` + default alias                                                                                                                             | Reuses installed `nvm`; tracks current LTS[^lts]                                                 |
 | Python tooling         | `uv` installer                                                                                                                                                  | Skips if `uv` already exists                                                                     |
 | Go runtime             | Latest Go tarball into `/usr/local/go`                                                                                                                          | Skips if `go` already exists                                                                     |
-| AI CLIs                | npm global `@anthropic-ai/claude-code`, `@google/gemini-cli`, `@github/copilot`, `@openai/codex` + startup shims in `~/.local/bin`                              | Skips each CLI already present and refreshes shim links idempotently                             |
+| AI CLIs                | npm global `@anthropic-ai/claude-code`, `@google/gemini-cli`, `@github/copilot`, `@openai/codex` + startup shims in `~/.local/bin`                              | Skips each CLI already present, refreshes symlink shims idempotently, and refuses non-symlink shim paths |
 | GitHub Copilot CLI ext | `gh extension install github/gh-copilot` (if `gh` exists)                                                                                                       | Installs only if extension missing                                                               |
 | Agent skills           | Non-interactive `npx -y skills add --yes wyattowalsh/agents ... -g` (no `gh:` prefix) for supported agents only, with a dedicated 300s timeout                  | Guard file prevents re-install; auth/network/timeout failures warn and continue                  |
 | Skill mirroring        | Symlinks `~/.agents/skills/*` into `~/.copilot/skills`, `~/.codex/skills`, `~/.gemini/skills` (for installed CLIs)                                              | Creates/repairs links idempotently; skips non-symlink user-owned paths                           |

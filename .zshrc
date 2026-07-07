@@ -502,7 +502,6 @@ fi
 
 # Amazon Q post block. Keep at the bottom of this file.
 [[ -f "${HOME}/Library/Application Support/amazon-q/shell/zshrc.post.zsh" ]] && builtin source "${HOME}/Library/Application Support/amazon-q/shell/zshrc.post.zsh"
-export OPENCODE_ALLOW_SECRET_FILES=1
 export PATH="/Users/ww/.cache/.bun/bin:$PATH"
 # The following lines have been added by Docker Desktop to enable Docker CLI completions.
 fpath=(/Users/ww/.docker/completions $fpath)

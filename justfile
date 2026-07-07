@@ -13,15 +13,31 @@ bootstrap *ARGS:
     ./bootstrap/macos.sh {{ARGS}}
 
 # Run static validation.
-check: check-shell check-zsh check-freshen check-json secrets-scan
+check: check-hooks check-shell check-zsh check-freshen check-json secrets-scan
 
 # Run the validation suite used by CI.
 ci: check smoke docs-ci
 
 # Validate shell scripts with bash -n and shellcheck when available.
 check-shell:
+    #!/usr/bin/env bash
+    set -euo pipefail
     bash -n {{shell_files}}
-    command -v shellcheck >/dev/null 2>&1 && shellcheck {{shell_files}} || echo "shellcheck not installed; skipping"
+    if command -v shellcheck >/dev/null 2>&1; then
+      shellcheck {{shell_files}}
+    else
+      echo "shellcheck not installed; skipping"
+    fi
+
+# Validate pre-commit hook configuration when pre-commit is available.
+check-hooks:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if command -v pre-commit >/dev/null 2>&1; then
+      pre-commit validate-config
+    else
+      echo "pre-commit not installed; skipping"
+    fi
 
 # Validate zsh runtime configuration syntax when zsh is available.
 check-zsh:
@@ -57,8 +73,18 @@ brew-check:
 
 # Check Nix flakes and nix-darwin when available.
 darwin-check:
-    command -v nix >/dev/null 2>&1 && nix flake check ./darwin || echo "nix not installed; skipping"
-    command -v darwin-rebuild >/dev/null 2>&1 && darwin-rebuild check --flake ./darwin#w4w-mbp || echo "darwin-rebuild not installed; skipping"
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if command -v nix >/dev/null 2>&1; then
+      nix flake check --no-write-lock-file ./darwin
+    else
+      echo "nix not installed; skipping"
+    fi
+    if command -v darwin-rebuild >/dev/null 2>&1; then
+      darwin-rebuild check --flake ./darwin#w4w-mbp
+    else
+      echo "darwin-rebuild not installed; skipping"
+    fi
 
 # Preview Chezmoi-managed home config when Chezmoi is available.
 home-diff:
@@ -85,6 +111,18 @@ docs-ci:
     pnpm install --frozen-lockfile
     pnpm typecheck
     pnpm build
+
+# Install repository pre-commit and pre-push hooks.
+hooks-install:
+    pre-commit install --install-hooks --hook-type pre-commit --hook-type pre-push
+
+# Run pre-commit hooks across the repository. Extra args pass through.
+hooks-run *ARGS:
+    pre-commit run --all-files {{ARGS}}
+
+# Update pinned pre-commit hook revisions.
+hooks-update:
+    pre-commit autoupdate
 
 # Generate local redacted inventory artifacts under ignored local/.
 inventory-redacted:

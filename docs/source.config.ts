@@ -6,4 +6,3 @@ export const docs = defineDocs({
     schema: frontmatterSchema
   }
 });
-

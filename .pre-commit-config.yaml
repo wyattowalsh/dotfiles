@@ -1,0 +1,94 @@
+minimum_pre_commit_version: "4.0.0"
+default_install_hook_types:
+  - pre-commit
+  - pre-push
+default_stages:
+  - pre-commit
+
+exclude: |
+  (?x)^(
+    docs/(node_modules|\.next)/|
+    local/
+  )
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args:
+          - --maxkb=1024
+      - id: check-case-conflict
+      - id: check-executables-have-shebangs
+      - id: check-illegal-windows-names
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-shebang-scripts-are-executable
+      - id: check-symlinks
+      - id: check-toml
+      - id: check-yaml
+      - id: destroyed-symlinks
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: fix-byte-order-marker
+      - id: mixed-line-ending
+        args:
+          - --fix=lf
+      - id: trailing-whitespace
+        args:
+          - --markdown-linebreak-ext=md,mdx
+
+  - repo: local
+    hooks:
+      - id: dotfiles-shell-check
+        name: dotfiles shell syntax and lint
+        entry: just check-shell
+        language: system
+        pass_filenames: false
+        files: ^(setup\.sh|bootstrap/macos\.sh|checks/.*\.sh|justfile)$
+
+      - id: dotfiles-zsh-parity
+        name: dotfiles zsh syntax and parity
+        entry: just check-zsh
+        language: system
+        pass_filenames: false
+        files: ^(\.zshrc|home/dot_zshrc\.tmpl|\.p10k\.zsh|home/dot_p10k\.zsh)$
+
+      - id: dotfiles-freshen-smoke
+        name: dotfiles freshen smoke tests
+        entry: just check-freshen
+        language: system
+        pass_filenames: false
+        files: ^(home/dot_zsh/functions/(freshen|freshen\.VERSION|tests/freshen_test\.zsh)|checks/freshen-.*\.sh)$
+
+      - id: dotfiles-json
+        name: dotfiles JSON validation
+        entry: just check-json
+        language: system
+        pass_filenames: false
+        files: \.json$
+
+      - id: dotfiles-secrets-scan
+        name: dotfiles tracked secrets scan
+        entry: just secrets-scan
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: dotfiles-ci
+        name: dotfiles full CI
+        entry: just ci
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages:
+          - pre-push
+
+      - id: dotfiles-platform-checks
+        name: dotfiles platform convergence checks
+        entry: bash -c 'just brew-check && just darwin-check && just home-diff'
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages:
+          - manual

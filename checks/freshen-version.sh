@@ -24,6 +24,7 @@ if ! grep -Fq "# freshen v${EXPECTED_VERSION}" "$FRESHEN_FILE"; then
   exit 1
 fi
 
+# shellcheck disable=SC2016
 if ! grep -Fq 'print "freshen ${_FRESHEN_VERSION} (${_FRESHEN_RELEASE_DATE})"' "$FRESHEN_FILE"; then
   printf 'freshen --version emit missing dynamic version from freshen.VERSION\n' >&2
   exit 1
