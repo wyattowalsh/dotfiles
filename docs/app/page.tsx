@@ -2,31 +2,39 @@ import Link from "next/link";
 import { HomeLayout } from "fumadocs-ui/layouts/home";
 import { baseOptions } from "@/lib/layout.shared";
 import { docSections, groupLabels, groupOrder } from "@/lib/sections";
-import { CtaArrow, GroupIcon, HeroMark, SectionIcon } from "@/lib/icons";
+import { CtaArrow, GroupIcon, SectionIcon } from "@/lib/icons";
 
 export default function HomePage() {
   return (
-    <HomeLayout {...baseOptions()}>
-      <div className="mx-auto w-full max-w-5xl px-6 py-14 md:py-16">
-        <p className="mb-3 flex items-center gap-2 text-sm font-semibold tracking-wide text-fd-primary uppercase">
-          <span className="icon-badge size-6">
-            <HeroMark />
-          </span>
-          Personal · operator SSOT
-        </p>
-        <h1 className="mb-4 text-3xl font-bold tracking-tight text-fd-foreground md:text-4xl">
-          Dotfiles operator docs
-        </h1>
-        <p className="mb-10 max-w-2xl text-lg text-fd-muted-foreground">
-          Runbooks, validation commands, and manifest policy for the full-rig macOS bootstrap.
-          Tracked desired state only — not live secrets or inventory dumps.
-        </p>
+    <HomeLayout {...baseOptions()} className="relative">
+      <div className="home-shell mx-auto w-full max-w-5xl px-4 py-12 sm:px-6 sm:py-16 md:py-20">
+        <header className="home-hero mb-12 max-w-2xl md:mb-14">
+          <p className="home-kicker mb-3 text-sm font-medium tracking-wide text-fd-primary">
+            personal operator ssot
+          </p>
+          <h1 className="home-title mb-4 text-balance text-3xl font-semibold tracking-tight text-fd-foreground sm:text-4xl md:text-[2.75rem] md:leading-[1.1]">
+            rig docs, without the noise
+          </h1>
+          <p className="text-pretty text-base text-fd-muted-foreground sm:text-lg">
+            Bootstrap, promote, and validate the Mac SSOT. Commands first — no inventory dumps, no
+            secrets.
+          </p>
+          <div className="mt-8 flex flex-wrap items-center gap-3">
+            <Link href="/docs/fresh-mac" className="home-cta">
+              Start on a fresh Mac
+              <CtaArrow />
+            </Link>
+            <Link href="/docs" className="home-cta home-cta--ghost">
+              Browse runbooks
+            </Link>
+          </div>
+        </header>
 
         {groupOrder.map((group) => {
           const sections = docSections.filter((section) => section.group === group);
           if (sections.length === 0) return null;
           return (
-            <section key={group} className="mb-11">
+            <section key={group} className="mb-10 sm:mb-12">
               <h2 className="group-label">
                 <GroupIcon group={group} className="size-3.5 text-fd-primary" />
                 {groupLabels[group]}
@@ -38,15 +46,15 @@ export default function HomePage() {
                       <span className="icon-badge">
                         <SectionIcon slug={section.slug} className="size-4" />
                       </span>
-                      <strong className="block text-base font-semibold text-fd-foreground group-hover:text-fd-primary">
+                      <strong className="block text-base font-semibold tracking-tight text-fd-foreground transition-colors group-hover:text-fd-primary">
                         {section.title}
                       </strong>
                     </span>
-                    <span className="mb-2 block text-sm text-fd-muted-foreground">
+                    <span className="mb-2 block text-sm leading-relaxed text-fd-muted-foreground">
                       {section.description}
                     </span>
                     {section.firstCommand ? (
-                      <code className="mt-2 block truncate rounded-md bg-fd-muted/70 px-2 py-1 font-mono text-xs text-fd-muted-foreground">
+                      <code className="mt-3 block truncate rounded-md border border-fd-border/60 bg-fd-muted/50 px-2 py-1 font-mono text-[0.7rem] text-fd-muted-foreground sm:text-xs">
                         {section.firstCommand}
                       </code>
                     ) : null}
@@ -56,16 +64,6 @@ export default function HomePage() {
             </section>
           );
         })}
-
-        <div className="mt-2">
-          <Link
-            href="/docs"
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-fd-primary px-5 py-2.5 text-sm font-semibold text-fd-primary-foreground no-underline transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-fd-ring focus-visible:ring-offset-2 focus-visible:outline-none motion-reduce:transition-none"
-          >
-            Open full documentation
-            <CtaArrow />
-          </Link>
-        </div>
       </div>
     </HomeLayout>
   );
