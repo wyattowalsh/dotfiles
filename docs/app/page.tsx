@@ -5,10 +5,10 @@ import { docSections, groupLabels, groupOrder } from "@/lib/sections";
 import { CtaArrow, GroupIcon, SectionIcon } from "@/lib/icons";
 
 const paths = [
-  { href: "/docs/fresh-mac", label: "mac", cmd: "just bootstrap --dry-run" },
-  { href: "/docs/linux-setup", label: "linux", cmd: "./setup.sh --dry-run" },
-  { href: "/docs/ssot-workflow", label: "promote", cmd: "just inventory-redacted" },
-  { href: "/docs/validation", label: "check", cmd: "just check" }
+  { href: "/docs/fresh-mac", slug: "fresh-mac", label: "mac", cmd: "just bootstrap --dry-run" },
+  { href: "/docs/linux-setup", slug: "linux-setup", label: "linux", cmd: "./setup.sh --dry-run" },
+  { href: "/docs/ssot-workflow", slug: "ssot-workflow", label: "promote", cmd: "just inventory-redacted" },
+  { href: "/docs/validation", slug: "validation", label: "check", cmd: "just check" }
 ] as const;
 
 export default function HomePage() {
@@ -25,7 +25,10 @@ export default function HomePage() {
         <nav className="path-strip mb-12" aria-label="Primary paths">
           {paths.map((p) => (
             <Link key={p.href} href={p.href} className="path-chip group">
-              <span className="path-chip__label">{p.label}</span>
+              <span className="path-chip__top">
+                <SectionIcon slug={p.slug} className="size-3.5 text-fd-primary" />
+                <span className="path-chip__label">{p.label}</span>
+              </span>
               <code className="path-chip__cmd">{p.cmd}</code>
               <CtaArrow className="path-chip__arrow size-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
             </Link>
