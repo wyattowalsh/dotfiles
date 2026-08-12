@@ -2,7 +2,7 @@
 
 ## Scope
 
-Internal Fumadocs documentation site (`docs/`). Serves operator runbooks for macOS bootstrap, SSOT workflow, validation, packages, shell, and AI harness pointers.
+Fumadocs documentation site (`docs/`). Serves operator runbooks for macOS bootstrap, SSOT workflow, validation, packages, shell, and AI harness pointers. Design SSOT: `DESIGN.md`. Theme: Tailwind v4 + Fumadocs shadcn preset via `app/global.css` (never import fumadocs CSS without Tailwind).
 
 ## Content rules
 
@@ -27,6 +27,7 @@ Internal Fumadocs documentation site (`docs/`). Serves operator runbooks for mac
 | SSOT promotion flow | `ssot-workflow.mdx` |
 | Docs workflow itself | `docs-maintenance.mdx` |
 | Sidebar / hub cards | `meta.json` **and** `lib/hub-manifest.json` |
+| Visual / theme tokens | `DESIGN.md` + `app/global.css` |
 
 ## Validation
 
@@ -42,13 +43,16 @@ Commit `docs/pnpm-lock.yaml` whenever `docs/package.json` changes.
 
 ## App structure
 
+- `app/global.css` — Tailwind v4 + shadcn/preset CSS entry
+- `postcss.config.mjs` — `@tailwindcss/postcss`
 - `app/page.tsx` — landing from `lib/sections.ts`
 - `app/docs/` — Fumadocs DocsLayout + slug routing
 - `components/mdx.tsx` — Callout, Mermaid, Steps, Tabs, Cards
 - `app/api/search` — static Orama index
 - `lib/source.ts` — loader from `content/docs`
+- `DESIGN.md` — design principles + tokens
 
 ## Not in scope
 
 - Generated OpenAPI reference pages
-- Public deployment or SEO marketing
+- Marketing SEO / brand site (this is operator docs)

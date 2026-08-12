@@ -8,7 +8,7 @@ export default function HomePage() {
     <HomeLayout {...baseOptions()}>
       <div className="mx-auto w-full max-w-5xl px-6 py-16 md:py-20">
         <p className="mb-3 text-sm font-semibold tracking-wide text-fd-muted-foreground uppercase">
-          Internal · operator SSOT
+          Personal · operator SSOT
         </p>
         <h1 className="mb-4 text-3xl font-bold tracking-tight text-fd-foreground md:text-4xl">
           Dotfiles operator docs

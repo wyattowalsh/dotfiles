@@ -3,7 +3,7 @@ title: Docs maintenance
 description: How to update the Fumadocs site when repo behavior changes.
 ---
 
-Internal Fumadocs site under `docs/`. Content: `content/docs/`; app shell: `app/`.
+Fumadocs site under `docs/`. Content: `content/docs/`; app shell: `app/`. Design SSOT: `docs/DESIGN.md` (repo path). Theme requires Tailwind v4 + `app/global.css` (shadcn preset).
 
 ## Commands
 
@@ -11,7 +11,7 @@ Internal Fumadocs site under `docs/`. Content: `content/docs/`; app shell: `app/
 just docs-install    # pnpm install in docs/
 just docs-check      # typecheck
 just docs-build      # production build → docs/out
-just docs-ci         # frozen lockfile + typecheck + build
+just docs-ci         # frozen lockfile + typecheck + build + CSS health
 ```
 
 Local preview:
@@ -35,6 +35,14 @@ cd docs && pnpm dev
 | Sidebar pages | `content/docs/meta.json` **and** `lib/hub-manifest.json` (slug parity) |
 | Domain map / layout | `domain-map.mdx` |
 | Nix / darwin | `nix.mdx` |
+| Visual / theme | `DESIGN.md` + `app/global.css` |
+
+## Theme / CSS pipeline
+
+- Entry: `app/global.css` (`@import "tailwindcss"` + `fumadocs-ui/css/shadcn.css` + `preset.css`)
+- PostCSS: `postcss.config.mjs` with `@tailwindcss/postcss`
+- **Never** import `fumadocs-ui/css/*.css` from TSX alone (ships uncompiled Tailwind → unstyled site)
+- CI: `checks/docs-css-health.sh` after `pnpm build` (requires compiled `.flex{`, rejects residual `@apply `)
 
 ## Principles
 
@@ -46,6 +54,7 @@ cd docs && pnpm dev
 - Landing cards + index hub share `docs/lib/hub-manifest.json` (not hand-duplicated tables)
 - Host flake aliases belong in fenced commands / required path cells — not free prose (“on …”)
 - Agent conventions live in root `AGENTS.md` only (no `.claude/`, `GEMINI.md`, or other vendor stubs)
+- Follow `DESIGN.md` for visual density, tokens, and a11y
 - Validate with `just docs-ci` before merging doc-impacting changes
 - Commit `docs/pnpm-lock.yaml` when `docs/package.json` changes
 

@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { Provider } from "@/components/provider";
-import "fumadocs-ui/css/neutral.css";
-import "fumadocs-ui/css/preset.css";
+import "./global.css";
 
 export const metadata = {
   title: {
@@ -9,13 +8,13 @@ export const metadata = {
     template: "%s | Dotfiles"
   },
   description:
-    "Internal runbooks for the full-rig macOS bootstrap, SSOT workflow, and validation."
+    "Operator runbooks for the full-rig macOS bootstrap, SSOT workflow, and validation."
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="flex min-h-screen flex-col">
+      <body className="flex min-h-screen flex-col font-sans antialiased">
         <Provider>{children}</Provider>
       </body>
     </html>

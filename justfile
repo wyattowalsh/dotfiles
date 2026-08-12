@@ -2,7 +2,7 @@
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
-shell_files := "setup.sh rig/bootstrap/macos.sh rig/bootstrap/linux.sh checks/apps-manual-inventory.sh checks/brew-exclude-check.sh checks/config-dirs-inventory.sh checks/docs-hub-parity.sh checks/docs-sensitive.sh checks/freshen-smoke.sh checks/freshen-version.sh checks/freshen-privacy.sh checks/secrets-scan.sh checks/smoke.sh checks/stale-path-freeze.sh checks/validate-json.sh checks/zsh-inventory.sh checks/zsh-structure.sh checks/zsh-structure-test.sh checks/zsh-smoke-interactive.sh checks/zsh-rollback-live.sh"
+shell_files := "setup.sh rig/bootstrap/macos.sh rig/bootstrap/linux.sh checks/apps-manual-inventory.sh checks/brew-exclude-check.sh checks/config-dirs-inventory.sh checks/docs-css-health.sh checks/docs-hub-parity.sh checks/docs-sensitive.sh checks/freshen-smoke.sh checks/freshen-version.sh checks/freshen-privacy.sh checks/secrets-scan.sh checks/smoke.sh checks/stale-path-freeze.sh checks/validate-json.sh checks/zsh-inventory.sh checks/zsh-structure.sh checks/zsh-structure-test.sh checks/zsh-smoke-interactive.sh checks/zsh-rollback-live.sh"
 
 # List available recipes (default).
 default:
@@ -147,6 +147,7 @@ docs-ci:
     pnpm install --frozen-lockfile
     pnpm typecheck
     pnpm build
+    ../checks/docs-css-health.sh
     ../checks/docs-sensitive.sh
     ../checks/docs-hub-parity.sh
 

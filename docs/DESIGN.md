@@ -1,0 +1,119 @@
+# DESIGN — Dotfiles operator docs
+
+Design system for the Fumadocs site under `docs/`. Implementation: `app/global.css` (Tailwind CSS v4 + Fumadocs **shadcn** preset + PostCSS).
+
+## Intent
+
+Operator-first documentation: **calm, dense, scannable**. Prefer clarity over decoration. Personal public SSOT for bootstrap and day-to-day rig maintenance—not marketing.
+
+## Principles (priority order)
+
+When principles conflict, higher wins.
+
+### 1. Scan over scroll
+
+Operators land to find a command or path. Lead with titles, one-line descriptions, and monospaced first commands.
+
+- **Test:** “What command next?” answerable within one screenful on the landing page.
+- **Counter-example:** Long prose before the first actionable command.
+
+### 2. Structure before style
+
+Correct hierarchy (nav, cards, TOC) beats novel chrome.
+
+- **Application:** Prefer Fumadocs layouts over custom shells.
+- **Counter-example:** Hand-rolled sidebars that diverge from DocsLayout.
+
+### 3. Calm density
+
+Tight spacing; no hero theater. Cards and tables carry weight.
+
+- **Application:** Landing uses group labels + card grids; runbooks use short sections.
+- **Trade-off:** Accepts less “wow” for faster operator throughput.
+
+### 4. Token fidelity
+
+Use Fumadocs/shadcn semantic colors (`fd-*` / theme vars). Do not invent one-off hex in components.
+
+- **Application:** `bg-fd-card`, `text-fd-muted-foreground`, `border-fd-border`.
+- **Counter-example:** `#1a1a1a` inline styles on cards.
+
+### 5. Motion as feedback only
+
+≈150ms transitions on border/shadow/opacity; honor `prefers-reduced-motion`.
+
+- **Application:** `motion-reduce:transition-none` on interactive cards; global reduced-motion kill-switch in CSS.
+
+### 6. Accessible by default
+
+Visible focus rings, ≥44px primary hit targets, contrast AA+.
+
+- **Application:** Primary CTA `min-h-11`; focus-visible rings on cards and buttons.
+
+## Color
+
+Semantic roles (Fumadocs shadcn preset):
+
+| Role | Use |
+| --- | --- |
+| `background` / `foreground` | Page canvas and body text |
+| `muted` / `muted-foreground` | Eyebrows, secondary copy, code chip chrome |
+| `card` / `card-foreground` | Landing cards, panels |
+| `border` | Card edges, dividers |
+| `primary` / `primary-foreground` | Primary CTA, active nav |
+| `accent` / `accent-foreground` | Hover washes |
+| `ring` | Focus rings |
+
+Light/dark via `next-themes` (RootProvider) and `.dark` on `<html>`.
+
+## Typography
+
+| Role | Treatment |
+| --- | --- |
+| UI / body | System sans (`--font-sans`) |
+| Commands / paths | System mono (`--font-mono`) |
+| H1 | `text-3xl`–`text-4xl`, tight tracking, bold |
+| Section labels | `text-sm`, uppercase, muted, wide tracking |
+| Card title | `text-base` semibold |
+| Card body | `text-sm` muted |
+
+## Layout
+
+- Max content width: `--fd-layout-width: 1400px`.
+- Landing: `max-w-5xl` column; responsive **1 → 2 → 3** card grid.
+- Docs: Fumadocs DocsLayout (sidebar + TOC).
+
+## Components
+
+Prefer Fumadocs UI: `HomeLayout`, DocsLayout, Cards, Callouts, Tabs, Steps, Accordions, Mermaid MDX.
+
+Landing cards: `rounded-xl border bg-fd-card`; hover border toward primary; focus-visible ring.
+
+Primary CTA: solid `bg-fd-primary`, min height 44px.
+
+## Content density
+
+| Surface | Density |
+| --- | --- |
+| Landing hub | High — groups + cards + first command |
+| Runbooks | Medium — short sections, copy-paste commands |
+| Reference | High — tables, path maps |
+
+## Implementation map
+
+| Concern | File |
+| --- | --- |
+| CSS entry + tokens | `app/global.css` |
+| PostCSS / Tailwind | `postcss.config.mjs`, `package.json` |
+| Root shell + theme | `app/layout.tsx`, `components/provider.tsx` |
+| Landing | `app/page.tsx`, `lib/sections.ts`, `lib/hub-manifest.json` |
+| Docs chrome | `app/docs/layout.tsx` |
+| MDX components | `components/mdx.tsx` |
+| This document | `DESIGN.md` |
+
+## Anti-patterns
+
+- Importing `fumadocs-ui/css/*.css` **without** Tailwind v4 (ships uncompiled `@theme` / `@apply` → unstyled site).
+- One-off hex colors in TSX.
+- Disabling theme toggle or system preference.
+- Marketing layout patterns on operator pages.
