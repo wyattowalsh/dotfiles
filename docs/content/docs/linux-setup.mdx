@@ -26,11 +26,16 @@ exec zsh -l
 
 ```mermaid
 flowchart LR
-  A[Run ./setup.sh] --> B{Mode}
-  B -->|--dry-run| C[Preview planned actions]
-  B -->|--smoke-check| D[Verification only]
-  B -->|no flag| E[Apply setup changes]
-  E --> F[Post-setup smoke verification]
+  A["./setup.sh"] --> B{Mode}
+  B -->|--dry-run| C[Preview plan]
+  B -->|--smoke-check| D[Verify only]
+  B -->|apply| E[Mutate system]
+  E --> F[Post-setup smoke]
+
+  classDef signal fill:#ccfbf1,stroke:#0f766e,color:#0b1220
+  classDef mute fill:#e6eef2,stroke:#4a5d6a,color:#0b1220
+  class A,E,F signal
+  class B,C,D mute
 ```
 
 In plain language: dry-run previews, smoke-check verifies, and a plain run applies then smoke-checks.

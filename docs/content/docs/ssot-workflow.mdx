@@ -9,12 +9,17 @@ The live Mac is **inventory**, not something to commit wholesale. Promote intent
 
 ```mermaid
 flowchart LR
-  A[Live machine] --> B[just inventory-redacted]
-  B --> C[local/ artifacts]
+  A[Live machine] --> B["just inventory-redacted"]
+  B --> C["local/ inventory"]
   C --> D[Diff vs repo]
   D --> E[Curate + promote]
-  E --> F[just check]
-  F --> G[just bootstrap --apply]
+  E --> F["just check"]
+  F --> G["just bootstrap --apply"]
+
+  classDef signal fill:#ccfbf1,stroke:#0f766e,color:#0b1220
+  classDef mute fill:#e6eef2,stroke:#4a5d6a,color:#0b1220
+  class B,F,G signal
+  class A,C,D,E mute
 ```
 
 In plain language: refresh redacted inventory, diff against the repo, promote curated changes, validate with `just check`, then apply bootstrap only after review.

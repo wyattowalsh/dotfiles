@@ -17,6 +17,36 @@ Canonical desired state lives in tracked manifests. This map replaces the former
 | Security | No-secrets, scanning | `checks/secrets-scan.sh` — [Security](/docs/security) |
 | Docs | Operator runbooks | this site — [Docs maintenance](/docs/docs-maintenance) |
 
+## Concern graph
+
+```mermaid
+flowchart TB
+  subgraph rig["rig/ · machine SSOT"]
+    dots[dots]
+    brew[brew]
+    darwin[darwin]
+    home[home]
+    boot[bootstrap]
+  end
+  subgraph repo["repo process"]
+    checks[checks]
+    docs[docs]
+    just[justfile]
+  end
+  boot --> dots
+  boot --> brew
+  boot --> darwin
+  boot --> home
+  just --> checks
+  just --> boot
+  docs --> just
+
+  classDef signal fill:#ccfbf1,stroke:#0f766e,color:#0b1220
+  classDef mute fill:#e6eef2,stroke:#4a5d6a,color:#0b1220
+  class dots,brew,darwin,home,boot signal
+  class checks,docs,just mute
+```
+
 ## Conventions
 
 - Link to canonical manifests; do not duplicate Brewfile contents inline

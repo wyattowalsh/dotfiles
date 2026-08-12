@@ -2,6 +2,10 @@
 
 Design system for the Fumadocs site under `docs/`. Implementation: `app/global.css` (Tailwind CSS v4 + Fumadocs **shadcn** preset + PostCSS).
 
+**Palette:** Signal Graphite — cool paper / ink navy + teal signal.  
+**Icons:** [Phosphor Icons](https://github.com/phosphor-icons/react) (MIT), **duotone** weight for hub/nav marks — not Lucide.  
+**Diagrams:** Mermaid `theme: base` + CSS vars in `lib/mermaid-theme.ts` (synced to palette).
+
 ## Intent
 
 Operator-first documentation: **calm, dense, scannable**. Prefer clarity over decoration. Personal public SSOT for bootstrap and day-to-day rig maintenance—not marketing.
@@ -50,21 +54,38 @@ Visible focus rings, ≥44px primary hit targets, contrast AA+.
 
 - **Application:** Primary CTA `min-h-11`; focus-visible rings on cards and buttons.
 
-## Color
+## Color — Signal Graphite
 
-Semantic roles (Fumadocs shadcn preset):
+Semantic roles (Fumadocs shadcn slots, **custom values**):
 
-| Role | Use |
-| --- | --- |
-| `background` / `foreground` | Page canvas and body text |
-| `muted` / `muted-foreground` | Eyebrows, secondary copy, code chip chrome |
-| `card` / `card-foreground` | Landing cards, panels |
-| `border` | Card edges, dividers |
-| `primary` / `primary-foreground` | Primary CTA, active nav |
-| `accent` / `accent-foreground` | Hover washes |
-| `ring` | Focus rings |
+| Role | Light | Dark | Use |
+| --- | --- | --- | --- |
+| `background` | `#f3f6f8` | `#0b1220` | Page canvas |
+| `foreground` | `#0b1220` | `#e8eef4` | Body text |
+| `primary` | `#0f766e` teal | `#2dd4bf` | CTA, signal, icons |
+| `accent` | `#ccfbf1` | `#164e63` | Soft wash / Mermaid nodes |
+| `card` | `#fafcfd` | `#121a2b` | Cards, mermaid host |
+| `border` / `muted` | cool slate | deep navy | Structure |
 
 Light/dark via `next-themes` (RootProvider) and `.dark` on `<html>`.
+
+## Icons — Phosphor (OSS)
+
+| Rule | Detail |
+| --- | --- |
+| Package | `@phosphor-icons/react` (MIT) |
+| Weight | **duotone** on hub/group/nav marks; regular/bold sparingly |
+| Density | One icon per hub card + group label + nav brand — **not** every MDX heading |
+| Map | `lib/icons.tsx` keyed by hub slug / group |
+
+## Mermaid — global theme
+
+| Rule | Detail |
+| --- | --- |
+| Engine | `theme: "base"` + `themeVariables` from CSS vars |
+| Host | `.mermaid-host` card chrome in `global.css` |
+| Content | Multi-branch flows only; optional `classDef signal/mute` matching palette |
+| SSOT | `lib/mermaid-theme.ts` + `components/mdx/mermaid.tsx` |
 
 ## Typography
 
@@ -105,6 +126,8 @@ Primary CTA: solid `bg-fd-primary`, min height 44px.
 | --- | --- |
 | CSS entry + tokens | `app/global.css` |
 | PostCSS / Tailwind | `postcss.config.mjs`, `package.json` |
+| Icons | `lib/icons.tsx` (Phosphor duotone) |
+| Mermaid theme | `lib/mermaid-theme.ts`, `components/mdx/mermaid.tsx` |
 | Root shell + theme | `app/layout.tsx`, `components/provider.tsx` |
 | Landing | `app/page.tsx`, `lib/sections.ts`, `lib/hub-manifest.json` |
 | Docs chrome | `app/docs/layout.tsx` |

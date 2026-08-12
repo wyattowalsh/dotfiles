@@ -56,14 +56,19 @@ just smoke
 
 ```mermaid
 flowchart TD
-  A[Clone repo] --> B[just bootstrap --dry-run]
-  B --> C{Output acceptable?}
-  C -->|No| D[Adjust rig/brew home darwin manifests]
+  A[Clone repo] --> B["just bootstrap --dry-run"]
+  B --> C{Plan OK?}
+  C -->|No| D[Edit rig/brew · home · darwin]
   D --> B
-  C -->|Yes| E[nix flake lock ./rig/darwin]
-  E --> F[just bootstrap --apply --no-upgrade]
-  F --> G[just check && just smoke]
-  G --> H[Apple ID / mas + manual apps + AI auth]
+  C -->|Yes| E["nix flake lock ./rig/darwin"]
+  E --> F["just bootstrap --apply --no-upgrade"]
+  F --> G["just check && just smoke"]
+  G --> H[Manual: mas · apps · AI auth]
+
+  classDef signal fill:#ccfbf1,stroke:#0f766e,color:#0b1220
+  classDef mute fill:#e6eef2,stroke:#4a5d6a,color:#0b1220
+  class A,E,F,G signal
+  class B,C,D,H mute
 ```
 
 ## Post-bootstrap verification

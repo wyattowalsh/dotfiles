@@ -5,6 +5,20 @@ description: Commands that prove the repo is safe to commit and apply.
 
 Use `justfile` as the canonical command surface. Checks fail fast on tracked regressions; optional-tool steps skip gracefully when binaries are missing.
 
+```mermaid
+flowchart LR
+  A["just check"] --> B[hooks · shell · zsh]
+  A --> C[freshen · json · secrets]
+  D["just ci"] --> A
+  D --> E["just smoke"]
+  D --> F["just docs-ci"]
+
+  classDef signal fill:#ccfbf1,stroke:#0f766e,color:#0b1220
+  classDef mute fill:#e6eef2,stroke:#4a5d6a,color:#0b1220
+  class A,D signal
+  class B,C,E,F mute
+```
+
 ## Quick reference
 
 | Task | What it validates |
@@ -28,7 +42,7 @@ Use `justfile` as the canonical command surface. Checks fail fast on tracked reg
 | `just docs-build` | Production build of docs site |
 | `just docs-sensitive` | Docs content sensitive/PII pattern scan |
 | `just docs-hub-parity` | Sidebar meta.json ↔ hub-manifest.json slug parity |
-| `just docs-ci` | Frozen lockfile install + typecheck + build + sensitive + hub-parity |
+| `just docs-ci` | Frozen lockfile install + typecheck + build + CSS health + sensitive + hub-parity |
 | `just bootstrap` | macOS full-rig bootstrap (`--dry-run` default) |
 
 ## `just check` breakdown

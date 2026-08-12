@@ -2,6 +2,7 @@
 
 import { Suspense, use, useEffect, useId, useState } from "react";
 import { useTheme } from "next-themes";
+import { mermaidThemeCSS, mermaidThemeVariables } from "@/lib/mermaid-theme";
 
 type MermaidApi = typeof import("mermaid").default;
 
@@ -20,20 +21,33 @@ function cachePromise<T>(key: string, setPromise: () => Promise<T>): Promise<T> 
   return promise;
 }
 
+function mermaidInitOptions(theme: "light" | "dark") {
+  return {
+    startOnLoad: false as const,
+    securityLevel: "strict" as const,
+    fontFamily: "ui-sans-serif, system-ui, sans-serif",
+    theme: "base" as const,
+    themeVariables: mermaidThemeVariables(theme),
+    themeCSS: mermaidThemeCSS,
+    flowchart: {
+      curve: "basis" as const,
+      padding: 16,
+      htmlLabels: true,
+      nodeSpacing: 36,
+      rankSpacing: 42
+    }
+  };
+}
+
 function loadMermaid(theme: string): Promise<MermaidApi> {
   const cached = mermaidByTheme.get(theme);
   if (cached) return cached;
 
+  const mode = theme === "dark" ? "dark" : "light";
   const promise = import("mermaid")
     .then((mod) => {
       const mermaid = mod.default;
-      mermaid.initialize({
-        startOnLoad: false,
-        securityLevel: "strict",
-        fontFamily: "inherit",
-        themeCSS: "margin: 1.5rem auto 0;",
-        theme: theme === "dark" ? "dark" : "default"
-      });
+      mermaid.initialize(mermaidInitOptions(mode));
       return mermaid;
     })
     .catch((error) => {
@@ -51,7 +65,7 @@ function DiagramPlaceholder() {
       role="img"
       aria-label="Diagram loading"
       aria-busy="true"
-      className="my-6 min-h-32 rounded-lg border border-fd-border bg-fd-muted/30"
+      className="mermaid-host min-h-36 animate-pulse bg-fd-muted/40"
     />
   );
 }
@@ -79,12 +93,16 @@ function MermaidContent({ chart }: { chart: string }) {
 
   const { svg, bindFunctions } = use(
     cachePromise(`${chart}-${theme}`, () => {
+      mermaid.initialize(mermaidInitOptions(theme));
       return mermaid.render(id.replaceAll(":", ""), chart.replaceAll("\\n", "\n"));
     })
   );
 
   return (
     <div
+      className="mermaid-host not-prose"
+      role="img"
+      aria-label="Flow diagram"
       ref={(container) => {
         if (container) bindFunctions?.(container);
       }}
