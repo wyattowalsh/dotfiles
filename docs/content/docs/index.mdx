@@ -1,45 +1,14 @@
 ---
-title: Dotfiles Full Rig
-description: Operator guide for the full-rig macOS SSOT and bootstrap.
+title: docs
+description: Operator index for the macOS/Linux rig SSOT.
 ---
 
-Personal public SSOT for shell, git, Homebrew, nix-darwin, and Chezmoi home config. AI/MCP harness configs live in [wyattowalsh/agents](https://github.com/wyattowalsh/agents). This site documents **tracked desired state** — not live auth, caches, or machine-local inventory dumps.
-
-## Operator paths
-
-The tables below are generated from the same hub manifest as the landing cards and sidebar content set.
+Tracked state only. AI harness → [wyattowalsh/agents](https://github.com/wyattowalsh/agents). Map → [domain map](/docs/domain-map).
 
 <DocsHub />
 
-## Command surface
-
-`justfile` is canonical. Prefer `just <name>` over ad hoc shell recipes.
-
 ```bash
 just --list
-just check          # static validation
-just ci             # full CI parity: check + smoke + docs build
+just check
 just bootstrap --dry-run
 ```
-
-## What belongs in Git
-
-- Curated manifests: `rig/brew/Brewfile`, `rig/darwin/`, `rig/home/`, `rig/dots/`, `.env.example` (names only)
-- Operator runbooks in this site (`docs/content/docs/`)
-- Agent contracts in nested `AGENTS.md` (not operator prose)
-
-## What stays local
-
-- Tokens, API keys, OAuth files, bearer secrets
-- Raw `brew bundle dump` output (`local/Brewfile.raw`)
-- App caches, histories, telemetry, session databases
-- Ghostty background assets under `~/.config/ghostty/backgrounds/`
-
-## Platform entrypoints
-
-| Platform | Bootstrap | Notes |
-| --- | --- | --- |
-| Apple Silicon macOS | `just bootstrap` → `rig/bootstrap/macos.sh` | Brew + `rig/dots` symlinks + Chezmoi + nix-darwin |
-| Debian/Ubuntu Linux | `./setup.sh` | apt-based path; AI CLI + skills install |
-
-See [Domain map](/docs/domain-map) for ownership of each concern.

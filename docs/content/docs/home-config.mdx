@@ -1,63 +1,16 @@
 ---
-title: Home Configuration
-description: Chezmoi templates, bootstrap symlinks from rig/dots, and local override policy.
+title: Home
+description: Chezmoi + rig/dots links.
 ---
 
-Home configuration splits across **bootstrap symlinks from `rig/dots/`** (shell + git) and **Chezmoi-managed** `~/.config/*` trees.
-
-## Layout
-
-```
-dotfiles/
-└── rig/
-    ├── dots/                           # runtime files symlinked into $HOME
-    │   └── zshrc p10k.zsh gitconfig …
-    └── home/
-        ├── dot_zshrc.tmpl              # parity mirror (chezmoiignored)
-        ├── dot_p10k.zsh                # parity mirror (chezmoiignored)
-        ├── dot_zsh/functions/          # freshen, sync-cursor, tests
-        └── private_dot_config/
-            ├── ghostty/config.tmpl
-            ├── lazygit/config.yml
-            └── yazi/yazi.toml
-```
-
-## Deploy paths
-
-| Target | Mechanism | Preview |
+| Surface | Path | Apply |
 | --- | --- | --- |
-| `~/.zshrc` | Symlink from `rig/dots/zshrc` | `readlink ~/.zshrc` |
-| `~/.config/ghostty` | Chezmoi template | `just home-diff` |
-| `~/.zsh/functions/*` | Chezmoi | `just home-diff` |
-
-`rig/home/.chezmoiignore` excludes `dot_zshrc.tmpl` and `dot_p10k.zsh` so Chezmoi does not fight bootstrap symlinks.
-
-Shell SSOT rules are documented in [Shell](/docs/shell). Operator guide for upgrades: [freshen](/docs/freshen). Terminal assets: [Terminal](/docs/terminal).
-
-## Templates and machine values
-
-Use Chezmoi data for host-specific paths:
-
-```toml
-# ghostty background example
-background = "{{ .chezmoi.homeDir }}/.config/ghostty/backgrounds/wall.jpg"
-```
-
-Background image files stay local under `~/.config/ghostty/backgrounds/` — not committed.
-
-## Private overrides
-
-| Hook | Purpose |
-| --- | --- |
-| `~/.zshrc.local` | Machine-specific zsh overrides (sourced by `.zshrc`) |
-| Chezmoi `data` / `.local` patterns | Untracked private values |
-
-Never commit identities, tokens, auth databases, histories, or telemetry.
-
-## Validation
+| Runtime links | `rig/dots/*` → `$HOME` | bootstrap |
+| Chezmoi | `rig/home/` | `chezmoi --source rig/home` |
 
 ```bash
-just check-zsh     # zsh -n + cmp parity for rig/dots/* vs rig/home mirrors
-just home-diff     # chezmoi diff when chezmoi is installed
-just check-freshen # freshen tests (see freshen page)
+just home-diff
+just check-zsh          # dots ↔ home parity
 ```
+
+Parity mirrors (`dot_zshrc.tmpl`, `dot_p10k.zsh`) are ignored by chezmoi apply — `cmp` only. Overrides: `~/.zshrc.local`, untracked includes. See [Shell](/docs/shell), [Terminal](/docs/terminal).

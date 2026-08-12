@@ -1,59 +1,18 @@
 ---
 title: Shell
-description: Zsh load order, completions Model A, tool layers, and structure gates.
+description: Zsh structure + tools.
 ---
-
-Owns Zsh runtime behavior, PATH ordering, completions, Powerlevel10k prompt, and private overrides.
-
-## Canonical files
 
 | File | Role |
 | --- | --- |
-| `rig/dots/zshrc` | Main shell config (symlinked to `~/.zshrc`) |
-| `rig/dots/p10k.zsh` | Powerlevel10k prompt (symlinked to `~/.p10k.zsh`) |
-| `rig/home/dot_zshrc.tmpl` | Chezmoi parity mirror (`cmp` with `rig/dots/zshrc`) |
-| `rig/home/dot_p10k.zsh` | p10k parity mirror (`cmp` with `rig/dots/p10k.zsh`) |
-| `rig/home/dot_zsh/functions/` | `freshen`, `sync-cursor`, tests |
-| `checks/zsh-structure.sh` | L0–L3 structure gate |
-| `checks/zsh-structure-test.sh` | Fixture-TDD for structure gate |
-| `checks/zsh-smoke-interactive.sh` | Local interactive smoke |
-| `checks/zsh-rollback-live.sh` | Restore latest `~/.zshrc.bak.*` |
-
-## Tool layers
-
-| Layer | Tools | SSOT contract |
-| --- | --- | --- |
-| Local / pipx apps | `~/.local/bin`, pipx | `PIPX_HOME`, `PIPX_BIN_DIR` early on PATH |
-| JS package manager | pnpm | single `PNPM_HOME` (+ `bin(N)`) |
-| Python runners | uv, uvx | resolve after init; `alias uv='noglob uv'` |
-| Versioned runtimes | mise | `eval "$(mise activate zsh)"` once; no `hook-env` |
-
-## Completions (Model A)
-
-Oh My Zsh always runs `compinit`. SSOT must:
-
-1. Finish all `fpath` mutations **before** `source $ZSH/oh-my-zsh.sh`
-2. Contain **zero** user `compinit` calls (no Docker/Grok re-init)
-3. Include Homebrew `zsh-completions` on `fpath`
-
-## Load order (tail)
-
-1. OMZ source
-2. autosuggestions, fzf keys, direnv hook, zoxide, mise
-3. secrets / `.zshrc.local` / aliases
-
-## Invariants
-
-- **No Amazon Q** hooks in `.zshrc`
-- **zsh-syntax-highlighting** must be the last `source`
-- Structure gates: `just check-zsh` (fixtures + live SSOT)
-- Live rollback: `./checks/zsh-rollback-live.sh`
-
-## Validation
+| `rig/dots/zshrc` | → `~/.zshrc` |
+| `rig/dots/p10k.zsh` | → `~/.p10k.zsh` |
+| `rig/home/dot_zsh/functions/` | freshen, tests |
+| `checks/zsh-structure.sh` | L0–L3 gate |
 
 ```bash
 just check-zsh
-just check-zsh-smoke   # local interactive tools only
+just check-zsh-smoke    # local only
 ```
 
-See [Home configuration](/docs/home-config) for deploy paths and [freshen](/docs/freshen) for the upgrade function.
+Structure rules + fixtures: `checks/fixtures/zshrc/`. Rollback: `checks/zsh-rollback-live.sh`. [freshen](/docs/freshen) · [Home](/docs/home-config).

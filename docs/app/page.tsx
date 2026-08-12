@@ -4,66 +4,67 @@ import { baseOptions } from "@/lib/layout.shared";
 import { docSections, groupLabels, groupOrder } from "@/lib/sections";
 import { CtaArrow, GroupIcon, SectionIcon } from "@/lib/icons";
 
+const paths = [
+  { href: "/docs/fresh-mac", label: "mac", cmd: "just bootstrap --dry-run" },
+  { href: "/docs/linux-setup", label: "linux", cmd: "./setup.sh --dry-run" },
+  { href: "/docs/ssot-workflow", label: "promote", cmd: "just inventory-redacted" },
+  { href: "/docs/validation", label: "check", cmd: "just check" }
+] as const;
+
 export default function HomePage() {
   return (
     <HomeLayout {...baseOptions()} className="relative">
-      <div className="home-shell mx-auto w-full max-w-5xl px-4 py-12 sm:px-6 sm:py-16 md:py-20">
-        <header className="home-hero mb-12 max-w-2xl md:mb-14">
-          <p className="home-kicker mb-3 text-sm font-medium tracking-wide text-fd-primary">
-            personal operator ssot
+      <div className="home-shell mx-auto w-full max-w-3xl px-4 py-10 sm:px-6 sm:py-14">
+        <header className="mb-10">
+          <h1 className="home-kicker mb-2 text-fd-primary">dotfiles</h1>
+          <p className="text-lg font-medium tracking-tight text-fd-foreground sm:text-xl">
+            bootstrap · promote · validate
           </p>
-          <h1 className="home-title mb-4 text-balance text-3xl font-semibold tracking-tight text-fd-foreground sm:text-4xl md:text-[2.75rem] md:leading-[1.1]">
-            rig docs, without the noise
-          </h1>
-          <p className="text-pretty text-base text-fd-muted-foreground sm:text-lg">
-            Bootstrap, promote, and validate the Mac SSOT. Commands first — no inventory dumps, no
-            secrets.
-          </p>
-          <div className="mt-8 flex flex-wrap items-center gap-3">
-            <Link href="/docs/fresh-mac" className="home-cta">
-              Start on a fresh Mac
-              <CtaArrow />
-            </Link>
-            <Link href="/docs" className="home-cta home-cta--ghost">
-              Browse runbooks
-            </Link>
-          </div>
         </header>
 
-        {groupOrder.map((group) => {
-          const sections = docSections.filter((section) => section.group === group);
-          if (sections.length === 0) return null;
-          return (
-            <section key={group} className="mb-10 sm:mb-12">
-              <h2 className="group-label">
-                <GroupIcon group={group} className="size-3.5 text-fd-primary" />
-                {groupLabels[group]}
-              </h2>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {sections.map((section) => (
-                  <Link key={section.href} href={section.href} className="doc-card group">
-                    <span className="mb-3 flex items-start gap-3">
-                      <span className="icon-badge">
-                        <SectionIcon slug={section.slug} className="size-4" />
-                      </span>
-                      <strong className="block text-base font-semibold tracking-tight text-fd-foreground transition-colors group-hover:text-fd-primary">
-                        {section.title}
-                      </strong>
-                    </span>
-                    <span className="mb-2 block text-sm leading-relaxed text-fd-muted-foreground">
-                      {section.description}
-                    </span>
-                    {section.firstCommand ? (
-                      <code className="mt-3 block truncate rounded-md border border-fd-border/60 bg-fd-muted/50 px-2 py-1 font-mono text-[0.7rem] text-fd-muted-foreground sm:text-xs">
-                        {section.firstCommand}
-                      </code>
-                    ) : null}
-                  </Link>
-                ))}
-              </div>
-            </section>
-          );
-        })}
+        <nav className="path-strip mb-12" aria-label="Primary paths">
+          {paths.map((p) => (
+            <Link key={p.href} href={p.href} className="path-chip group">
+              <span className="path-chip__label">{p.label}</span>
+              <code className="path-chip__cmd">{p.cmd}</code>
+              <CtaArrow className="path-chip__arrow size-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
+            </Link>
+          ))}
+        </nav>
+
+        <div className="space-y-8">
+          {groupOrder.map((group) => {
+            const sections = docSections.filter((s) => s.group === group);
+            if (sections.length === 0) return null;
+            return (
+              <section key={group}>
+                <h2 className="group-label">
+                  <GroupIcon group={group} className="size-3.5 text-fd-primary" />
+                  {groupLabels[group]}
+                </h2>
+                <ul className="page-list">
+                  {sections.map((section) => (
+                    <li key={section.slug}>
+                      <Link href={section.href} className="page-row group">
+                        <span className="page-row__main">
+                          <SectionIcon
+                            slug={section.slug}
+                            className="size-3.5 shrink-0 text-fd-primary/85"
+                          />
+                          <span className="page-row__title">{section.title}</span>
+                          <span className="page-row__desc">{section.description}</span>
+                        </span>
+                        {section.firstCommand ? (
+                          <code className="page-row__cmd">{section.firstCommand}</code>
+                        ) : null}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            );
+          })}
+        </div>
       </div>
     </HomeLayout>
   );

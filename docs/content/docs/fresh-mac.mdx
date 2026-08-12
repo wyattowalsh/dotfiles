@@ -1,113 +1,48 @@
 ---
-title: Fresh Mac Runbook
-description: First-run setup sequence for Apple Silicon macOS.
+title: Fresh Mac
+description: Apple Silicon bootstrap — dry-run first.
 ---
 
-End-to-end bootstrap for a new or reset Mac. Default mode is **preview**; mutating steps require `--apply`.
+Preview by default. Mutate only with `--apply`.
 
-<Callout type="warn" title="Mutating apply">
-  `just bootstrap --apply` installs packages (including App Store apps via `mas` when listed), rewrites symlinks, and may switch nix-darwin. Always run `--dry-run` first and review output.
+<Callout type="warn" title="--apply">
+  Installs packages (incl. `mas` when listed), rewrites symlinks, may switch nix-darwin. Always `--dry-run` first.
 </Callout>
 
-## Prerequisites
-
-1. **Apple Silicon Mac** — this SSOT targets `aarch64-darwin` / arm64 Homebrew.
-2. **Network** and ability to install Xcode Command Line Tools.
-3. **Apple ID** signed into the Mac App Store if you want `mas` entries to install.
-4. **Stable clone path** — e.g. `~/dev/projects/dotfiles`. Symlinks point at the clone.
-5. **`rig/darwin/flake.lock`** — required before `--apply`:
+## Run
 
 ```bash
-nix flake lock ./rig/darwin
+git clone <repo> ~/dev/projects/dotfiles && cd ~/dev/projects/dotfiles
+just bootstrap --dry-run
+nix flake lock ./rig/darwin          # once, before apply
+just bootstrap --apply --no-upgrade
+just check && just smoke
 ```
-
-## Bootstrap sequence
-
-```bash
-git clone <repo-url> ~/dev/projects/dotfiles
-cd ~/dev/projects/dotfiles
-just bootstrap --dry-run                 # preview (default without flags)
-just bootstrap --apply --no-upgrade      # recommended first restore
-exec zsh -l
-just check
-just smoke
-```
-
-### What `rig/bootstrap/macos.sh` does
-
-| Phase | Dry-run | Apply |
-| --- | --- | --- |
-| Preflight | macOS + non-root checks | Same; refuse root |
-| sudo keepalive | — | Background `sudo -v` refresh for long installs |
-| Xcode CLT | Plans install | Installs and **waits** until ready (default ~30 min timeout, then fail with re-run hint) |
-| Toolchain | Plans brew, just, nix, chezmoi | Installs missing tools |
-| Oh My Zsh + Powerlevel10k | Plans ensure | Downloads installer to temp then runs with `KEEP_ZSHRC` (override URL via `OMZ_INSTALL_URL`); creates themes dir before p10k clone; does not fight brew zsh plugins |
-| Homebrew Bundle | Runs `brew bundle check` when brew exists (dry-run exits non-zero if check fails after full plan) | `brew bundle install --jobs auto` (+ optional `--no-upgrade`); primary Docker is **Docker Desktop** (`docker-desktop`) |
-| `rig/dots` links | Plans `ln -sfn`; non-symlink targets print `would-block` and continue | Creates parents and repairs symlinks; refuses non-symlink clobber |
-| Chezmoi | Runs `chezmoi --source rig/home diff` when chezmoi exists | `chezmoi --source rig/home apply` |
-| nix-darwin | Runs flake / darwin-rebuild **check** when tools exist | `darwin-rebuild switch --flake ./rig/darwin#w4w-mbp` |
-
-### What bootstrap does **not** do
-
-- Install AI harness / MCP configs (see the agents repo; env var **names** only here)
-- Mass-install every VS Code/Cursor extension from local inventory
-- Overwrite non-symlink targets at `~/.zshrc` etc.
-- Run `brew bundle cleanup`
 
 ```mermaid
 flowchart TD
-  A[Clone repo] --> B["just bootstrap --dry-run"]
-  B --> C{Plan OK?}
-  C -->|No| D[Edit rig/brew · home · darwin]
+  A[Clone] --> B["just bootstrap --dry-run"]
+  B --> C{OK?}
+  C -->|No| D[Edit rig/*]
   D --> B
-  C -->|Yes| E["nix flake lock ./rig/darwin"]
-  E --> F["just bootstrap --apply --no-upgrade"]
-  F --> G["just check && just smoke"]
-  G --> H[Manual: mas · apps · AI auth]
-
-  classDef signal fill:#ccfbf1,stroke:#0f766e,color:#0b1220
-  classDef mute fill:#e6eef2,stroke:#4a5d6a,color:#0b1220
-  class A,E,F,G signal
-  class B,C,D,H mute
+  C -->|Yes| E["flake lock → --apply"]
+  E --> F["just check"]
 ```
 
-## Post-bootstrap verification
+## Needs
 
-```bash
-ls -l ~/.zshrc ~/.p10k.zsh ~/.gitconfig
-readlink ~/.zshrc    # should point into the clone
-just brew-check
-just home-diff
-just darwin-check    # when nix is available
-```
+- Apple Silicon, network, Xcode CLT
+- Apple ID if using `mas`
+- Stable clone path (symlinks target it)
+- `rig/darwin/flake.lock` before `--apply`
 
-## Manual follow-ups
+## After
 
-### App Store (`mas`)
+| Check | Command |
+| --- | --- |
+| Links | `readlink ~/.zshrc` → `…/rig/dots/zshrc` |
+| Brew | `just brew-check` |
+| Home | `just home-diff` |
+| Nix | `just darwin-check` |
 
-Sign in with your Apple ID, then re-run brew bundle or install missing mas apps. Purchases must already be on that account.
-
-### Non-Brew apps (reinstall by name)
-
-These often need a vendor installer or license (not fully expressed as casks). Typical leftovers from a full-rig transfer:
-
-- **FL Studio** (vendor)
-- **Beekeeper Studio Ultimate** (licensed build)
-- Vendor portals / specialty tools (Hue Sync, Citrix Workspace, iZotope, etc.) as needed
-- Safari/web extensions that do not restore cleanly via mas alone
-
-Refresh the basenames list anytime with `just inventory-redacted` → `local/apps-all.txt` (gitignored).
-
-### Secrets and AI
-
-- Authenticate AI CLIs after install
-- Put MCP tokens and API keys in **untracked** env files — never in this repo
-- Harness/MCP manifests live in the agents repository
-
-### Optional second pass
-
-After the first restore succeeds:
-
-```bash
-just bootstrap --apply    # allow brew bundle upgrades
-```
+Manual: App Store / vendor apps / AI auth. See [Promote](/docs/ssot-workflow), [Brew](/docs/packages), [AI](/docs/ai-harness).

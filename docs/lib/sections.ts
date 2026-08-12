@@ -25,7 +25,7 @@ function isGroup(value: string): value is DocSectionGroup {
   return (groups as readonly string[]).includes(value);
 }
 
-/** Shared SSOT for landing cards and docs hub paths. Never include secrets. */
+/** Shared SSOT for landing + docs hub. Never include secrets. */
 export const docSections: readonly DocSection[] = hubManifest.sections.map((section) => {
   if (!isGroup(section.group)) {
     throw new Error(`Invalid hub-manifest group for slug ${section.slug}: ${section.group}`);
@@ -41,10 +41,11 @@ export const docSections: readonly DocSection[] = hubManifest.sections.map((sect
   };
 });
 
+/** Short labels — match sidebar separators. */
 export const groupLabels: Record<DocSectionGroup, string> = {
-  start: "Start here",
-  operate: "Day-to-day",
-  reference: "Reference"
+  start: "bootstrap",
+  operate: "daily",
+  reference: "map"
 };
 
 export const groupOrder: readonly DocSectionGroup[] = groups;

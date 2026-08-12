@@ -1,32 +1,13 @@
 ---
 title: Security
-description: No-secrets policy, scanning, and safe import boundaries.
+description: No secrets in git.
 ---
 
-## Rules
-
-Never track:
-
-- Passwords, API keys, bearer tokens, private keys
-- OAuth/auth databases, session stores, histories
-- Raw inventory with secret-shaped path components (use redacted inventory)
-- Absolute personal home paths that embed a username when documenting commands — prefer `~/…`
-
-## Tooling
+Never track: tokens, keys, OAuth DBs, histories, raw secret-shaped inventory.
 
 ```bash
-just secrets-scan        # tracked files only; requires rg
-just inventory-redacted  # scrubbed paths under ignored local/, no contents
+just secrets-scan
+just inventory-redacted   # scrubbed → local/ only
 ```
 
-`just secrets-scan` reports matching **filenames** without printing secret-shaped values.
-
-## Docs site rules
-
-- Env vars appear as **names only** (see [AI harness](/docs/ai-harness) and `.env.example`)
-- Never paste `local/` inventory dumps into runbooks
-- Diagrams and examples must not include live tokens or credentials
-
-## Agent instructions
-
-Root `AGENTS.md` § No secrets policy applies to all subsystems. Run `just secrets-scan` before commits that touch credential-adjacent config.
+Env **names** only (`.env.example`). Absolute `/Users/<you>/…` out of docs free prose.

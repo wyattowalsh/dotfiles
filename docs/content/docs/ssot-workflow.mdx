@@ -1,86 +1,26 @@
 ---
-title: SSOT Workflow
-description: How to treat the live Mac as inventory and promote curated desired state.
+title: Promote
+description: Inventory → curate → check → apply.
 ---
 
-The live Mac is **inventory**, not something to commit wholesale. Promote intentional changes into tracked manifests after review.
-
-## Workflow
+Live Mac = inventory. Commit only curated manifests.
 
 ```mermaid
 flowchart LR
-  A[Live machine] --> B["just inventory-redacted"]
-  B --> C["local/ inventory"]
-  C --> D[Diff vs repo]
-  D --> E[Curate + promote]
+  A[Live] --> B["inventory-redacted"]
+  B --> C["local/"]
+  C --> D[Diff]
+  D --> E[Promote]
   E --> F["just check"]
-  F --> G["just bootstrap --apply"]
-
-  classDef signal fill:#ccfbf1,stroke:#0f766e,color:#0b1220
-  classDef mute fill:#e6eef2,stroke:#4a5d6a,color:#0b1220
-  class B,F,G signal
-  class A,C,D,E mute
+  F --> G["bootstrap --apply"]
 ```
 
-In plain language: refresh redacted inventory, diff against the repo, promote curated changes, validate with `just check`, then apply bootstrap only after review.
-
-## Step 1 — Refresh inventory
-
 ```bash
-just inventory-redacted
-```
-
-Writes ignored artifacts under `local/` (**never commit**):
-
-| Artifact | Contents |
-| --- | --- |
-| `local/Brewfile.raw` | Raw `brew bundle dump` (formulae/casks/taps/mas/vscode — evidence only) |
-| `local/mas.raw` | `mas list` (App Store ids/names) |
-| `local/apps-all.txt` | App **basenames** only under Applications |
-| `local/config-dirs.txt` | Redacted `~/.config` directory listing |
-| `local/zsh-inventory.txt` | Redacted zsh overrides, functions, completions |
-
-No file contents, env values, or secret-shaped values are copied. Prefer package **names/ids** when promoting into tracked `rig/brew/Brewfile`.
-
-If `brew bundle dump` fails, `just inventory-redacted` **exits non-zero** (no stub dump). Exclude tokens in `rig/brew/exclude.txt` are enforced on every `just brew-check`.
-
-## Step 2 — Diff live vs repo
-
-```bash
-cmp -s rig/dots/zshrc rig/home/dot_zshrc.tmpl && echo "zshrc parity OK"
-cmp -s rig/dots/p10k.zsh rig/home/dot_p10k.zsh && echo "p10k parity OK"
-just brew-check
-just home-diff
-```
-
-`just check-zsh` enforces `rig/dots/*` ↔ Chezmoi mirror parity in CI.
-
-## Step 3 — Promote by domain
-
-| Domain | Source of truth | Promotion target |
-| --- | --- | --- |
-| Shell | `~/.zshrc`, `~/.p10k.zsh` | `rig/dots/zshrc`, `rig/dots/p10k.zsh` + Chezmoi parity mirrors |
-| Git | `~/.gitconfig` | `rig/dots/gitconfig` |
-| Home config | `~/.config/*` | `rig/home/private_dot_config/` templates |
-| Packages | `local/Brewfile.raw` | Curated `rig/brew/Brewfile` groups |
-| System | Host-specific nix | `rig/darwin/hosts/w4w-mbp.nix` |
-
-Classify each Brew entry by intent (core CLI, dev language, AI tool, cask, font, service) before adding to `rig/brew/Brewfile`.
-
-## Step 4 — Validate and apply
-
-```bash
+just inventory-redacted   # → ignored local/*
+# edit rig/brew, rig/home, rig/dots, rig/darwin as needed
 just check
 just bootstrap --dry-run
-just bootstrap --apply   # macOS only, after review
+just bootstrap --apply
 ```
 
-## Chezmoi vs bootstrap symlinks (`rig/dots/`)
-
-| Path | Deploy mechanism |
-| --- | --- |
-| `~/.zshrc`, `~/.p10k.zsh`, `~/.gitconfig` | Bootstrap symlinks from `rig/dots/` |
-| `~/.config/ghostty`, lazygit, yazi | Chezmoi templates under `rig/home/` |
-| `dot_zshrc.tmpl`, `dot_p10k.zsh` | Parity mirrors only — listed in `rig/home/.chezmoiignore` |
-
-See [Home configuration](/docs/home-config) for template and override rules.
+`local/` never commits. Details: [Brew](/docs/packages), [Map](/docs/domain-map), [Security](/docs/security).

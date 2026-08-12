@@ -1,41 +1,20 @@
 ---
 title: freshen
-description: Operator guide for the zsh freshen upgrade and cleanup function.
+description: Brew/mas upgrade helper.
 ---
 
-`rig/home/dot_zsh/functions/freshen` is an autoloadable zsh function for Homebrew/mas upgrades, cache cleanup, optional reclaim, and storage planning. Deployed to `~/.zsh/functions/` via Chezmoi.
+`rig/home/dot_zsh/functions/freshen` → `~/.zsh/functions/` (Chezmoi).
 
-## Modes
-
-| Mode | Notes |
+| Mode | |
 | --- | --- |
-| Default update cycle | Inventory → upgrade → cleanup → caches (after confirm or `--yes`) |
-| `--dry-run` / `-N` | Inventory plan only; no mutations |
-| `--clean-only` / `-C` | Skip upgrade inventory; cleanup/caches/dev-prune only |
-| `--storage-plan` / `-S` | Report-only free space / reclaim surfaces (may still write a private log) |
-| `--docker-prune` / `--gem-cleanup` | **Opt-in** reclaim (not default cache steps) |
-
-## Useful env knobs
-
-| Variable | Default / notes |
-| --- | --- |
-| `FRESHEN_UPDATE_TIMEOUT_SEC` | `300` |
-| `FRESHEN_UPGRADE_TIMEOUT_SEC` | `0` = unlimited |
-| `FRESHEN_LOW_POWER` | `1` to prefer low-power behavior |
-| `FRESHEN_DOCKER_PRUNE` | `1` only with intentional reclaim |
-| `FRESHEN_GEM_CLEANUP` | `1` only with intentional reclaim |
-
-## Safety invariants
-
-- `--dry-run` must not mutate Homebrew, mas, caches, or dev-prune targets
-- Noninteractive mutations require `--yes`
-- Docker prune and gem cleanup are opt-in, not default cache steps
-- Dev-prune must never fall back to `rm` and must refuse broad roots
-
-## Validation
+| default | inventory → upgrade → cleanup |
+| `-N` / `--dry-run` | plan only |
+| `-C` / `--clean-only` | cleanup path |
+| `-S` / `--storage-plan` | report only |
+| docker/gem prune | **opt-in** only |
 
 ```bash
 just check-freshen
 ```
 
-Developer TDD and case packs live under `rig/home/dot_zsh/functions/tests/` (agent instructions in that tree’s `AGENTS.md`).
+Tests: `rig/home/dot_zsh/functions/tests/`. Env knobs: `FRESHEN_*` (timeouts, low-power, opt-in reclaim) — see function header / tests.

@@ -1,44 +1,16 @@
 ---
-title: Nix / darwin
-description: nix-darwin and Home Manager host scaffold for Apple Silicon.
+title: Nix
+description: darwin flake.
 ---
 
-`rig/darwin/` is the nix-darwin + Home Manager flake for the Apple Silicon host.
-
-## Canonical paths
-
-- `rig/darwin/flake.nix` + `rig/darwin/flake.lock` — lock required before bootstrap `--apply`
-- `rig/darwin/hosts/` — host-specific values
-- `rig/darwin/modules/` — packages, macOS defaults, etc.
-
-## Commands
+| Path | Role |
+| --- | --- |
+| `rig/darwin/flake.nix` + `flake.lock` | Flake; lock required for `--apply` |
+| `rig/darwin/hosts/` | Host values |
+| `rig/darwin/modules/` | Packages, defaults |
 
 ```bash
 nix flake lock ./rig/darwin
 just darwin-check
 just bootstrap --dry-run
-just bootstrap --apply
 ```
-
-Apply path uses:
-
-```bash
-darwin-rebuild switch --flake ./rig/darwin#w4w-mbp
-```
-
-The flake target hostname is a machine alias required for the command; it is not an invitation to commit personal inventory.
-
-## Rules
-
-- Host-specific values live in `rig/darwin/hosts/` — not in portable `rig/home/` templates
-- Commit `rig/darwin/flake.lock`
-- No secrets, tokens, or private absolute user paths that belong in Chezmoi data
-- Prefer nix-darwin for durable system state; Homebrew for the broad GUI/cask surface ([Packages](/docs/packages))
-
-## Validation
-
-```bash
-just darwin-check
-```
-
-Skips gracefully when `nix` / `darwin-rebuild` are missing; fails on real check errors when present.
