@@ -6,7 +6,7 @@ applyTo: "docs/**,README.md,**/AGENTS.md"
 
 ## Docs focus
 
-- Internal operator runbooks — not marketing copy
+- Operator runbooks for this personal public SSOT — not marketing copy
 - Ground content in tracked manifests and `justfile` commands
 - MDX pages live in `docs/content/docs/`; sidebar in `meta.json`
 - Update nested `AGENTS.md` when subsystem conventions change

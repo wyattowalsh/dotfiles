@@ -1,7 +1,7 @@
 # AGENTS
 
 ## Purpose
-This repository is a **private, personal, internal-only** dotfiles SSOT for the `w4w-mbp` rig (`/Users/ww`). It captures curated desired state for shell, editor, git, Homebrew, nix-darwin, and Chezmoi-managed home config. Treat the live Mac as inventory (`just inventory-redacted` → `local/`), promote intentional changes into tracked files, and keep secrets out of git.
+This repository is a **personal public** dotfiles SSOT for the `w4w-mbp` rig (username `ww`). It captures curated desired state for shell, editor, git, Homebrew, nix-darwin, and Chezmoi-managed home config. Treat the live Mac as inventory (`just inventory-redacted` → gitignored `local/`), promote intentional changes into tracked files, and keep secrets out of git. Host slug, git identity, and nix user paths are intentional personal markers — not secrets.
 
 **AI harness, MCP servers, and agent client configs** live in [wyattowalsh/agents](https://github.com/wyattowalsh/agents) — not here. This repo may document env var *names* (`.env.example`) only.
 

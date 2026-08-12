@@ -2,7 +2,7 @@
 
 ## Repo context
 
-- **Private SSOT** for host `w4w-mbp` (`/Users/ww`) — shell, git, brew, nix-darwin, Chezmoi home config
+- **Personal public SSOT** for host `w4w-mbp` (user `ww`) — shell, git, brew, nix-darwin, Chezmoi home config
 - **AI/MCP harness SSOT:** [wyattowalsh/agents](https://github.com/wyattowalsh/agents) — do not add MCP JSON or client configs here
 - **macOS path:** `just bootstrap` → `rig/brew/Brewfile` + `rig/dots` symlinks + Chezmoi + nix-darwin
 - **Linux path:** `./setup.sh` → `rig/bootstrap/linux.sh` — apt bootstrap + optional AI CLI/skills install (configs still from agents repo)

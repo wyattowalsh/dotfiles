@@ -1,6 +1,6 @@
 # Dotfiles Bootstrap
 
-Private, personal, internal-only dotfiles SSOT. Curated desired state for shell, git, Homebrew, nix-darwin, and Chezmoi home config. AI/MCP harness configs live in [wyattowalsh/agents](https://github.com/wyattowalsh/agents).
+Personal public dotfiles SSOT. Curated desired state for shell, git, Homebrew, nix-darwin, and Chezmoi home config for one Apple Silicon rig. AI/MCP harness configs live in [wyattowalsh/agents](https://github.com/wyattowalsh/agents).
 
 <!-- BADGES:START -->
 
@@ -69,11 +69,13 @@ just docs-ci
 
 Re-running bootstrap/`setup.sh` should converge without duplicate artifacts. See [`AGENTS.md`](./AGENTS.md) for the full contract.
 
-## Security
+## Security & public scope
 
 - Do **not** commit secrets (tokens, API keys, private keys)
 - `just secrets-scan` checks tracked files without printing secret values
 - Env var **names** only in [`.env.example`](./.env.example)
+- Live inventory stays in gitignored `local/` (never publish dumps)
+- **Intentional public identity:** git user name/email, host slug `w4w-mbp`, username `ww` / home path in nix-darwin — normal for personal open dotfiles, not secret material
 
 ## License
 
