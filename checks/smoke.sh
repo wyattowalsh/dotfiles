@@ -1,12 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-bash -n setup.sh bootstrap/macos.sh checks/config-dirs-inventory.sh checks/freshen-smoke.sh checks/freshen-version.sh checks/secrets-scan.sh checks/smoke.sh checks/validate-json.sh checks/zsh-inventory.sh
+bash -n setup.sh rig/bootstrap/macos.sh rig/bootstrap/linux.sh checks/config-dirs-inventory.sh checks/freshen-smoke.sh checks/freshen-version.sh checks/secrets-scan.sh checks/smoke.sh checks/validate-json.sh checks/zsh-inventory.sh
 
 if [ "$(uname -s)" = "Darwin" ]; then
-  ./bootstrap/macos.sh --dry-run >/dev/null
+  # Dry-run may exit 1 when read-only probes fail (e.g. brew bundle check)
+  # after printing a full plan. Accept 0 or 1 if the preview completed.
   set +e
-  conflict_output="$(./bootstrap/macos.sh --dry-run --apply 2>&1 >/dev/null)"
+  dry_output="$(./rig/bootstrap/macos.sh --dry-run 2>&1)"
+  dry_status=$?
+  set -e
+  if [ "$dry_status" -ne 0 ] && [ "$dry_status" -ne 1 ]; then
+    printf 'Expected bootstrap --dry-run to exit 0 or 1, got %s\n' "$dry_status" >&2
+    printf '%s\n' "$dry_output" >&2
+    exit 1
+  fi
+  if ! printf '%s\n' "$dry_output" | rg -q 'Bootstrap preview complete'; then
+    printf 'Expected bootstrap --dry-run to finish the full preview plan\n' >&2
+    printf '%s\n' "$dry_output" >&2
+    exit 1
+  fi
+
+  set +e
+  conflict_output="$(./rig/bootstrap/macos.sh --dry-run --apply 2>&1 >/dev/null)"
   conflict_status=$?
   set -e
 

@@ -1,0 +1,7 @@
+==> Upgrading demo/tap/widget
+demo/tap/widget 1.0.0 -> 1.1.0
+==> Pouring widget--1.1.0.bottle.tar.gz
+🍺  /opt/homebrew/Cellar/widget/1.1.0: 10 files, 1MB
+==> Upgrading demo/tap/tooly
+Error: Your Xcode is too outdated.
+Please update to Xcode 27.0 (or delete it).

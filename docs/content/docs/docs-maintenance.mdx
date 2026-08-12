@@ -1,0 +1,67 @@
+---
+title: Docs maintenance
+description: How to update the Fumadocs site when repo behavior changes.
+---
+
+Internal Fumadocs site under `docs/`. Content: `content/docs/`; app shell: `app/`.
+
+## Commands
+
+```bash
+just docs-install    # pnpm install in docs/
+just docs-check      # typecheck
+just docs-build      # production build → docs/out
+just docs-ci         # frozen lockfile + typecheck + build
+```
+
+Local preview:
+
+```bash
+cd docs && pnpm dev
+```
+
+## When to update
+
+| Repo change | Update |
+| --- | --- |
+| New justfile recipe | `validation.mdx` (+ root README if entrypoint changes) |
+| Bootstrap behavior | `fresh-mac.mdx` |
+| Brewfile group / policy | `packages.mdx` |
+| Chezmoi/home layout | `home-config.mdx` |
+| Shell structure / tools | `shell.mdx` |
+| freshen operator behavior | `freshen.mdx` |
+| AI harness pointer | `ai-harness.mdx` (SSOT: wyattowalsh/agents) |
+| SSOT promotion flow | `ssot-workflow.mdx` |
+| Sidebar pages | `content/docs/meta.json` **and** `lib/hub-manifest.json` (slug parity) |
+| Domain map / layout | `domain-map.mdx` |
+| Nix / darwin | `nix.mdx` |
+
+## Principles
+
+- Describe **tracked** manifests and verified `just` commands — not private host state
+- No tokens, auth files, telemetry, histories, or session databases in pages
+- Env vars: **names only**
+- Prefer tables and command blocks over prose lists
+- Use Callouts for `--apply` / destructive risks; Mermaid only for multi-branch flows
+- Landing cards + index hub share `docs/lib/hub-manifest.json` (not hand-duplicated tables)
+- Host flake aliases belong in fenced commands / required path cells — not free prose (“on …”)
+- Agent conventions live in root `AGENTS.md` only (no `.claude/`, `GEMINI.md`, or other vendor stubs)
+- Validate with `just docs-ci` before merging doc-impacting changes
+- Commit `docs/pnpm-lock.yaml` when `docs/package.json` changes
+
+## App structure
+
+| Path | Role |
+| --- | --- |
+| `app/page.tsx` | Landing (shared `lib/sections.ts`) |
+| `app/docs/` | DocsLayout + slug routing |
+| `lib/source.ts` | Fumadocs loader |
+| `components/mdx.tsx` | MDX component map (Callout, Mermaid, …) |
+| `app/api/search` | Static Orama search index |
+| `app/llms.txt` | AI-oriented index export |
+
+## Not in scope
+
+- Public deployment / SEO marketing
+- OpenAPI reference generation
+- Agent harness configs (see [AI harness](/docs/ai-harness))

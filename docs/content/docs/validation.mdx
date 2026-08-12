@@ -9,9 +9,10 @@ Use `justfile` as the canonical command surface. Checks fail fast on tracked reg
 
 | Task | What it validates |
 | --- | --- |
-| `just check` | Pre-commit config, shell syntax, zsh parity, freshen SSOT smoke, JSON schemas, secrets scan |
+| `just check` | Pre-commit config, shell syntax, zsh parity + structure fixtures, freshen SSOT smoke, JSON schemas, secrets scan |
+| `just check-zsh-smoke` | Local interactive zsh smoke (uv/uvx/pnpm/pipx/mise/zoxide); not required in CI |
 | `just check-hooks` | `.pre-commit-config.yaml` syntax and hook schema |
-| `just check-freshen` | Freshen version SSOT + 272-case zsh smoke harness |
+| `just check-freshen` | Freshen version SSOT + 311-case zsh smoke harness |
 | `just smoke` | Non-destructive runtime smoke checks |
 | `just ci` | Full pipeline: `check` + `smoke` + `docs-ci` |
 | `just hooks-install` | Install repository `pre-commit` and `pre-push` git hooks |
@@ -25,7 +26,9 @@ Use `justfile` as the canonical command surface. Checks fail fast on tracked reg
 | `just docs-install` | Install docs site dependencies |
 | `just docs-check` | Typecheck Fumadocs site |
 | `just docs-build` | Production build of docs site |
-| `just docs-ci` | `pnpm install --frozen-lockfile` + typecheck + build |
+| `just docs-sensitive` | Docs content sensitive/PII pattern scan |
+| `just docs-hub-parity` | Sidebar meta.json ↔ hub-manifest.json slug parity |
+| `just docs-ci` | Frozen lockfile install + typecheck + build + sensitive + hub-parity |
 | `just bootstrap` | macOS full-rig bootstrap (`--dry-run` default) |
 
 ## `just check` breakdown
@@ -33,8 +36,9 @@ Use `justfile` as the canonical command surface. Checks fail fast on tracked reg
 ```bash
 just check-hooks    # pre-commit validate-config when pre-commit is installed
 just check-shell    # bash -n + shellcheck on scripts; shellcheck findings fail when installed
-just check-zsh      # zsh -n + cmp .zshrc ↔ home/dot_zshrc.tmpl
-just check-freshen  # ./checks/freshen-smoke.sh (version SSOT + 272 tests)
+just check-zsh      # zsh -n + dual cmp + checks/zsh-structure{,-test}.sh
+just check-zsh-smoke  # local-only interactive tool smoke
+just check-freshen  # ./checks/freshen-smoke.sh (version SSOT + 311 tests)
 just check-json     # ./checks/validate-json.sh
 just secrets-scan   # ./checks/secrets-scan.sh (requires rg)
 ```

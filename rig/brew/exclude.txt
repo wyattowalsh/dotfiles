@@ -1,0 +1,15 @@
+# Packages intentionally NOT promoted from live inventory into Brewfile.
+# Enforced by checks/brew-exclude-check.sh (via just brew-check).
+
+# Installers / auto-updaters
+betterdiscord-installer
+microsoft-auto-update
+
+# Odd/non-app cask tokens
+redis/redis/redis
+
+# Versioned dependency noise (leave as brew deps, not top-level intent)
+icu4c@76
+
+# Docker CLI formula — Desktop cask provides the CLI (see Brewfile docker-desktop)
+docker

@@ -1,0 +1,106 @@
+{
+  "sections": [
+    {
+      "slug": "fresh-mac",
+      "title": "Fresh Mac",
+      "description": "Bootstrap a new Apple Silicon Mac with dry-run first apply.",
+      "firstCommand": "just bootstrap --dry-run",
+      "group": "start"
+    },
+    {
+      "slug": "linux-setup",
+      "title": "Linux setup",
+      "description": "Debian/Ubuntu path via setup.sh with dry-run and smoke modes.",
+      "firstCommand": "./setup.sh --dry-run --verbose",
+      "group": "start"
+    },
+    {
+      "slug": "ssot-workflow",
+      "title": "SSOT workflow",
+      "description": "Inventory the live rig, curate, and promote into tracked manifests.",
+      "firstCommand": "just inventory-redacted",
+      "group": "operate"
+    },
+    {
+      "slug": "home-config",
+      "title": "Home config",
+      "description": "Chezmoi templates, bootstrap symlinks from rig/dots, and local overrides.",
+      "firstCommand": "just home-diff",
+      "group": "operate"
+    },
+    {
+      "slug": "shell",
+      "title": "Shell",
+      "description": "Zsh load order, completions Model A, and tool layers.",
+      "firstCommand": "just check-zsh",
+      "group": "operate"
+    },
+    {
+      "slug": "freshen",
+      "title": "freshen",
+      "description": "Operator guide for the zsh upgrade and cleanup function.",
+      "firstCommand": "just check-freshen",
+      "group": "operate"
+    },
+    {
+      "slug": "terminal",
+      "title": "Terminal",
+      "description": "Ghostty config, fonts, and local-only background assets.",
+      "firstCommand": "just home-diff",
+      "group": "operate"
+    },
+    {
+      "slug": "git",
+      "title": "Git",
+      "description": "Portable Git defaults, aliases, and delta integration.",
+      "group": "operate"
+    },
+    {
+      "slug": "validation",
+      "title": "Validation",
+      "description": "just check, just ci, hooks, and focused namespace checks.",
+      "firstCommand": "just check",
+      "group": "operate"
+    },
+    {
+      "slug": "packages",
+      "title": "Packages",
+      "description": "Curated Brewfile groups and promotion policy.",
+      "firstCommand": "just brew-check",
+      "group": "reference"
+    },
+    {
+      "slug": "nix",
+      "title": "Nix / darwin",
+      "description": "nix-darwin and Home Manager host scaffold for Apple Silicon.",
+      "firstCommand": "just darwin-check",
+      "group": "reference"
+    },
+    {
+      "slug": "ai-harness",
+      "title": "AI harness",
+      "description": "Configs live in wyattowalsh/agents; env var names only here.",
+      "group": "reference"
+    },
+    {
+      "slug": "security",
+      "title": "Security",
+      "description": "No-secrets policy, scanning, and safe import boundaries.",
+      "firstCommand": "just secrets-scan",
+      "group": "reference"
+    },
+    {
+      "slug": "domain-map",
+      "title": "Domain map",
+      "description": "Where each concern lives in the repository SSOT.",
+      "group": "reference"
+    },
+    {
+      "slug": "docs-maintenance",
+      "title": "Docs maintenance",
+      "description": "How to update the Fumadocs site when repo behavior changes.",
+      "firstCommand": "just docs-ci",
+      "group": "reference"
+    }
+  ]
+}

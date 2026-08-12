@@ -5,34 +5,45 @@ This repository is a **private, personal, internal-only** dotfiles SSOT for the 
 
 **AI harness, MCP servers, and agent client configs** live in [wyattowalsh/agents](https://github.com/wyattowalsh/agents) — not here. This repo may document env var *names* (`.env.example`) only.
 
+## Agent instruction surface
+- **SSOT for all coding agents:** this file (`AGENTS.md`). Do not reintroduce per-vendor root stubs (`.claude/`, `GEMINI.md`, `CLAUDE.md`, etc.).
+- Nested `*/AGENTS.md` files are thin subsystem contracts for agents; human runbooks live only under `docs/content/docs/`.
+- Optional repo tooling under `.github/` (e.g. Copilot path instructions) may point here; they are not a second contract SSOT.
+
+## Tooling conventions
+- **Workflows:** `just` (`justfile`) — `just check`, `just ci`, `just docs-ci`, `just bootstrap --dry-run`.
+- **Python:** use **uv** for any Python ops if/when scripts or tools require it (no repo `pyproject.toml` today).
+- **Docs site:** `pnpm` inside `docs/` (see `just docs-*`).
+- **Shell scripts:** `bash` with `set -euo pipefail` under `checks/` and `rig/bootstrap/`.
+
 ## SSOT workflow
 1. Run `just inventory-redacted` to refresh ignored `local/Brewfile.raw` and config-dir inventory.
-2. Diff live vs repo (`cmp` for `.zshrc`/`.p10k.zsh`, `just home-diff`, `just brew-check`).
-3. Promote curated changes into `brew/Brewfile`, `home/`, root dotfiles, and `darwin/` as appropriate.
-4. Validate with `just check` before `just bootstrap --apply` on macOS.
+2. Diff live vs repo (`cmp` for `rig/dots/zshrc`/`rig/dots/p10k.zsh` vs Chezmoi mirrors, `just home-diff`, `just brew-check`).
+3. Promote curated changes into `rig/brew/Brewfile`, `rig/home/`, `rig/dots/`, and `rig/darwin/` as appropriate.
+4. Validate with `just check` (and `just ci` / `just docs-ci` when docs or full CI parity matter) before `just bootstrap --apply` on macOS.
 
 ## Files overview
-- `setup.sh`: main bootstrap entrypoint (should converge system state when re-run; supports `--dry-run`, `--verbose`, and `--smoke-check`).
-- `justfile`: canonical workflow runner for bootstrap, checks, docs, Brew, Darwin, inventory, and secret scans.
-- `bootstrap/`: macOS full-rig bootstrap scripts.
-- `brew/`: curated Homebrew Bundle desired state and package notes.
-- `darwin/`: nix-darwin/Home Manager scaffold for Apple Silicon macOS.
-- `home/`: Chezmoi-style home configuration templates.
-- `docs/`: internal Fumadocs documentation site.
-- `checks/`: validation and smoke-check scripts invoked by justfile recipes.
+- `justfile`: canonical workflow runner (bootstrap, checks, docs, Brew, Darwin, inventory, secrets).
+- `setup.sh`: thin wrapper → `rig/bootstrap/linux.sh` (Linux/Debian bootstrap).
+- `rig/`: **machine desired-state + bootstrap** (all partitions that become the Mac).
+  - `rig/bootstrap/`: platform bootstraps (`macos.sh`, `linux.sh`).
+  - `rig/dots/`: tracked runtime files symlinked into `$HOME` (zshrc, p10k, gitconfig, …).
+  - `rig/brew/`: curated Homebrew Bundle desired state (`Brewfile`, `exclude.txt`).
+  - `rig/darwin/`: nix-darwin/Home Manager scaffold for Apple Silicon macOS.
+  - `rig/home/`: Chezmoi-style home configuration templates + parity mirrors.
+- `docs/`: internal Fumadocs operator documentation site (human runbook SSOT).
+- `checks/`: validation and smoke-check scripts (`docs-`, `zsh-`, `freshen-`, `brew-` prefixes).
 - `openspec/`: OpenSpec change notes for non-trivial workflow/public structure changes.
-- `.zshrc`: Zsh runtime configuration.
-- `.p10k.zsh`: Powerlevel10k prompt configuration.
-- `.gitconfig`: shared Git configuration defaults.
-- `.ripgreprc`: default ripgrep options.
-- `.editorconfig`: cross-editor formatting defaults.
+- `local/`: **ignored** redacted inventory and local research artifacts (never commit).
 - `.env.example`: documented env var names for AI/MCP (values stay local).
-- `.github/lsp.json`: repository LSP configuration used by GitHub tooling.
-- `.github/copilot-instructions.md`: repository instructions used by GitHub Copilot when editing **this repo**.
-- `.claude/CLAUDE.md`: Claude hint for this repo (delegates to `AGENTS.md`).
-- `AGENTS.md`: repository conventions for humans and automation.
-- `GEMINI.md`: Gemini hint for this repo (delegates to `AGENTS.md`).
-- `LICENSE`: licensing terms.
+- `.github/`: Copilot path instructions, LSP config, CI workflow (may reference `AGENTS.md`).
+- `AGENTS.md`: repository conventions for humans and automation (this file).
+- `LICENSE` / `README.md`: license + thin human entry.
+
+## Path contract
+- Bootstrap scripts resolve `REPO_ROOT` + `RIG_DIR="$REPO_ROOT/rig"` (never a single `..` from under `rig/`).
+- Machine paths use `$RIG_DIR/{brew,darwin,home,dots}`.
+- Checks stay top-level under `checks/` and resolve repo root with one `..`, then prefix `rig/`.
 
 ## `setup.sh` idempotency contract
 - Running `./setup.sh` multiple times must be safe and produce the same final state.
@@ -60,21 +71,25 @@ This repository is a **private, personal, internal-only** dotfiles SSOT for the 
 
 ## Justfile conventions
 - Use `justfile` as the command runner; do not add a `Taskfile.yml` or Makefile.
-- Keep just recipes thin and delegate complex shell logic to scripts under `checks/` or `bootstrap/`.
+- Keep just recipes thin and delegate complex shell logic to scripts under `checks/` or `rig/bootstrap/`.
 - Recipes that may mutate state must provide a dry-run or preview path (e.g. `just bootstrap --dry-run`).
 
 ## macOS full-rig conventions
 - Treat the live Mac as inventory, not as a blob to commit.
-- Curate Homebrew packages by intent before promoting them to `brew/Brewfile`.
-- Keep nix-darwin/Home Manager host-specific values in `darwin/hosts/`.
-- Keep portable home configuration in `home/` and private values in local Chezmoi data or untracked overrides.
+- Curate Homebrew packages by intent before promoting them to `rig/brew/Brewfile`.
+- Keep nix-darwin/Home Manager host-specific values in `rig/darwin/hosts/`.
+- Keep portable home configuration in `rig/home/` and private values in local Chezmoi data or untracked overrides.
 
 ## No secrets policy
 - Never commit passwords, tokens, API keys, private keys, or other secrets.
 - Keep sensitive values in untracked local files or environment variables.
 
 ## Documentation maintenance
-- Internal runbooks: `docs/content/docs/` (Fumadocs). Sidebar order: `docs/content/docs/meta.json`.
-- When changing justfile recipes, bootstrap phases, Brewfile groups, or home layout — update the matching MDX page and nested `AGENTS.md` in the same change.
-- AI harness docs point to `wyattowalsh/agents`; only env var names belong in dotfiles.
-- Validate doc changes with `just docs-ci` before merge.
+- Human operator runbooks: `docs/content/docs/` only (Fumadocs). Sidebar: `docs/content/docs/meta.json`. Hub cards: `docs/lib/hub-manifest.json` (parity via `just docs-hub-parity`).
+- Nested `AGENTS.md` files are **agent contracts**, not operator prose — keep them rule-focused and point to docs for runbooks.
+- Subsystem `README.md` files are **optional** and must stay thin (commands + pointers only); they are not a second runbook SSOT.
+- `checks/` scripts use prefix naming (`docs-`, `zsh-`, `freshen-`, `brew-`) instead of deep folders unless an explicit layout migration is approved.
+- When changing justfile recipes, bootstrap phases, Brewfile groups, shell, or home layout — update the matching MDX page (and nested `AGENTS.md` if agent rules change) in the same change.
+- AI harness docs point to `wyattowalsh/agents`; only env var **names** belong in dotfiles.
+- Never paste `local/` inventory, secret values, or absolute `/Users/<name>/` paths into docs.
+- Validate doc changes with `just docs-ci` and `just secrets-scan` before merge.

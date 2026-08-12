@@ -1,0 +1,22 @@
+---
+title: Git
+description: Portable Git defaults, aliases, and delta integration.
+---
+
+Owns portable Git defaults, aliases, delta pager integration, and conventional-commit helpers.
+
+## Canonical file
+
+`rig/dots/gitconfig` — symlinked to `~/.gitconfig` by bootstrap (`macos.sh` / `linux.sh`).
+
+## Local-only
+
+- Credential helper state and provider OAuth tokens
+- User identity overrides if different from tracked defaults (prefer `includeIf` or local config)
+
+## Validation
+
+```bash
+git config --global --list   # after bootstrap apply
+cmp -s rig/dots/gitconfig ~/.gitconfig  # when symlinked
+```

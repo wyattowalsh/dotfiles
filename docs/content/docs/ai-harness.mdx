@@ -13,13 +13,15 @@ Dotfiles only documents which **environment variables** you may need locally and
 
 Set values in `~/.zshrc.local`, a private env file, or your shell profile — never commit literals.
 
-| Variable | Used for |
+| Variable (name only) | Used for |
 | --- | --- |
 | `MCPHUB_BEARER_TOKEN` | MCPHub group endpoints |
 | `BRAVE_API_KEY` | Brave Search MCP (when enabled in agents repo) |
 | Provider auth | Claude, Gemini, Copilot, Codex — OAuth/API via each CLI |
 
-See `.env.example` at the repo root for a starter list.
+See `.env.example` at the repo root for a starter list. **Never commit values** — set them in `~/.zshrc.local` or an untracked env file.
+
+Related: [Security](/docs/security), [Linux setup](/docs/linux-setup) AI CLI phase.
 
 ## Linux bootstrap (`setup.sh`)
 
@@ -35,6 +37,5 @@ macOS full-rig bootstrap does not install AI CLIs — manage harness via the age
 
 These files give **this repository** context to coding agents; they are not MCP config:
 
-- `AGENTS.md` — dotfiles conventions
-- `.github/copilot-instructions.md` — Copilot when editing this repo
-- `.claude/CLAUDE.md` — delegates to `AGENTS.md`
+- `AGENTS.md` — sole conventions SSOT for coding agents
+- `.github/copilot-instructions.md` — Copilot path hints when editing this repo (should point at `AGENTS.md`)

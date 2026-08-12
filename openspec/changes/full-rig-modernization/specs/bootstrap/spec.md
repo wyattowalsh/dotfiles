@@ -43,8 +43,8 @@ The repository SHALL include a macOS bootstrap path that can run in dry-run mode
 #### Scenario: Use pinned nix-darwin fallback
 
 - **WHEN** `just bootstrap --apply` needs nix-darwin and `darwin-rebuild` is not already installed
-- **THEN** the bootstrap uses the pinned nix-darwin revision from `darwin/flake.lock`.
-- **AND** if `darwin/flake.lock` is missing, setup fails before applying system changes with an actionable lock-generation command instead of resolving a moving branch.
+- **THEN** the bootstrap uses the pinned nix-darwin revision from `rig/darwin/flake.lock`.
+- **AND** if `rig/darwin/flake.lock` is missing, setup fails before applying system changes with an actionable lock-generation command instead of resolving a moving branch.
 
 ### Requirement: External AI Harness SSOT
 

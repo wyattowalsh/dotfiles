@@ -1,60 +1,69 @@
 ---
 title: Fresh Mac Runbook
-description: First-run setup sequence for Apple Silicon macOS on w4w-mbp.
+description: First-run setup sequence for Apple Silicon macOS.
 ---
 
 End-to-end bootstrap for a new or reset Mac. Default mode is **preview**; mutating steps require `--apply`.
 
+<Callout type="warn" title="Mutating apply">
+  `just bootstrap --apply` installs packages (including App Store apps via `mas` when listed), rewrites symlinks, and may switch nix-darwin. Always run `--dry-run` first and review output.
+</Callout>
+
 ## Prerequisites
 
-1. **Xcode Command Line Tools** — installed automatically on apply if missing (`xcode-select --install`).
-2. **Stable clone path** — e.g. `~/dev/projects/dotfiles`. Symlinks point at the clone; moving it later breaks links.
-3. **`darwin/flake.lock`** — required before `--apply`. Generate with:
+1. **Apple Silicon Mac** — this SSOT targets `aarch64-darwin` / arm64 Homebrew.
+2. **Network** and ability to install Xcode Command Line Tools.
+3. **Apple ID** signed into the Mac App Store if you want `mas` entries to install.
+4. **Stable clone path** — e.g. `~/dev/projects/dotfiles`. Symlinks point at the clone.
+5. **`rig/darwin/flake.lock`** — required before `--apply`:
 
 ```bash
-nix flake lock ./darwin
+nix flake lock ./rig/darwin
 ```
-
-Commit the lockfile so nix-darwin resolves pinned refs instead of moving upstream heads.
 
 ## Bootstrap sequence
 
 ```bash
 git clone <repo-url> ~/dev/projects/dotfiles
 cd ~/dev/projects/dotfiles
-just bootstrap --dry-run    # preview (default when neither flag is passed)
-just bootstrap --apply      # mutate after review
+just bootstrap --dry-run                 # preview (default without flags)
+just bootstrap --apply --no-upgrade      # recommended first restore
 exec zsh -l
 just check
 just smoke
 ```
 
-### What `bootstrap/macos.sh` does
+### What `rig/bootstrap/macos.sh` does
 
 | Phase | Dry-run | Apply |
 | --- | --- | --- |
-| Toolchain | Plans brew, just, nix, chezmoi installs | Installs missing tools (`node`/`pnpm` via mise on w4w-mbp) |
-| Homebrew | `brew bundle check --file brew/Brewfile` | `brew bundle install` |
-| Root dotfiles | Plans parent directory creation and `ln -sfn` for `.zshrc`, `.p10k.zsh`, `.gitconfig`, nested agent hints, etc. | Creates missing parent directories and repairs symlinks |
-| Chezmoi | `chezmoi --source home diff` | `chezmoi --source home apply` |
-| nix-darwin | `darwin-rebuild check` or flake check | `darwin-rebuild switch --flake ./darwin#w4w-mbp` |
+| Preflight | macOS + non-root checks | Same; refuse root |
+| sudo keepalive | — | Background `sudo -v` refresh for long installs |
+| Xcode CLT | Plans install | Installs and **waits** until ready (default ~30 min timeout, then fail with re-run hint) |
+| Toolchain | Plans brew, just, nix, chezmoi | Installs missing tools |
+| Oh My Zsh + Powerlevel10k | Plans ensure | Downloads installer to temp then runs with `KEEP_ZSHRC` (override URL via `OMZ_INSTALL_URL`); creates themes dir before p10k clone; does not fight brew zsh plugins |
+| Homebrew Bundle | Runs `brew bundle check` when brew exists (dry-run exits non-zero if check fails after full plan) | `brew bundle install --jobs auto` (+ optional `--no-upgrade`); primary Docker is **Docker Desktop** (`docker-desktop`) |
+| `rig/dots` links | Plans `ln -sfn`; non-symlink targets print `would-block` and continue | Creates parents and repairs symlinks; refuses non-symlink clobber |
+| Chezmoi | Runs `chezmoi --source rig/home diff` when chezmoi exists | `chezmoi --source rig/home apply` |
+| nix-darwin | Runs flake / darwin-rebuild **check** when tools exist | `darwin-rebuild switch --flake ./rig/darwin#w4w-mbp` |
 
 ### What bootstrap does **not** do
 
-- Install or configure AI CLIs, skills, or MCP servers (see `./setup.sh` on Linux or manual macOS install)
-- Build or serve the Fumadocs site (use `just docs-build` separately)
-- Overwrite non-symlink targets — existing regular files at `~/.zshrc` etc. must be backed up or removed first
+- Install AI harness / MCP configs (see the agents repo; env var **names** only here)
+- Mass-install every VS Code/Cursor extension from local inventory
+- Overwrite non-symlink targets at `~/.zshrc` etc.
+- Run `brew bundle cleanup`
 
 ```mermaid
 flowchart TD
   A[Clone repo] --> B[just bootstrap --dry-run]
   B --> C{Output acceptable?}
-  C -->|No| D[Adjust brew/home/darwin manifests]
+  C -->|No| D[Adjust rig/brew home darwin manifests]
   D --> B
-  C -->|Yes| E[nix flake lock ./darwin]
-  E --> F[just bootstrap --apply]
+  C -->|Yes| E[nix flake lock ./rig/darwin]
+  E --> F[just bootstrap --apply --no-upgrade]
   F --> G[just check && just smoke]
-  G --> H[Authenticate AI providers manually]
+  G --> H[Apple ID / mas + manual apps + AI auth]
 ```
 
 ## Post-bootstrap verification
@@ -63,12 +72,37 @@ flowchart TD
 ls -l ~/.zshrc ~/.p10k.zsh ~/.gitconfig
 readlink ~/.zshrc    # should point into the clone
 just brew-check
-just home-diff       # should be clean after apply
+just home-diff
 just darwin-check    # when nix is available
 ```
 
 ## Manual follow-ups
 
-- Authenticate AI providers (`claude`, `gemini`, `copilot`, `codex`) after CLI install
-- Export MCP env vars (`MCPHUB_BEARER_TOKEN`, `BRAVE_API_KEY`, etc.) in shell profile or untracked env files
-- Promote additional Homebrew packages from `local/Brewfile.raw` via [SSOT workflow](/docs/ssot-workflow)
+### App Store (`mas`)
+
+Sign in with your Apple ID, then re-run brew bundle or install missing mas apps. Purchases must already be on that account.
+
+### Non-Brew apps (reinstall by name)
+
+These often need a vendor installer or license (not fully expressed as casks). Typical leftovers from a full-rig transfer:
+
+- **FL Studio** (vendor)
+- **Beekeeper Studio Ultimate** (licensed build)
+- Vendor portals / specialty tools (Hue Sync, Citrix Workspace, iZotope, etc.) as needed
+- Safari/web extensions that do not restore cleanly via mas alone
+
+Refresh the basenames list anytime with `just inventory-redacted` → `local/apps-all.txt` (gitignored).
+
+### Secrets and AI
+
+- Authenticate AI CLIs after install
+- Put MCP tokens and API keys in **untracked** env files — never in this repo
+- Harness/MCP manifests live in the agents repository
+
+### Optional second pass
+
+After the first restore succeeds:
+
+```bash
+just bootstrap --apply    # allow brew bundle upgrades
+```

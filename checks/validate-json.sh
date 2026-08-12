@@ -6,12 +6,9 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
 while IFS= read -r -d '' json_file; do
   jq empty "$json_file"
-done < <(
-  find . \
-    -path './.git' -prune -o \
-    -path './docs/node_modules' -prune -o \
-    -path './docs/.next' -prune -o \
-    -name '*.json' -print0
-)
+done < <(git ls-files -z -- '*.json')

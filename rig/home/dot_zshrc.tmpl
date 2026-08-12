@@ -1,0 +1,373 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# ~/.zshrc — curated SSOT for w4w-mbp (Model A completions: OMZ owns compinit)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Features:
+#   • Powerlevel10k instant prompt + lean theme
+#   • Single PATH/fpath assembly (uv/uvx, pnpm, pipx, mise)
+#   • fpath complete before Oh My Zsh (no user compinit)
+#   • direnv export before instant prompt; hook after OMZ
+#   • zsh-autosuggestions + zsh-syntax-highlighting (highlight last)
+#   • zoxide, fzf, modern CLI aliases
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ───────────────────────────────────────────────────────────────────────────────
+# direnv export (p10k instant-prompt FAQ — before instant prompt)
+# ───────────────────────────────────────────────────────────────────────────────
+(( ${+commands[direnv]} )) && emulate zsh -c "$(direnv export zsh)" 2>/dev/null
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Powerlevel10k Instant Prompt (near top; no console I/O after this until ready)
+# https://github.com/romkatv/powerlevel10k#instant-prompt
+# ───────────────────────────────────────────────────────────────────────────────
+if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
+  source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
+fi
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Deduplication (early)
+# ───────────────────────────────────────────────────────────────────────────────
+typeset -U path fpath manpath
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Homebrew prefix
+# ───────────────────────────────────────────────────────────────────────────────
+if [[ -z ${HOMEBREW_PREFIX:-} ]]; then
+  if [[ -x /opt/homebrew/bin/brew ]]; then
+    export HOMEBREW_PREFIX="/opt/homebrew"
+  elif [[ -x /usr/local/bin/brew ]]; then
+    export HOMEBREW_PREFIX="/usr/local"
+  elif command -v brew &>/dev/null; then
+    export HOMEBREW_PREFIX="$(brew --prefix)"
+  fi
+fi
+
+# ───────────────────────────────────────────────────────────────────────────────
+# XDG + limits
+# ───────────────────────────────────────────────────────────────────────────────
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+export XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+
+if [[ "$OSTYPE" == darwin* ]]; then
+  ulimit -Sn 65536 2>/dev/null || true
+fi
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Core environment
+# ───────────────────────────────────────────────────────────────────────────────
+export LANG="en_US.UTF-8"
+export LC_ALL="en_US.UTF-8"
+export PAGER="less"
+export LESS="-R -F -X"
+
+# Term-first editor; Cursor --wait only inside Cursor/VS Code integrated terminal
+if [[ "${TERM_PROGRAM:-}" == "vscode" || "${TERM_PROGRAM:-}" == "cursor" ]] \
+  && command -v cursor &>/dev/null; then
+  export EDITOR="cursor --wait"
+else
+  if command -v nvim &>/dev/null; then
+    export EDITOR="nvim"
+  else
+    export EDITOR="vim"
+  fi
+fi
+export VISUAL="$EDITOR"
+export GIT_EDITOR="$EDITOR"
+
+# Tool homes (uv/uvx via brew+mise; pnpm; pipx)
+export PIPX_HOME="${XDG_DATA_HOME}/pipx"
+export PIPX_BIN_DIR="${PIPX_BIN_DIR:-$HOME/.local/bin}"
+export PNPM_HOME="${PNPM_HOME:-$HOME/Library/pnpm}"
+
+if [[ -n ${HOMEBREW_PREFIX:-} && -d "$HOMEBREW_PREFIX/share/tessdata" ]]; then
+  export TESSDATA_PREFIX="$HOMEBREW_PREFIX/share/tessdata"
+fi
+if [[ -n ${HOMEBREW_PREFIX:-} && -d "$HOMEBREW_PREFIX/opt/dotnet/libexec" ]]; then
+  export DOTNET_ROOT="$HOMEBREW_PREFIX/opt/dotnet/libexec"
+fi
+
+export RIPGREP_CONFIG_PATH="${RIPGREP_CONFIG_PATH:-$HOME/.ripgreprc}"
+export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+export DRAWTHINGS_OUTPUT_DIR="${DRAWTHINGS_OUTPUT_DIR:-$HOME/Pictures/draw-thing}"
+
+# ───────────────────────────────────────────────────────────────────────────────
+# fzf defaults
+# ───────────────────────────────────────────────────────────────────────────────
+if command -v fzf &>/dev/null; then
+  export FZF_DEFAULT_COMMAND='fd --type f --hidden --follow --exclude .git'
+  export FZF_DEFAULT_OPTS='--height 50% --layout=reverse --border'
+  export FZF_CTRL_T_OPTS="--preview 'bat -n --color=always {} 2>/dev/null || cat {}'"
+  export FZF_ALT_C_COMMAND='fd --type d --hidden --follow --exclude .git'
+fi
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Homebrew compiler flags (anonymous function — no top-level local)
+# ───────────────────────────────────────────────────────────────────────────────
+if [[ -n ${HOMEBREW_PREFIX:-} ]]; then
+  () {
+    local -a cppflags_parts=() ldflags_parts=() pkg_parts=()
+    [[ -d "$HOMEBREW_PREFIX/opt/openjdk/include" ]] && cppflags_parts+=("-I$HOMEBREW_PREFIX/opt/openjdk/include")
+    [[ -d "$HOMEBREW_PREFIX/opt/curl/include" ]] && cppflags_parts+=("-I$HOMEBREW_PREFIX/opt/curl/include")
+    [[ -d "$HOMEBREW_PREFIX/opt/curl/lib" ]] && ldflags_parts+=("-L$HOMEBREW_PREFIX/opt/curl/lib")
+    [[ -d "$HOMEBREW_PREFIX/opt/curl/lib/pkgconfig" ]] && pkg_parts+=("$HOMEBREW_PREFIX/opt/curl/lib/pkgconfig")
+    [[ -d "$HOMEBREW_PREFIX/opt/qt@5/include" ]] && cppflags_parts+=("-I$HOMEBREW_PREFIX/opt/qt@5/include")
+    [[ -d "$HOMEBREW_PREFIX/opt/qt@5/lib" ]] && ldflags_parts+=("-L$HOMEBREW_PREFIX/opt/qt@5/lib")
+    [[ -d "$HOMEBREW_PREFIX/opt/qt@5/lib/pkgconfig" ]] && pkg_parts+=("$HOMEBREW_PREFIX/opt/qt@5/lib/pkgconfig")
+    (( ${#cppflags_parts[@]} )) && export CPPFLAGS="${cppflags_parts[*]}"
+    (( ${#ldflags_parts[@]} )) && export LDFLAGS="${ldflags_parts[*]}"
+    (( ${#pkg_parts[@]} )) && export PKG_CONFIG_PATH="${(j.:.)pkg_parts}"
+  }
+fi
+
+# ───────────────────────────────────────────────────────────────────────────────
+# PATH assembly (once) — uv/pipx/pnpm/local first; mise activate injects later
+# ───────────────────────────────────────────────────────────────────────────────
+path=(
+  $HOME/.local/bin
+  $PIPX_BIN_DIR
+  $PNPM_HOME
+  $PNPM_HOME/bin(N)
+  $HOME/go/bin
+  $HOME/.rbenv/bin(N)
+  $HOME/.antigravity/antigravity/bin(N)
+  $HOME/.opencode/bin(N)
+  $HOME/.grok/bin(N)
+  $HOME/.config/draw-thing(N)
+  $HOME/dev/tools/bin(N)
+  $HOME/dev/projects/agents/bin(N)
+  $HOME/.cache/lm-studio/bin(N)
+  $HOME/.cache/.bun/bin(N)
+  $HOME/.spicetify(N)
+  ${HOMEBREW_PREFIX:+$HOMEBREW_PREFIX/opt/rustup/bin}
+  ${HOMEBREW_PREFIX:+$HOMEBREW_PREFIX/bin}
+  ${HOMEBREW_PREFIX:+$HOMEBREW_PREFIX/sbin}
+  ${HOMEBREW_PREFIX:+$HOMEBREW_PREFIX/opt/make/libexec/gnubin}
+  ${HOMEBREW_PREFIX:+$HOMEBREW_PREFIX/opt/coreutils/libexec/gnubin}
+  ${HOMEBREW_PREFIX:+$HOMEBREW_PREFIX/opt/findutils/libexec/gnubin}
+  ${HOMEBREW_PREFIX:+$HOMEBREW_PREFIX/opt/gnu-sed/libexec/gnubin}
+  ${HOMEBREW_PREFIX:+$HOMEBREW_PREFIX/opt/grep/libexec/gnubin}
+  ${HOMEBREW_PREFIX:+$HOMEBREW_PREFIX/opt/curl/bin}
+  ${HOMEBREW_PREFIX:+$HOMEBREW_PREFIX/opt/openjdk/bin}
+  ${HOMEBREW_PREFIX:+$HOMEBREW_PREFIX/opt/qt@5/bin}
+  ${HOMEBREW_PREFIX:+$HOMEBREW_PREFIX/opt/sphinx-doc/bin}
+  $path
+)
+
+# ───────────────────────────────────────────────────────────────────────────────
+# fpath (complete BEFORE Oh My Zsh — Model A: OMZ runs the only compinit)
+# ───────────────────────────────────────────────────────────────────────────────
+fpath=(
+  ${HOMEBREW_PREFIX:+$HOMEBREW_PREFIX/share/zsh/site-functions}
+  ${HOMEBREW_PREFIX:+$HOMEBREW_PREFIX/share/zsh-completions}
+  $HOME/.zfunc(N)
+  $HOME/.zsh/functions(N)
+  $HOME/.docker/completions(N)
+  $HOME/.grok/completions/zsh(N)
+  $fpath
+)
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Oh My Zsh
+# ───────────────────────────────────────────────────────────────────────────────
+export ZSH="${ZSH:-$HOME/.oh-my-zsh}"
+ZSH_THEME="powerlevel10k/powerlevel10k"
+
+# Homebrew's /opt/homebrew/share is often group-writable; skip OMZ compfix stalls.
+# Prefer fixing with `compaudit | xargs chmod g-w,o-w` when possible.
+ZSH_DISABLE_COMPFIX=true
+
+zstyle ':omz:update' mode reminder
+zstyle ':omz:update' frequency 14
+ENABLE_CORRECTION="false"
+VSCODE=cursor
+
+# Keep ≤12 high-signal plugins (uv kept for first-class Python tooling)
+plugins=(
+  git
+  gh
+  macos
+  safe-paste
+  extract
+  sudo
+  docker
+  docker-compose
+  aws
+  terraform
+  uv
+  zsh-interactive-cd
+)
+
+source "$ZSH/oh-my-zsh.sh"
+
+# ───────────────────────────────────────────────────────────────────────────────
+# History (OMZ sets defaults; raise SAVEHIST to match HISTSIZE)
+# ───────────────────────────────────────────────────────────────────────────────
+HISTSIZE=50000
+SAVEHIST=50000
+HISTFILE="${HISTFILE:-$HOME/.zsh_history}"
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Post-OMZ integrations (no compinit)
+# ───────────────────────────────────────────────────────────────────────────────
+typeset -ga ZSH_AUTOSUGGEST_STRATEGY=(history completion)
+typeset -g ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=20
+if [[ -n ${HOMEBREW_PREFIX:-} && -f "$HOMEBREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh" ]]; then
+  source "$HOMEBREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
+fi
+
+if command -v fzf &>/dev/null && [[ -n ${HOMEBREW_PREFIX:-} ]]; then
+  [[ -f "$HOMEBREW_PREFIX/opt/fzf/shell/key-bindings.zsh" ]] && source "$HOMEBREW_PREFIX/opt/fzf/shell/key-bindings.zsh"
+  [[ -f "$HOMEBREW_PREFIX/opt/fzf/shell/completion.zsh" ]] && source "$HOMEBREW_PREFIX/opt/fzf/shell/completion.zsh"
+fi
+
+if (( $+functions[zic-completion] )); then
+  bindkey "${zic_custom_binding:-^I}" zic-completion
+fi
+
+# direnv hook (export already ran pre-instant-prompt)
+(( ${+commands[direnv]} )) && emulate zsh -c "$(direnv hook zsh)"
+
+# zoxide
+if command -v zoxide &>/dev/null; then
+  eval "$(zoxide init zsh)"
+fi
+
+# mise once (versioned node/python/pnpm/uv shims as configured)
+if command -v mise &>/dev/null; then
+  eval "$(mise activate zsh)"
+fi
+
+# rbenv only if present
+if command -v rbenv &>/dev/null; then
+  eval "$(rbenv init - zsh)"
+fi
+
+# Cursor / Ghostty shell integration
+if [[ "${TERM_PROGRAM:-}" == "vscode" ]] && command -v cursor &>/dev/null; then
+  source "$(cursor --locate-shell-integration-path zsh 2>/dev/null)" 2>/dev/null || true
+fi
+if [[ "${TERM_PROGRAM:-}" == "ghostty" && -r "$HOME/.config/ghostty/shell-integration.zsh" ]]; then
+  source "$HOME/.config/ghostty/shell-integration.zsh"
+fi
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Secrets & local overrides
+# ───────────────────────────────────────────────────────────────────────────────
+if [[ -f "$HOME/.zsh/secrets.env" ]]; then
+  if [[ "$(/usr/bin/stat -f '%A' "$HOME/.zsh/secrets.env" 2>/dev/null)" == "600" ]]; then
+    source "$HOME/.zsh/secrets.env"
+  fi
+fi
+[[ -f "$HOME/.zshrc.local" ]] && source "$HOME/.zshrc.local"
+[[ -f "$HOME/.config/copilot-subagents.env" ]] && source "$HOME/.config/copilot-subagents.env"
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Aliases
+# ───────────────────────────────────────────────────────────────────────────────
+alias c='clear'
+alias zshconfig="\$EDITOR ~/.zshrc"
+alias zshedit="\$EDITOR ~/.zshrc"
+alias zshreload='exec zsh'
+alias ohmyzsh="\$EDITOR ~/.oh-my-zsh"
+alias timeout='gtimeout'
+alias rm='rm -i'
+alias mv='mv -i'
+alias cp='cp -i'
+alias ..='cd ..'
+alias ...='cd ../..'
+alias ....='cd ../../..'
+
+# uv: avoid glob expansion on CLI args
+alias uv='noglob uv'
+
+if command -v eza &>/dev/null; then
+  alias ls='eza --icons --group-directories-first'
+  alias ll='eza -l --git --icons --group-directories-first'
+  alias la='eza -la --git --icons --group-directories-first'
+  alias lt='eza -T --icons --git-ignore -L 3'
+  alias ltl='eza -T --icons --git-ignore -L 5'
+fi
+command -v bat &>/dev/null && alias cat='bat --paging=never'
+command -v fd &>/dev/null && alias fdf='fd'
+command -v dust &>/dev/null && alias du='dust'
+command -v duf &>/dev/null && alias df='duf'
+command -v lazygit &>/dev/null && alias lg='lazygit'
+
+alias mcphub='PORT=7654 MCPHUB_SETTING_PATH="$HOME/dev/tools/mcp/mcphub/mcp_settings.json" mcphub'
+alias mcphubtunnel='cloudflared tunnel --config ~/.cloudflared/config.yml run mcphub'
+
+alias gm="gemini"
+alias gm3="gemini -m gemini-3.0-pro-max"
+alias gmy="gemini -y"
+alias ocr="opencode run"
+alias occ="opencode --continue"
+alias cur="cursor"
+alias curp="cursor ."
+alias chrome-debug='open -a "Google Chrome" --args --remote-debugging-port=9222'
+alias dbtf="$HOME/.local/bin/dbt"
+
+alias ytdown='yt-dlp \
+  -f "bv*+ba/b" \
+  -S "res,fps,hdr:12,vcodec,br,asr" \
+  --merge-output-format mkv \
+  --remote-components ejs:github \
+  --embed-metadata \
+  --embed-thumbnail \
+  --embed-chapters \
+  --add-metadata \
+  --embed-subs \
+  --sub-langs "all,-live_chat" \
+  --sponsorblock-mark all \
+  --sponsorblock-remove all \
+  --download-archive "$HOME/Downloads/yt-archive.txt" \
+  --concurrent-fragments 8 \
+  --retries 10 \
+  --extractor-retries 10 \
+  --retry-sleep extractor:5 \
+  --no-mtime \
+  --no-part \
+  -o "$HOME/Downloads/%(upload_date>%Y-%m-%d)s - %(uploader)s - %(title).200B [%(id)s].%(ext)s"'
+
+alias ofs="ofscraper"
+alias ofs-all="ofscraper --posts all --username ALL --action download"
+alias ofs-daemon="ofscraper --daemon 10 --posts all --action download"
+alias ofs-debug="ofscraper --output debug"
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Functions
+# ───────────────────────────────────────────────────────────────────────────────
+code() { /Applications/Cursor.app/Contents/Resources/app/bin/cursor "$@" }
+autoload -Uz freshen 2>/dev/null
+autoload -Uz sync-cursor 2>/dev/null
+
+function y() {
+  local tmp cwd
+  tmp="$(mktemp -t "yazi-cwd.XXXXXX")"
+  command yazi "$@" --cwd-file="$tmp"
+  IFS= read -r -d '' cwd <"$tmp"
+  [ -n "$cwd" ] && [ "$cwd" != "$PWD" ] && [ -d "$cwd" ] && builtin cd -- "$cwd"
+  rm -f -- "$tmp"
+}
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Powerlevel10k config
+# ───────────────────────────────────────────────────────────────────────────────
+[[ -f ~/.p10k.zsh ]] && source ~/.p10k.zsh
+
+# gh copilot aliases (cached)
+if command -v gh &>/dev/null; then
+  _gh_copilot_cache="${XDG_CACHE_HOME:-$HOME/.cache}/gh-copilot-aliases.zsh"
+  if [[ ! -f "$_gh_copilot_cache" ]] || [[ "$_gh_copilot_cache" -ot "$(command -v gh)" ]]; then
+    gh copilot alias -- zsh >"$_gh_copilot_cache" 2>/dev/null || true
+  fi
+  [[ -f "$_gh_copilot_cache" ]] && source "$_gh_copilot_cache"
+  unset _gh_copilot_cache
+fi
+
+# ───────────────────────────────────────────────────────────────────────────────
+# zsh-syntax-highlighting MUST be last (ZLE hooks)
+# ───────────────────────────────────────────────────────────────────────────────
+if [[ -n ${HOMEBREW_PREFIX:-} && -f "$HOMEBREW_PREFIX/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]]; then
+  source "$HOMEBREW_PREFIX/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
+fi

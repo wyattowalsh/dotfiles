@@ -2,9 +2,10 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-FRESHEN_FILE="${REPO_DIR}/home/dot_zsh/functions/freshen"
-VERSION_FILE="${REPO_DIR}/home/dot_zsh/functions/freshen.VERSION"
-TEST_FILE="${REPO_DIR}/home/dot_zsh/functions/tests/freshen_test.zsh"
+RIG_DIR="${REPO_DIR}/rig"
+FRESHEN_FILE="${RIG_DIR}/home/dot_zsh/functions/freshen"
+VERSION_FILE="${RIG_DIR}/home/dot_zsh/functions/freshen.VERSION"
+TEST_FILE="${RIG_DIR}/home/dot_zsh/functions/tests/freshen_test.zsh"
 
 if [[ ! -r "$VERSION_FILE" ]]; then
   printf 'Missing freshen.VERSION: %s\n' "$VERSION_FILE" >&2

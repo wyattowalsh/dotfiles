@@ -1,0 +1,44 @@
+---
+title: Domain map
+description: Where each concern lives in the repository SSOT.
+---
+
+Canonical desired state lives in tracked manifests. This map replaces the former `topics/` scaffolding.
+
+| Domain | Owns | Canonical SSOT |
+| --- | --- | --- |
+| Shell | Zsh, PATH, completions, prompt | `rig/dots/zshrc`, `rig/dots/p10k.zsh`, `rig/home/dot_zsh/` — [Shell](/docs/shell) |
+| Git | Defaults, delta, aliases | `rig/dots/gitconfig` — [Git](/docs/git) |
+| Terminal | Ghostty, fonts | `rig/home/private_dot_config/ghostty/` — [Terminal](/docs/terminal) |
+| Editors | Portable editor config | Chezmoi templates as promoted; agents repo for some client surfaces |
+| macOS / Nix | Defaults, host flake | `rig/darwin/` — [Nix / darwin](/docs/nix) |
+| Packages | Curation policy | `rig/brew/Brewfile`, `rig/darwin/` — [Packages](/docs/packages) |
+| AI / MCP | Client strategy | [wyattowalsh/agents](https://github.com/wyattowalsh/agents) — [AI harness](/docs/ai-harness) |
+| Security | No-secrets, scanning | `checks/secrets-scan.sh` — [Security](/docs/security) |
+| Docs | Operator runbooks | this site — [Docs maintenance](/docs/docs-maintenance) |
+
+## Conventions
+
+- Link to canonical manifests; do not duplicate Brewfile contents inline
+- Portable config + local override hooks over hardcoded machine state
+- Secrets and live inventory stay out of Git (`local/` is ignored)
+- Agent instruction SSOT: root `AGENTS.md` (no per-vendor root stubs)
+- Thin subsystem READMEs (e.g. `rig/brew/README.md`) may exist as pointers only; operator detail stays in this site
+
+## Layout sketch
+
+```
+dotfiles/
+├── AGENTS.md README.md justfile LICENSE
+├── setup.sh              # thin → rig/bootstrap/linux.sh
+├── rig/                  # machine desired-state + bootstrap
+│   ├── bootstrap/        # macos.sh + linux.sh
+│   ├── dots/             # runtime files → $HOME symlinks
+│   ├── brew/             # Brewfile + exclude
+│   ├── darwin/           # nix-darwin flake
+│   └── home/             # Chezmoi source
+├── docs/                 # Fumadocs operator runbooks
+├── checks/               # validation scripts
+├── openspec/             # structure/workflow change notes
+└── local/                # ignored inventory (never commit)
+```

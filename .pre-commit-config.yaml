@@ -45,21 +45,21 @@ repos:
         entry: just check-shell
         language: system
         pass_filenames: false
-        files: ^(setup\.sh|bootstrap/macos\.sh|checks/.*\.sh|justfile)$
+        files: ^(setup\.sh|rig/bootstrap/macos\.sh|rig/bootstrap/linux\.sh|checks/.*\.sh|justfile)$
 
       - id: dotfiles-zsh-parity
         name: dotfiles zsh syntax and parity
         entry: just check-zsh
         language: system
         pass_filenames: false
-        files: ^(\.zshrc|home/dot_zshrc\.tmpl|\.p10k\.zsh|home/dot_p10k\.zsh)$
+        files: ^(rig/dots/zshrc|rig/home/dot_zshrc\.tmpl|rig/dots/p10k\.zsh|rig/home/dot_p10k\.zsh|checks/zsh-structure.*|checks/fixtures/zshrc/.*)$
 
       - id: dotfiles-freshen-smoke
         name: dotfiles freshen smoke tests
         entry: just check-freshen
         language: system
         pass_filenames: false
-        files: ^(home/dot_zsh/functions/(freshen|freshen\.VERSION|tests/freshen_test\.zsh)|checks/freshen-.*\.sh)$
+        files: ^(rig/home/dot_zsh/functions/(freshen|freshen\.VERSION|tests/freshen_test\.zsh|tests/cases/.*|tests/fixtures/.*)|checks/freshen-.*\.sh)$
 
       - id: dotfiles-json
         name: dotfiles JSON validation

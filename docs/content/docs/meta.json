@@ -2,11 +2,23 @@
   "title": "Runbooks",
   "pages": [
     "index",
+    "---Start---",
     "fresh-mac",
+    "linux-setup",
     "ssot-workflow",
+    "---Operate---",
     "home-config",
+    "shell",
+    "freshen",
+    "terminal",
+    "git",
     "validation",
+    "---Reference---",
     "packages",
-    "ai-harness"
+    "nix",
+    "ai-harness",
+    "security",
+    "domain-map",
+    "docs-maintenance"
   ]
 }

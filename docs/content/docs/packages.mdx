@@ -3,48 +3,69 @@ title: Package Catalog
 description: Homebrew and system package intent for the full-rig Mac.
 ---
 
-`brew/Brewfile` is **curated desired state**. Raw dumps are evidence only — review `local/Brewfile.raw` from `just inventory-redacted` before promoting entries.
+`rig/brew/Brewfile` is the **transfer-oriented desired state** for the personal Apple Silicon rig: formulae, casks, selected Mac App Store apps (`mas`), taps, fonts, and Quick Look plugins.
+
+Raw dumps under gitignored `local/` are **evidence only** — never commit them. Review with `just inventory-redacted` before promoting more entries. Junk installers/auto-updaters live in `rig/brew/exclude.txt`.
 
 ## Validate
 
 ```bash
-just inventory-redacted   # refresh local/Brewfile.raw
-just brew-check           # brew bundle check --file brew/Brewfile
+just inventory-redacted   # local/Brewfile.raw, local/mas.raw, local/apps-all.txt, …
+just brew-check           # brew bundle check --file rig/brew/Brewfile
 ```
 
-## Brewfile groups
+## Layered ownership
+
+| Layer | Owns | Does not own |
+| --- | --- | --- |
+| Homebrew Bundle | Broad CLI, **all GUI casks**, selected **mas**, fonts/QL | System `defaults`, AI MCP secrets |
+| nix-darwin | Platform, `system.defaults`, tiny system packages | Full GUI catalog |
+| mise + uv | Language/runtime versions | Every historical language manager |
+| agents repo | Harness / MCP client configs | This Brewfile |
+
+## Brewfile groups (high level)
 
 | Group | Examples | Notes |
 | --- | --- | --- |
-| `core-cli` | `ripgrep`, `fd`, `eza`, `fzf`, `uv`, `gh`, `gomi` | Daily terminal tooling |
-| `dev-languages` | `node`, `go`, `bun`, `deno`, `mise`, `docker` | Runtimes and containers; **mise** pins `node`/`pnpm` on w4w-mbp |
-| `shell-plugins` | `zsh-autosuggestions`, `zsh-syntax-highlighting`, `rbenv` | Sourced from `.zshrc` Homebrew paths |
-| `shell-aliases` | `cloudflared`, `yt-dlp`, `dust`, `duf` | Aliases/functions in tracked zshrc |
+| `core-cli` | `ripgrep`, `fd`, `fzf`, `uv`, `gh`, `just` | Daily terminal tooling |
+| `dev-languages` | `mise`, `node`, `go`, `bun`, `deno`, `colima` | Runtimes; **mise** pins versions on host |
+| containers | `cask "docker-desktop"` (primary), optional `colima` | Do **not** run Desktop and Colima engines together; formula `docker` is excluded |
+| `shell-plugins` | `zsh-autosuggestions`, `zsh-syntax-highlighting` | Homebrew formulae (not OMZ plugin clones) |
 | `ai-tools` | `ollama`, `stripe`, `supabase` | AI and platform CLIs |
-| `terminal-editors` | `lazygit` | TUI dev tools |
-| `browsers/productivity/media` | `ghostty`, `cursor`, `obsidian`, `slack` | GUI apps via cask |
-| `fonts` | Nerd Font casks | Terminal typography |
-| `quicklook` | `qlmarkdown`, `quicklook-json` | macOS Quick Look plugins |
+| GUI cask sections | browsers, editors, comms, media, desktop util | Full-transfer intent |
+| `fonts` / `quicklook` | Nerd Fonts, QL plugins | Finder/terminal polish |
+| `mas` | Things, Bear, Xcode, … | Requires Apple ID on the target Mac |
+
+Editor extensions (`vscode "…"` lines) may appear in **local** dumps only — they are **not** mass-promoted into the tracked Brewfile.
 
 ## Taps
 
-- `just` (formula) — workflow runner (`justfile` recipes)
-- `oven-sh/bun` — Bun runtime
-- `stripe/stripe-cli` — Stripe CLI
-- `supabase/tap` — Supabase CLI
+Third-party taps are listed only when a promoted formula/cask needs them (for example `oven-sh/bun`, `stripe/stripe-cli`, `supabase/tap`, `hashicorp/tap`). Unused and test-channel taps (for example `kopia/test-builds`) are pruned. Prefer official bottles/casks; expect Homebrew trust prompts for non-core taps.
+
+`rig/brew/exclude.txt` is enforced by `checks/brew-exclude-check.sh` (run from `just brew-check`).
 
 ## Services
 
-Some formulae declare `restart_service: true` (e.g. `pueue`). Promote service intent explicitly — default stopped databases and cloud daemons unless deliberately managed.
+Only intentional always-on agents use `restart_service: true` (for example `pueue`). Leave databases and cloud daemons stopped unless you deliberately promote them.
 
-## Nix complement
+## Bootstrap install flags
 
-Durable system and user packages also live in `darwin/` modules. Prefer nix-darwin for reproducible system state; Homebrew for the broad GUI and cask surface.
+On a **new Mac**, prefer a no-upgrade first pass with parallel formula jobs:
+
+```bash
+just bootstrap --apply --no-upgrade
+```
+
+`rig/bootstrap/macos.sh` passes `brew bundle install --jobs auto` and optional `--no-upgrade`.
+
+**Do not** run `brew bundle cleanup` against this transfer Brewfile unless you intentionally want to uninstall everything else.
 
 ## Promotion checklist
 
-1. Classify the package into a Brewfile comment group
-2. Decide service start/stop policy
-3. Add to `brew/Brewfile`
-4. Run `just brew-check`
-5. Apply via `just bootstrap --apply`
+1. `just inventory-redacted` → inspect `local/` only  
+2. Classify: promote / exclude (`rig/brew/exclude.txt`) / manual (docs)  
+3. Edit `rig/brew/Brewfile` groups  
+4. `just brew-check`  
+5. `just bootstrap --dry-run` then `--apply` after review  
+
+Never commit secrets, emails, absolute home paths, or raw inventory dumps. See [SSOT workflow](/docs/ssot-workflow) and [Fresh Mac](/docs/fresh-mac).

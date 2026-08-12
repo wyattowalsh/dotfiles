@@ -1,20 +1,15 @@
 ---
 title: Dotfiles Full Rig
-description: Internal guide for the w4w-mbp dotfiles SSOT and macOS bootstrap.
+description: Internal operator guide for the full-rig macOS SSOT and bootstrap.
 ---
 
 Private, personal SSOT for shell, git, Homebrew, nix-darwin, and Chezmoi home config. AI/MCP harness configs live in [wyattowalsh/agents](https://github.com/wyattowalsh/agents). This site documents **tracked desired state** — not live auth, caches, or machine-private inventory.
 
-## Start here
+## Operator paths
 
-| Goal | Page | First command |
-| --- | --- | --- |
-| New or wiped Mac | [Fresh Mac runbook](/docs/fresh-mac) | `just bootstrap --dry-run` |
-| Promote live changes into git | [SSOT workflow](/docs/ssot-workflow) | `just inventory-redacted` |
-| Preview home config | [Home configuration](/docs/home-config) | `just home-diff` |
-| Pre-commit safety | [Validation](/docs/validation) | `just check` |
-| Package intent | [Package catalog](/docs/packages) | `just brew-check` |
-| AI harness (external) | [AI harness](/docs/ai-harness) | See agents repo |
+The tables below are generated from the same hub manifest as the landing cards and sidebar content set.
+
+<DocsHub />
 
 ## Command surface
 
@@ -22,15 +17,16 @@ Private, personal SSOT for shell, git, Homebrew, nix-darwin, and Chezmoi home co
 
 ```bash
 just --list
-just check          # static validation (shell, zsh parity, freshen, JSON, secrets scan)
+just check          # static validation
 just ci             # full CI parity: check + smoke + docs build
 just bootstrap --dry-run
 ```
 
 ## What belongs in Git
 
-- Curated manifests: `brew/Brewfile`, `darwin/`, `home/`, root dotfiles, `.env.example` (names only)
-- Runbooks and agent instructions in `docs/`, `AGENTS.md`, and `.github/instructions/`
+- Curated manifests: `rig/brew/Brewfile`, `rig/darwin/`, `rig/home/`, `rig/dots/`, `.env.example` (names only)
+- Operator runbooks in this site (`docs/content/docs/`)
+- Agent contracts in nested `AGENTS.md` (not operator prose)
 
 ## What stays local
 
@@ -43,5 +39,7 @@ just bootstrap --dry-run
 
 | Platform | Bootstrap | Notes |
 | --- | --- | --- |
-| Apple Silicon macOS | `just bootstrap` → `bootstrap/macos.sh` | Brew + root symlinks + Chezmoi + nix-darwin |
-| Debian/Ubuntu Linux | `./setup.sh` | apt-based legacy path; AI CLI + skills install |
+| Apple Silicon macOS | `just bootstrap` → `rig/bootstrap/macos.sh` | Brew + `rig/dots` symlinks + Chezmoi + nix-darwin |
+| Debian/Ubuntu Linux | `./setup.sh` | apt-based path; AI CLI + skills install |
+
+See [Domain map](/docs/domain-map) for ownership of each concern.

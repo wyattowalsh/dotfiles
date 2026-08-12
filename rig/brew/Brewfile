@@ -1,0 +1,447 @@
+# Full-rig Homebrew transfer intent (Apple Silicon personal SSOT).
+# Promoted from live inventory + selected mas. Raw dumps stay in ignored local/.
+# Exclude list: brew/exclude.txt (junk installers/auto-updaters).
+# vscode extensions: inventory only under local/ — not tracked here.
+# Docker primary: cask "docker-desktop"; colima is optional secondary (do not run both engines together).
+
+# taps
+tap "ariga/tap"
+tap "azure/functions"
+tap "bysiber/cleardisk"
+tap "databricks/tap"
+tap "drawthingsai/draw-things"
+tap "hashicorp/tap"
+tap "oven-sh/bun"
+tap "steipete/tap"
+tap "stripe/stripe-cli"
+tap "supabase/tap"
+tap "terror/tap"
+
+# core-cli
+brew "actionlint"
+brew "aria2"
+brew "ast-grep"
+brew "b3sum"
+brew "bash"
+brew "bat"
+brew "bottom"
+brew "cliclick"
+brew "clipboard"
+brew "convmv"
+brew "coreutils"
+brew "csvkit"
+brew "curl"
+brew "d2"
+brew "detox"
+brew "difftastic"
+brew "direnv"
+brew "duckdb"
+brew "erdtree"
+brew "exiftool"
+brew "eza"
+brew "fd"
+brew "flock"
+brew "fzf"
+brew "gh"
+brew "git"
+brew "git-delta"
+brew "git-lfs"
+brew "git-secrets"
+brew "glow"
+brew "gomi"
+brew "gping"
+brew "htop"
+brew "jq"
+brew "just"
+brew "lychee"
+brew "make"
+brew "marksman"
+brew "marp-cli"
+brew "mas"
+brew "mdcat"
+brew "media-info"
+brew "ouch"
+brew "pandoc"
+brew "parallel"
+brew "pdm"
+brew "proctools"
+brew "pyright"
+brew "qsv"
+brew "rclone"
+brew "regal"
+brew "resvg"
+brew "ripgrep"
+brew "shellcheck"
+brew "tmux"
+brew "uv"
+brew "wget"
+brew "yazi"
+brew "zoxide"
+
+# shell-plugins
+brew "rbenv"
+brew "zsh-autosuggestions"
+brew "zsh-syntax-highlighting"
+
+# shell-aliases
+brew "cloudflared"
+brew "duf"
+brew "dust"
+brew "gallery-dl"
+brew "instaloader"
+brew "lux"
+brew "yt-dlp"
+
+# dev-languages / containers
+brew "bfg"
+brew "bun"
+brew "cmake"
+# optional container runtime (secondary to Docker Desktop)
+brew "colima"
+brew "deno"
+brew "docker-completion"
+brew "docker-compose"
+brew "dotnet"
+brew "fastlane"
+brew "git-extras"
+brew "git-filter-repo"
+brew "go"
+brew "go-task"
+brew "graphviz"
+brew "hashicorp/tap/terraform"
+brew "ios-deploy"
+brew "lazygit"
+brew "mise"
+brew "node"
+brew "nx"
+brew "php"
+brew "pipx"
+brew "python@3.10"
+brew "python@3.11"
+brew "python@3.12"
+brew "qemu"
+brew "r"
+
+# ai-tools
+brew "claude-squad"
+brew "code2prompt"
+brew "hf"
+brew "mcp-toolbox"
+brew "ollama"
+brew "pueue", restart_service: true
+brew "repomix"
+brew "stripe"
+brew "supabase"
+
+# media-cli
+brew "ffmpeg-full"
+brew "gifsicle"
+brew "handbrake"
+brew "imagemagick-full"
+brew "oxipng"
+brew "pngquant"
+brew "poppler"
+
+# data / db
+brew "anyquery"
+brew "mysql"
+brew "postgresql@14"
+brew "postgresql@16"
+
+# security / RE
+brew "apktool"
+brew "bind"
+brew "binutils"
+brew "binwalk"
+brew "ffuf"
+brew "gdb"
+brew "ghidra"
+brew "hashcat"
+brew "john-jumbo"
+brew "nmap"
+brew "radare2"
+
+# cloud CLIs
+brew "awscli"
+brew "azure-cli"
+brew "azure/functions/azure-functions-core-tools@4"
+brew "databricks/tap/databricks"
+
+# other CLI leaves
+brew "apify-cli"
+brew "ariga/tap/atlas"
+brew "autotrace"
+brew "bento4"
+brew "cargo-cache"
+brew "cargo-sweep"
+brew "czkawka"
+brew "duff"
+brew "fclones"
+brew "fdupes"
+brew "gobject-introspection"
+brew "jdupes"
+brew "oasdiff"
+brew "rdfind"
+brew "rmlint"
+brew "rsync"
+brew "rtk"
+brew "ruff"
+brew "rust"
+brew "rustup"
+brew "sandvault"
+brew "sevenzip"
+brew "sleuthkit"
+brew "sniffnet"
+brew "speedtest-cli"
+brew "sphinx-doc"
+brew "spicetify-cli"
+brew "steipete/tap/peekaboo"
+brew "stripe/stripe-cli/stripe"
+brew "supabase/tap/supabase"
+brew "svgo"
+brew "swiftformat"
+brew "tailscale"
+brew "telegram-downloader"
+brew "terror/tap/just-lsp"
+brew "testdisk"
+brew "texlive"
+brew "tlrc"
+brew "trafilatura"
+brew "tree"
+brew "typos-cli"
+brew "unar"
+brew "unbound"
+brew "upx"
+brew "vercel"
+brew "virtualenv"
+brew "watchexec"
+brew "watchman"
+brew "weasyprint"
+brew "whois"
+brew "wireshark"
+brew "xcbeautify"
+brew "xcode-build-server"
+brew "yarn"
+brew "zsh"
+brew "zsh-completions"
+
+# browsers / editors / AI desktop
+cask "brave-browser"
+cask "firefox"
+cask "google-chrome"
+cask "microsoft-edge"
+cask "tor-browser"
+cask "cursor"
+cask "cursor-cli"
+cask "visual-studio-code@insiders"
+cask "codex-app"
+cask "codex"
+cask "claude"
+cask "auto-claude"
+cask "lm-studio"
+cask "cherry-studio"
+cask "google-gemini"
+cask "opencode-desktop"
+cask "opcode"
+cask "osaurus"
+cask "replit"
+cask "wakatime"
+cask "figma"
+cask "mark-text"
+
+# comms / collaboration
+cask "slack"
+cask "discord"
+cask "zoom"
+cask "signal"
+cask "telegram-desktop"
+cask "whatsapp"
+cask "messenger"
+cask "notion"
+cask "notion-mail"
+cask "loom"
+cask "linear"
+cask "meetingbar"
+
+# media
+cask "spotify"
+cask "iina"
+cask "vlc"
+cask "obs"
+cask "cap"
+cask "downie"
+cask "losslesscut"
+cask "upscayl"
+cask "background-music"
+cask "cog-app"
+cask "buzz"
+cask "musicbrainz-picard"
+cask "soulseek"
+cask "transmission"
+cask "qbittorrent"
+
+# productivity / files
+cask "obsidian"
+cask "zotero"
+cask "github"
+cask "google-drive"
+cask "cyberduck"
+cask "megasync"
+cask "db-browser-for-sqlite"
+cask "drawio"
+cask "inkscape"
+cask "processing"
+cask "protege"
+cask "kopiaui"
+cask "daisydisk"
+cask "grandperspective"
+cask "pearcleaner"
+cask "cleardisk"
+cask "dupeguru"
+cask "applite"
+cask "calibre"
+cask "netnewswire"
+cask "shottr"
+cask "kap"
+cask "keycastr"
+cask "responsively"
+cask "electron-fiddle"
+cask "mactex"
+cask "nordvpn"
+
+# desktop utilities
+cask "rectangle"
+cask "jordanbaird-ice"
+cask "hiddenbar"
+cask "betterdisplay"
+cask "stats"
+cask "maccy"
+cask "copyq"
+cask "menubarx"
+cask "pika"
+cask "flowvision"
+cask "openinterminal"
+cask "json-viewer"
+cask "glance-chamburr"
+cask "imcp"
+cask "crystalfetch"
+cask "logi-options+"
+
+# dev containers / mobile
+cask "docker-desktop"
+cask "android-platform-tools"
+
+# creative / AI local
+cask "draw-things"
+cask "sonic-pi"
+
+# fonts
+cask "font-monaspice-nerd-font"
+cask "font-devicons"
+cask "font-new-york"
+cask "font-foundation-icons"
+cask "font-symbols-only-nerd-font"
+cask "font-fira-sans"
+cask "font-fira-sans-condensed"
+cask "font-mynaui-icons"
+cask "font-academicons"
+cask "font-awesome-terminal-fonts"
+cask "font-monaspace"
+cask "font-sf-pro"
+cask "font-hack-nerd-font"
+cask "font-fira-code"
+cask "font-simple-line-icons"
+cask "font-sf-compact"
+cask "font-sf-mono"
+cask "font-fira-code-nerd-font"
+
+# quicklook
+cask "jupyter-notebook-ql"
+cask "qlmarkdown"
+cask "quicklook-csv"
+cask "quicklook-json"
+cask "qlstephen"
+cask "webpquicklook"
+cask "qlcolorcode"
+
+# other casks
+cask "dotnet-runtime"
+cask "ghostty"
+cask "qview"
+cask "xnviewmp"
+
+# mas — selected App Store apps (requires Apple ID on target Mac)
+mas "Accelerate", id: 1459809092
+mas "AirPlayable", id: 6475483628
+mas "Anybox", id: 1593408455
+mas "Auto HD FPS for YouTube", id: 1546729687
+mas "Baking Soda", id: 1601151613
+mas "Bear", id: 1091189122
+mas "Blue Canoe Pronunciation Dictionary", id: 1533710506
+mas "CapCut", id: 1500855883
+mas "Color Picker", id: 1545870783
+mas "ColorSlurp", id: 1287239339
+mas "Cookie-Editor", id: 6446215341
+mas "Copilot", id: 6738511300
+mas "Developer", id: 640199958
+mas "Eagle for Safari", id: 1526651672
+mas "Enchanted", id: 6474268307
+mas "Enhancements For YouTube", id: 1643308157
+mas "FireShot - Full web page screenshots", id: 1541862561
+mas "FreeScaler", id: 6443796196
+mas "GarageBand", id: 682658836
+mas "GIPHY CAPTURE", id: 668208984
+mas "Grammarly for Safari", id: 1462114288
+mas "Hand Mirror", id: 1502839586
+mas "Hover for Safari", id: 1540705431
+mas "ImageOne", id: 1237328432
+mas "ImageOptim", id: 1450716465
+mas "Images", id: 6499503497
+mas "ImageX", id: 1668530080
+mas "Immersive Translate", id: 6447957425
+mas "Infuse", id: 1136220934
+mas "Jayson", id: 1468691718
+mas "Keynote", id: 361285480
+mas "Keys", id: 1494642810
+mas "Logic Pro", id: 634148309
+mas "Lunacy", id: 1582493835
+mas "MaCleaner Pro", id: 953795652
+mas "MKPlayer", id: 1335612105
+mas "Notion Web Clipper", id: 1559269364
+mas "npmhub", id: 1542090429
+mas "Numbers", id: 361304891
+mas "Obsidian Web Clipper", id: 6720708363
+mas "Pages", id: 361309726
+mas "Perplexity", id: 6714467650
+mas "PhotoFrame", id: 1219786089
+mas "PiPifier", id: 1160374471
+mas "Pixea", id: 1507782672
+mas "Polyglot", id: 1471801525
+mas "Postman Interceptor", id: 6460587883
+mas "QReate", id: 6446048195
+mas "Refined GitHub", id: 1519867270
+mas "RetailMeNot Codes & Cash Back", id: 1588381926
+mas "Safarikai", id: 1437951175
+mas "Short Menu", id: 510109287
+mas "Smart JSON Editor", id: 1268962404
+mas "SmartPlay", id: 1545815826
+mas "Speedtest", id: 1153157709
+mas "Synology Image Assistant Extension", id: 6503120862
+mas "Taio", id: 1527036273
+mas "TeraBox", id: 1509453185
+mas "TestFlight", id: 899247664
+mas "Things", id: 904280696
+mas "Turn Off the Lights for Safari", id: 1273998507
+mas "uBlock Origin Lite", id: 6745342698
+mas "Unsqueeze", id: 6475134617
+mas "URL Linker", id: 1289119450
+mas "Userscripts", id: 1463298887
+mas "Vector Converter", id: 1082712391
+mas "Vinegar", id: 1591303229
+mas "waifu2x", id: 1286485858
+mas "Wappalyzer - Technology profiler", id: 1520333300
+mas "Wayback Machine", id: 1472432422
+mas "WhatFont", id: 1437138382
+mas "WhatsApp", id: 310633997
+mas "Whisk", id: 1502044457
+mas "Xcode", id: 497799835
