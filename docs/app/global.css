@@ -127,6 +127,15 @@
     opacity: var(--phosphor-duotone-opacity);
   }
 
+  .brand-icon {
+    display: block;
+    flex-shrink: 0;
+  }
+
+  .dark .brand-icon--ink path {
+    fill: #e8eef4;
+  }
+
   .mermaid-host svg {
     max-width: 100%;
     height: auto;

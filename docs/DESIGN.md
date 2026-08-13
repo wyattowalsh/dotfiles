@@ -3,7 +3,7 @@
 Design system for the Fumadocs site under `docs/`. Implementation: `app/global.css` (Tailwind CSS v4 + Fumadocs **shadcn** preset + PostCSS).
 
 **Palette:** Signal Graphite — cool paper / ink navy + teal signal.  
-**Icons:** [Phosphor Icons](https://github.com/phosphor-icons/react) (MIT), **duotone** weight for hub/nav marks — not Lucide.  
+**Icons:** [Simple Icons](https://simpleicons.org) (CC0) official tech marks in brand color (Apple, Linux, Zsh, Git, Homebrew, Nix, Ghostty, Actions). Phosphor duotone (MIT) only for non-brand concepts.  
 **Brand:** lowercase `dotfiles` wordmark (JetBrains Mono + gradient) + hex `icon.svg` (favicon, apple, OG, nav).  
 **Chrome:** GitHub via `githubUrl`, Runbooks / Start / Validate nav.  
 **Layers:** fixed grid + glow under content; glass cards.  

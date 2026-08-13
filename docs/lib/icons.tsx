@@ -2,41 +2,59 @@ import type { Icon } from "@phosphor-icons/react";
 import {
   ArrowRight,
   BookOpen,
-  Desktop,
-  GitBranch,
-  HardDrives,
   House,
   MapTrifold,
-  Stack,
-  Package,
   Robot,
   RocketLaunch,
   ShieldCheck,
-  Snowflake,
-  Sparkle,
-  Terminal,
-  TerminalWindow,
+  Stack,
   Wrench
 } from "@phosphor-icons/react/dist/ssr";
+import {
+  siApple,
+  siGit,
+  siGithubactions,
+  siGhostty,
+  siHomebrew,
+  siLinux,
+  siNixos,
+  siZsh
+} from "simple-icons";
 import type { DocSectionGroup } from "@/lib/sections";
 
 /**
- * Phosphor Icons (MIT) — duotone for hub personality.
- * Dotfiles-relevant metaphors; keep body MDX free of icon spam.
- * @see https://github.com/phosphor-icons/react
+ * Hub marks: official Simple Icons (CC0) in brand color when a tech exists.
+ * Phosphor duotone (MIT) only as fallback for non-brand concepts.
+ * @see https://simpleicons.org
  */
-export const sectionIcons: Record<string, Icon> = {
-  "fresh-mac": Desktop,
-  "linux-setup": Terminal,
-  "ssot-workflow": HardDrives,
+
+type BrandMark = {
+  title: string;
+  hex: string;
+  path: string;
+  /** Near-black brands (Apple, etc.) invert in dark mode. */
+  invertDark?: boolean;
+};
+
+function brand(icon: { title: string; hex: string; path: string }, invertDark = false): BrandMark {
+  return { title: icon.title, hex: icon.hex, path: icon.path, invertDark };
+}
+
+const sectionBrands: Record<string, BrandMark> = {
+  "fresh-mac": brand(siApple, true),
+  "linux-setup": brand(siLinux),
+  "ssot-workflow": brand(siGit),
+  shell: brand(siZsh),
+  freshen: brand(siHomebrew),
+  terminal: brand(siGhostty),
+  git: brand(siGit),
+  validation: brand(siGithubactions),
+  packages: brand(siHomebrew),
+  nix: brand(siNixos)
+};
+
+const sectionFallback: Record<string, Icon> = {
   "home-config": House,
-  shell: TerminalWindow,
-  freshen: Sparkle,
-  terminal: TerminalWindow,
-  git: GitBranch,
-  validation: ShieldCheck,
-  packages: Package,
-  nix: Snowflake,
   "ai-harness": Robot,
   security: ShieldCheck,
   "domain-map": MapTrifold,
@@ -58,7 +76,22 @@ export function SectionIcon({
   slug: string;
   className?: string;
 }) {
-  const Glyph = sectionIcons[slug];
+  const mark = sectionBrands[slug];
+  if (mark) {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        className={`brand-icon ${mark.invertDark ? "brand-icon--ink" : ""} ${className}`}
+        role="img"
+        aria-hidden
+      >
+        <title>{mark.title}</title>
+        <path d={mark.path} fill={`#${mark.hex}`} />
+      </svg>
+    );
+  }
+
+  const Glyph = sectionFallback[slug];
   if (!Glyph) return null;
   return <Glyph className={className} aria-hidden {...duo} />;
 }

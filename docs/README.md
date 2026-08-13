@@ -6,7 +6,7 @@ Fumadocs + Next.js (static export) for operator runbooks.
 - App shell: `app/`
 - Design SSOT: [`DESIGN.md`](./DESIGN.md)
 - Theme: Tailwind CSS v4 + Fumadocs **shadcn** preset (`app/global.css` + `postcss.config.mjs`)
-- Icons: [Phosphor](https://github.com/phosphor-icons/react) (MIT), duotone — `lib/icons.tsx`
+- Icons: Simple Icons (tech brands) + Phosphor fallback — `lib/icons.tsx`
 - Diagrams: Mermaid global theme — `lib/mermaid-theme.ts`
 
 ## Commands
