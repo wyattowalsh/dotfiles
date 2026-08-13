@@ -13,10 +13,14 @@ import {
 import {
   siApple,
   siGit,
+  siGithub,
   siGithubactions,
   siGhostty,
+  siGnuprivacyguard,
   siHomebrew,
   siLinux,
+  siMarkdown,
+  siNextdotjs,
   siNixos,
   siZsh
 } from "simple-icons";
@@ -41,6 +45,7 @@ function brand(icon: { title: string; hex: string; path: string }, invertDark = 
 }
 
 const sectionBrands: Record<string, BrandMark> = {
+  index: brand(siMarkdown),
   "fresh-mac": brand(siApple, true),
   "linux-setup": brand(siLinux),
   "ssot-workflow": brand(siGit),
@@ -50,7 +55,10 @@ const sectionBrands: Record<string, BrandMark> = {
   git: brand(siGit),
   validation: brand(siGithubactions),
   packages: brand(siHomebrew),
-  nix: brand(siNixos)
+  nix: brand(siNixos),
+  "ai-harness": brand(siGithub, true),
+  security: brand(siGnuprivacyguard),
+  "docs-maintenance": brand(siNextdotjs, true)
 };
 
 const sectionFallback: Record<string, Icon> = {
