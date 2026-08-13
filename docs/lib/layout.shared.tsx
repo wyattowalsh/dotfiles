@@ -1,14 +1,11 @@
 import type { BaseLayoutProps } from "fumadocs-ui/layouts/shared";
-import { BookOpen, Robot } from "@phosphor-icons/react/dist/ssr";
+import { BookOpen } from "@phosphor-icons/react/dist/ssr";
 import { SiteWordmark } from "@/components/site-wordmark";
-
-const duo = { weight: "duotone" as const };
+import { SectionIcon } from "@/lib/icons";
 
 /**
- * Nav only for unique destinations — not extra docs pages already in the sidebar.
- * - docs → this site’s runbooks
- * - agents → wyattowalsh/agents (AI/MCP SSOT, not this repo)
- * - GitHub → wyattowalsh/dotfiles (source)
+ * Main operator pages + this repo on GitHub.
+ * No external agents link — that lives in the AI runbook.
  */
 export function baseOptions(): BaseLayoutProps {
   return {
@@ -24,14 +21,35 @@ export function baseOptions(): BaseLayoutProps {
         text: "docs",
         url: "/docs",
         active: "nested-url",
-        icon: <BookOpen className="size-4" aria-hidden {...duo} />
+        icon: <BookOpen className="size-4" aria-hidden weight="duotone" />
       },
       {
         type: "main",
-        text: "agents",
-        url: "https://github.com/wyattowalsh/agents",
-        external: true,
-        icon: <Robot className="size-4" aria-hidden {...duo} />
+        text: "mac",
+        url: "/docs/fresh-mac",
+        active: "url",
+        icon: <SectionIcon slug="fresh-mac" className="size-4" />
+      },
+      {
+        type: "main",
+        text: "linux",
+        url: "/docs/linux-setup",
+        active: "url",
+        icon: <SectionIcon slug="linux-setup" className="size-4" />
+      },
+      {
+        type: "main",
+        text: "promote",
+        url: "/docs/ssot-workflow",
+        active: "url",
+        icon: <SectionIcon slug="ssot-workflow" className="size-4" />
+      },
+      {
+        type: "main",
+        text: "check",
+        url: "/docs/validation",
+        active: "url",
+        icon: <SectionIcon slug="validation" className="size-4" />
       }
     ]
   };
