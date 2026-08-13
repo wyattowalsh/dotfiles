@@ -25,16 +25,17 @@ function mermaidInitOptions(theme: "light" | "dark") {
   return {
     startOnLoad: false as const,
     securityLevel: "strict" as const,
-    fontFamily: "ui-sans-serif, system-ui, sans-serif",
+    fontFamily: "var(--font-sans), ui-sans-serif, system-ui, sans-serif",
     theme: "base" as const,
     themeVariables: mermaidThemeVariables(theme),
     themeCSS: mermaidThemeCSS,
     flowchart: {
-      curve: "basis" as const,
-      padding: 16,
-      htmlLabels: true,
-      nodeSpacing: 36,
-      rankSpacing: 42
+      curve: "linear" as const,
+      padding: 14,
+      htmlLabels: false,
+      nodeSpacing: 44,
+      rankSpacing: 52,
+      wrappingWidth: 148
     }
   };
 }

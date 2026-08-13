@@ -139,6 +139,40 @@
   .mermaid-host svg {
     max-width: 100%;
     height: auto;
+    display: block;
+    margin-inline: auto;
+    font-family: var(--font-sans);
+  }
+
+  .mermaid-host .node rect {
+    rx: 8px;
+    ry: 8px;
+  }
+
+  .mermaid-host .node .label,
+  .mermaid-host .nodeLabel,
+  .mermaid-host .label {
+    font-family: var(--font-sans);
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .mermaid-host .edgeLabel {
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+
+  .mermaid-host .cluster rect {
+    rx: 12px;
+    ry: 12px;
+  }
+
+  .mermaid-host .cluster-label,
+  .mermaid-host .cluster span {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
   }
 }
 
@@ -433,11 +467,13 @@ nav:has(.site-wordmark) {
   .mermaid-host {
     margin-block: 1.5rem;
     overflow-x: auto;
-    border-radius: 0.85rem;
+    border-radius: 0.95rem;
     border: 1px solid var(--color-fd-border);
-    background-color: color-mix(in oklab, var(--color-fd-card) 88%, transparent);
-    backdrop-filter: blur(6px);
-    padding: 1rem;
+    background:
+      radial-gradient(ellipse 80% 60% at 50% 0%, color-mix(in oklab, var(--color-fd-primary) 7%, transparent), transparent 60%),
+      color-mix(in oklab, var(--color-fd-card) 94%, transparent);
+    backdrop-filter: blur(8px);
+    padding: 1.25rem 1rem 1rem;
     box-shadow: 0 1px 2px rgb(11 18 32 / 0.04);
   }
 
