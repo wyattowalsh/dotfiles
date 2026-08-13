@@ -1,5 +1,9 @@
 # Dotfiles Bootstrap
 
+<p align="center">
+  <img src="icon.svg" width="96" height="96" alt="dotfiles">
+</p>
+
 Personal public dotfiles SSOT. Curated desired state for shell, git, Homebrew, nix-darwin, and Chezmoi home config for one Apple Silicon rig. AI/MCP harness configs live in [wyattowalsh/agents](https://github.com/wyattowalsh/agents).
 
 <!-- BADGES:START -->

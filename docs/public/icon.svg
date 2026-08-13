@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024" height="1024" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Dotfiles icon</title>
+  <desc id="desc">A minimal theme-aware SVG icon for the dotfiles project. It shows a hexagonal badge containing a file-like panel with three dots and a terminal prompt.</desc>
+  <style>
+    .light { display: none; }
+    .dark { display: inline; }
+    @media (prefers-color-scheme: light) {
+      .light { display: inline; }
+      .dark { display: none; }
+    }
+  </style>
+
+  <defs>
+    <linearGradient id="accentDark" x1="48" y1="40" x2="208" y2="220" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#26E2C6"/>
+      <stop offset="1" stop-color="#2B80FF"/>
+    </linearGradient>
+    <linearGradient id="accentLight" x1="48" y1="40" x2="208" y2="220" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#17C9B2"/>
+      <stop offset="1" stop-color="#246FFF"/>
+    </linearGradient>
+    <linearGradient id="glyphDark" x1="84" y1="102" x2="164" y2="154" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#27E2C3"/>
+      <stop offset="1" stop-color="#2DA3FF"/>
+    </linearGradient>
+    <linearGradient id="glyphLight" x1="84" y1="102" x2="164" y2="154" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#14D0A8"/>
+      <stop offset="1" stop-color="#228EFF"/>
+    </linearGradient>
+  </defs>
+
+  <g class="dark">
+    <path d="M128 18L206 63V193L128 238L50 193V63L128 18Z" fill="#0B1220" stroke="#08101D" stroke-width="10" stroke-linejoin="round"/>
+    <path d="M128 30L194 69V187L128 226L62 187V69L128 30Z" fill="#0F1A2E" stroke="#15243A" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M128 30L194 69V187L128 226L62 187V69L128 30Z" stroke="url(#accentDark)" stroke-width="7" stroke-linejoin="round"/>
+
+    <path d="M81 74H161L182 95V170C182 179.941 173.941 188 164 188H92C82.059 188 74 179.941 74 170V81C74 77.134 77.134 74 81 74Z" fill="#071120" stroke="#15243A" stroke-width="5" stroke-linejoin="round"/>
+    <path d="M81 74H161L182 95V170C182 179.941 173.941 188 164 188H92C82.059 188 74 179.941 74 170V81C74 77.134 77.134 74 81 74Z" stroke="url(#accentDark)" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M161 74V89C161 92.314 163.686 95 167 95H182" stroke="#2A4C73" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M74 106H182" stroke="#28486E" stroke-width="3"/>
+
+    <circle cx="90" cy="90" r="4.5" fill="#35C8FF"/>
+    <circle cx="104" cy="90" r="4.5" fill="#2CE2C3"/>
+    <circle cx="118" cy="90" r="4.5" fill="#2B80FF"/>
+
+    <path d="M91 123L117 145L91 167" stroke="url(#glyphDark)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M139 157H165" stroke="url(#glyphDark)" stroke-width="9" stroke-linecap="round"/>
+  </g>
+
+  <g class="light">
+    <path d="M128 18L206 63V193L128 238L50 193V63L128 18Z" fill="#EEF4FB" stroke="#D6E2EE" stroke-width="10" stroke-linejoin="round"/>
+    <path d="M128 30L194 69V187L128 226L62 187V69L128 30Z" fill="#FFFFFF" stroke="#D7E3EF" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M128 30L194 69V187L128 226L62 187V69L128 30Z" stroke="url(#accentLight)" stroke-width="7" stroke-linejoin="round"/>
+
+    <path d="M81 74H161L182 95V170C182 179.941 173.941 188 164 188H92C82.059 188 74 179.941 74 170V81C74 77.134 77.134 74 81 74Z" fill="#FFFFFF" stroke="#D7E3EF" stroke-width="5" stroke-linejoin="round"/>
+    <path d="M81 74H161L182 95V170C182 179.941 173.941 188 164 188H92C82.059 188 74 179.941 74 170V81C74 77.134 77.134 74 81 74Z" stroke="url(#accentLight)" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M161 74V89C161 92.314 163.686 95 167 95H182" stroke="#B8CADB" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M74 106H182" stroke="#BECFE0" stroke-width="3"/>
+
+    <circle cx="90" cy="90" r="4.5" fill="#2FBAEC"/>
+    <circle cx="104" cy="90" r="4.5" fill="#1FD3B1"/>
+    <circle cx="118" cy="90" r="4.5" fill="#2E7CFF"/>
+
+    <path d="M91 123L117 145L91 167" stroke="url(#glyphLight)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M139 157H165" stroke="url(#glyphLight)" stroke-width="9" stroke-linecap="round"/>
+  </g>
+</svg>

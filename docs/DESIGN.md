@@ -4,7 +4,7 @@ Design system for the Fumadocs site under `docs/`. Implementation: `app/global.c
 
 **Palette:** Signal Graphite — cool paper / ink navy + teal signal.  
 **Icons:** [Phosphor Icons](https://github.com/phosphor-icons/react) (MIT), **duotone** weight for hub/nav marks — not Lucide.  
-**Brand:** lowercase `dotfiles` wordmark (JetBrains Mono + gradient shift + signal pulse).  
+**Brand:** lowercase `dotfiles` wordmark (JetBrains Mono + gradient) + hex `icon.svg` (favicon, apple, OG, nav).  
 **Chrome:** GitHub via `githubUrl`, Runbooks / Start / Validate nav.  
 **Layers:** fixed grid + glow under content; glass cards.  
 **Diagrams:** Mermaid `theme: base` + CSS vars in `lib/mermaid-theme.ts` (synced to palette).

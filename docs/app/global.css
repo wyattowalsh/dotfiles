@@ -100,8 +100,13 @@
     }
 
     .site-wordmark__text,
-    .site-wordmark__pulse {
+    .site-watermark,
+    .site-layer--scan {
       animation: none !important;
+    }
+
+    .site-wordmark:hover .site-wordmark__icon {
+      transform: none;
     }
   }
 
@@ -156,6 +161,50 @@
     radial-gradient(ellipse 45% 30% at 50% 110%, color-mix(in oklab, var(--color-fd-primary) 10%, transparent), transparent 45%);
 }
 
+.site-layer--scan {
+  background: repeating-linear-gradient(
+    180deg,
+    transparent 0,
+    transparent 3px,
+    rgb(11 18 32 / 0.018) 3px,
+    rgb(11 18 32 / 0.018) 4px
+  );
+  opacity: 0.55;
+  animation: scan-drift 18s linear infinite;
+}
+
+.dark .site-layer--scan {
+  background: repeating-linear-gradient(
+    180deg,
+    transparent 0,
+    transparent 3px,
+    rgb(232 238 244 / 0.012) 3px,
+    rgb(232 238 244 / 0.012) 4px
+  );
+}
+
+.site-watermark {
+  pointer-events: none;
+  position: fixed;
+  right: -6vw;
+  top: 12vh;
+  z-index: -1;
+  width: min(42vw, 28rem);
+  opacity: 0.07;
+  filter: blur(0.2px);
+  animation: watermark-float 16s ease-in-out infinite;
+}
+
+.site-watermark img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.dark .site-watermark {
+  opacity: 0.09;
+}
+
 /* Glass header when fumadocs uses transparentMode */
 header[data-theme],
 #nd-nav,
@@ -176,20 +225,22 @@ nav:has(.site-wordmark) {
   position: relative;
   display: grid;
   place-items: center;
-  width: 1.5rem;
-  height: 1.5rem;
-  border-radius: 0.45rem;
-  background: color-mix(in oklab, var(--color-fd-primary) 14%, transparent);
-  border: 1px solid color-mix(in oklab, var(--color-fd-primary) 28%, transparent);
+  width: 1.65rem;
+  height: 1.65rem;
+  border-radius: 0.4rem;
 }
 
-.site-wordmark__pulse {
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 999px;
-  background: var(--color-fd-primary);
-  box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-fd-primary) 45%, transparent);
-  animation: wordmark-pulse 2.8s ease-out infinite;
+.site-wordmark__icon {
+  width: 1.55rem;
+  height: 1.55rem;
+  display: block;
+  filter: drop-shadow(0 0 0 transparent);
+  transition: filter 200ms ease, transform 200ms ease;
+}
+
+.site-wordmark:hover .site-wordmark__icon {
+  transform: rotate(-6deg) scale(1.06);
+  filter: drop-shadow(0 0 10px color-mix(in oklab, var(--color-fd-primary) 55%, transparent));
 }
 
 .site-wordmark__text {
@@ -233,18 +284,22 @@ nav:has(.site-wordmark) {
   }
 }
 
-@keyframes wordmark-pulse {
-  0% {
-    box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-fd-primary) 40%, transparent);
-    transform: scale(1);
+@keyframes scan-drift {
+  from {
+    background-position: 0 0;
   }
-  70% {
-    box-shadow: 0 0 0 8px transparent;
-    transform: scale(1.05);
+  to {
+    background-position: 0 48px;
   }
+}
+
+@keyframes watermark-float {
+  0%,
   100% {
-    box-shadow: 0 0 0 0 transparent;
-    transform: scale(1);
+    transform: translate3d(0, 0, 0) rotate(-8deg);
+  }
+  50% {
+    transform: translate3d(-1.5%, 2%, 0) rotate(-5deg);
   }
 }
 
