@@ -1,0 +1,40 @@
+---
+icon: database
+title: Backup
+description: Headless Kopia CLI to Drive at 04:00.
+---
+
+KopiaUI does **not** start at login. A user LaunchAgent runs the CLI at 04:00 and exits. Policy schedules inside KopiaUI only fire while that app is open — do not rely on the GUI for nightly.
+
+## Commands
+
+```bash
+just kopia-nightly --dry-run
+just kopia-nightly doctor
+just kopia-nightly doctor --policies   # two-way 04:00 drift (network)
+just kopia-nightly-install --dry-run
+just kopia-nightly-install             # sync dest runner + bootstrap agent
+just check-kopia-nightly               # static; no live kopia
+```
+
+`just kopia-nightly*` always runs the **repo source**. Launchd runs the dest copy at `$HOME/.local/bin/kopia-nightly`. `just kopia-nightly-install` sets `KOPIA_NIGHTLY_REPO` and `/bin/cp -f`s the dest runner. Dest plist still comes from Chezmoi: `$HOME/Library/LaunchAgents/com.wyattowalsh.kopia-nightly.plist`.
+
+## Sources (04:00)
+
+`$HOME/.bash_profile` `$HOME/.bashrc` `$HOME/.codex/memories` `$HOME/.gitconfig` `$HOME/.github` `$HOME/.gitignore` `$HOME/.zshrc` `$HOME/Documents` `$HOME/Movies` `$HOME/Music` `$HOME/Pictures` `$HOME/Public` `$HOME/dev` `$HOME/src`
+
+Not snapshotted: `$HOME` itself. Never `kopia snapshot create --all`.
+
+## Login / background
+
+`install` and each nightly run disable `com.kopia.kopiaui.login` and `KopiaUI`. Opening KopiaUI by hand can put a login agent back; the next run removes it.
+
+If the nightly label is not loaded after install, allow it under System Settings → General → Login Items → Allow in the Background, then re-run `just kopia-nightly-install`.
+
+## Sleep
+
+If the Mac is asleep at 04:00, launchd runs the job at the next user-session wake. No wake schedule. While a snapshot is running, the job holds idle sleep with `caffeinate -i`. launchd SIGTERMs the process after 12 hours; the runner trap still disables the KopiaUI login agents.
+
+## Secrets
+
+Repo password, rclone config, and Drive folder ids stay local. Docs and tracked files use `$HOME` / Chezmoi templates only. See [Security](/docs/security).

@@ -2,7 +2,7 @@
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
-shell_files := "setup.sh rig/bootstrap/macos.sh rig/bootstrap/linux.sh checks/apps-manual-inventory.sh checks/brew-exclude-check.sh checks/config-dirs-inventory.sh checks/docs-css-health.sh checks/docs-hub-parity.sh checks/docs-sensitive.sh checks/freshen-smoke.sh checks/freshen-version.sh checks/freshen-privacy.sh checks/secrets-scan.sh checks/smoke.sh checks/stale-path-freeze.sh checks/validate-json.sh checks/zsh-inventory.sh checks/zsh-structure.sh checks/zsh-structure-test.sh checks/zsh-smoke-interactive.sh checks/zsh-rollback-live.sh"
+shell_files := "setup.sh rig/bootstrap/macos.sh rig/bootstrap/linux.sh checks/apps-manual-inventory.sh checks/brew-exclude-check.sh checks/config-dirs-inventory.sh checks/docs-css-health.sh checks/docs-hub-parity.sh checks/docs-sensitive.sh checks/freshen-smoke.sh checks/freshen-version.sh checks/freshen-privacy.sh checks/kopia-nightly.sh checks/secrets-scan.sh checks/smoke.sh checks/stale-path-freeze.sh checks/validate-json.sh checks/zsh-inventory.sh checks/zsh-structure.sh checks/zsh-structure-test.sh checks/zsh-smoke-interactive.sh checks/zsh-rollback-live.sh rig/home/dot_local/bin/executable_kopia-nightly"
 
 # List available recipes (default).
 default:
@@ -13,7 +13,7 @@ bootstrap *ARGS:
     ./rig/bootstrap/macos.sh {{ARGS}}
 
 # Run static validation.
-check: check-hooks check-shell check-zsh check-freshen check-json secrets-scan brew-exclude check-stale-paths
+check: check-hooks check-shell check-zsh check-freshen check-json secrets-scan brew-exclude check-stale-paths check-kopia-nightly
 
 # Run the validation suite used by CI.
 ci: check smoke docs-ci
@@ -80,6 +80,24 @@ brew-exclude:
 # Fail on stale top-level machine path contracts in live surfaces.
 check-stale-paths:
     ./checks/stale-path-freeze.sh
+
+# Static contract for the headless Kopia nightly runner (no live kopia/launchctl).
+check-kopia-nightly:
+    ./checks/kopia-nightly.sh
+
+# Nightly Kopia CLI runner (install/doctor/dry-run). Always uses repo source.
+kopia-nightly *ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export KOPIA_NIGHTLY_REPO="{{justfile_directory()}}"
+    exec "{{justfile_directory()}}/rig/home/dot_local/bin/executable_kopia-nightly" {{ARGS}}
+
+# Disable KopiaUI login agents, sync dest runner, bootstrap the 04:00 LaunchAgent.
+kopia-nightly-install *ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export KOPIA_NIGHTLY_REPO="{{justfile_directory()}}"
+    exec "{{justfile_directory()}}/rig/home/dot_local/bin/executable_kopia-nightly" install {{ARGS}}
 
 # Check the curated Brewfile when Homebrew is available.
 brew-check:

@@ -1,0 +1,486 @@
+#!/usr/bin/env bash
+# Nightly Kopia CLI snapshot runner (04:00 LaunchAgent). No GUI.
+set -euo pipefail
+
+export PATH="/opt/homebrew/bin:/usr/bin:/bin${PATH:+:$PATH}"
+
+LABEL_NIGHTLY="com.wyattowalsh.kopia-nightly"
+LABEL_LOGIN="com.kopia.kopiaui.login"
+LABEL_UI="KopiaUI"
+PLIST_NAME="com.wyattowalsh.kopia-nightly.plist"
+DEST_RUNNER="${HOME}/.local/bin/kopia-nightly"
+LOG_DIR="${HOME}/Library/Logs/kopia"
+TMP_DIR="${HOME}/Library/Logs/kopia/tmp"
+REPO_RUNNER_REL="rig/home/dot_local/bin/executable_kopia-nightly"
+
+log() {
+  printf '[kopia-nightly] %s\n' "$*"
+}
+
+die() {
+  log "error: $*" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'USAGE'
+Usage: kopia-nightly [--dry-run]
+       kopia-nightly install [--dry-run]
+       kopia-nightly doctor [--policies]
+
+  (default)   Snapshot the 04:00 source list, then disable KopiaUI login agents.
+  --dry-run   Print plan / sources; no repository writes; no launchctl mutations.
+  install     Sync dest runner (if KOPIA_NIGHTLY_REPO is set), disable UI login
+              agents, bootstrap the nightly LaunchAgent.
+  doctor      Check launchd-like repo access, dest/source hash, login-agent state.
+  --policies  With doctor: two-way 04:00 drift vs live policies (network).
+USAGE
+}
+
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || die "missing command: $1"
+}
+
+gui_domain() {
+  printf 'gui/%s' "$(id -u)"
+}
+
+label_path() {
+  printf '%s/%s' "$(gui_domain)" "$1"
+}
+
+agent_loaded() {
+  launchctl print "$(label_path "$1")" >/dev/null 2>&1
+}
+
+kopia_ui_running() {
+  pgrep -x KopiaUI >/dev/null 2>&1 && return 0
+  pgrep -f '/Applications/KopiaUI.app/Contents/MacOS/KopiaUI' >/dev/null 2>&1
+}
+
+ensure_kopiaui_quit() {
+  if ! kopia_ui_running; then
+    return 0
+  fi
+  log "quitting KopiaUI to avoid repository lock"
+  osascript -e 'tell application "KopiaUI" to quit' >/dev/null 2>&1 || true
+  local waited=0
+  while [[ "$waited" -lt 15 ]]; do
+    if ! kopia_ui_running; then
+      log "KopiaUI quit"
+      return 0
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  die "KopiaUI still running after quit; aborting to avoid repository lock"
+}
+
+disable_label() {
+  local label="$1"
+  if agent_loaded "$label"; then
+    launchctl bootout "$(label_path "$label")" >/dev/null 2>&1 || true
+  fi
+  launchctl disable "$(label_path "$label")" >/dev/null 2>&1 || true
+}
+
+ensure_login_disabled() {
+  disable_label "$LABEL_LOGIN"
+  disable_label "$LABEL_UI"
+}
+
+print_login_item_hint() {
+  cat <<'HINT'
+If the nightly agent is not loaded, allow it under:
+  System Settings → General → Login Items & Extensions → Allow in the Background
+Then re-run: kopia-nightly install
+HINT
+}
+
+repo_runner_path() {
+  if [[ -n "${KOPIA_NIGHTLY_REPO:-}" && -f "${KOPIA_NIGHTLY_REPO}/${REPO_RUNNER_REL}" ]]; then
+    printf '%s\n' "${KOPIA_NIGHTLY_REPO}/${REPO_RUNNER_REL}"
+    return 0
+  fi
+  return 1
+}
+
+source_list() {
+  printf '%s\n' \
+    "${HOME}/.bash_profile" \
+    "${HOME}/.bashrc" \
+    "${HOME}/.codex/memories" \
+    "${HOME}/.gitconfig" \
+    "${HOME}/.github" \
+    "${HOME}/.gitignore" \
+    "${HOME}/.zshrc" \
+    "${HOME}/Documents" \
+    "${HOME}/Movies" \
+    "${HOME}/Music" \
+    "${HOME}/Pictures" \
+    "${HOME}/Public" \
+    "${HOME}/dev" \
+    "${HOME}/src"
+}
+
+file_sha256() {
+  shasum -a 256 "$1" | awk '{print $1}'
+}
+
+run_snapshot_loop() {
+  local ok=0
+  local skip=0
+  local fail=0
+  local src
+  local rc=0
+
+  while IFS= read -r src; do
+    if [[ ! -e "$src" ]]; then
+      log "skip missing: $src"
+      skip=$((skip + 1))
+      continue
+    fi
+    log "snapshot: $src"
+    set +e
+    kopia snapshot create --progress --no-fail-fast "$src"
+    rc=$?
+    set -e
+    if [[ "$rc" -eq 0 ]]; then
+      ok=$((ok + 1))
+    else
+      log "snapshot failed rc=${rc}: $src"
+      fail=$((fail + 1))
+    fi
+  done < <(source_list)
+
+  log "summary ok=${ok} skip=${skip} fail=${fail}"
+  if [[ "$fail" -gt 0 ]]; then
+    return 1
+  fi
+  return 0
+}
+
+cmd_run() {
+  local dry_run="$1"
+  require_cmd kopia
+  require_cmd rclone
+
+  local ok=0
+  local skip=0
+  local src
+
+  if [[ "$dry_run" -eq 1 ]]; then
+    log "dry-run: would require kopia and rclone (present)"
+    while IFS= read -r src; do
+      if [[ -e "$src" ]]; then
+        log "would snapshot: $src"
+        ok=$((ok + 1))
+      else
+        log "would skip missing: $src"
+        skip=$((skip + 1))
+      fi
+    done < <(source_list)
+    log "summary ok=${ok} skip=${skip} fail=0 (dry-run)"
+    return 0
+  fi
+
+  require_cmd flock
+  mkdir -p "${TMP_DIR}"
+  exec 9>"${LOG_DIR}/nightly.lock"
+  if ! flock -n 9; then
+    die "another nightly run holds ${LOG_DIR}/nightly.lock"
+  fi
+
+  local caffeine_pid=""
+  cleanup_run() {
+    if [[ -n "${caffeine_pid}" ]]; then
+      kill "${caffeine_pid}" >/dev/null 2>&1 || true
+    fi
+    ensure_login_disabled
+  }
+  trap cleanup_run EXIT TERM INT
+
+  ensure_kopiaui_quit
+
+  if command -v caffeinate >/dev/null 2>&1; then
+    caffeinate -i -w "$$" &
+    caffeine_pid=$!
+    log "holding idle sleep (caffeinate -i -w $$)"
+  else
+    log "caffeinate missing; snapshots may sleep mid-upload"
+  fi
+
+  run_snapshot_loop
+}
+
+cmd_install() {
+  local dry_run="$1"
+  local dest="${HOME}/Library/LaunchAgents/${PLIST_NAME}"
+  local src_runner=""
+
+  if src_runner="$(repo_runner_path)"; then
+    if [[ "$dry_run" -eq 1 ]]; then
+      log "dry-run: would /bin/cp -f ${src_runner} ${DEST_RUNNER}"
+    else
+      mkdir -p "$(dirname "${DEST_RUNNER}")"
+      /bin/cp -f "${src_runner}" "${DEST_RUNNER}"
+      /bin/chmod +x "${DEST_RUNNER}"
+      log "synced dest runner from repo source"
+    fi
+  elif [[ "$dry_run" -eq 1 ]]; then
+    log "dry-run: KOPIA_NIGHTLY_REPO unset or source missing; would skip dest runner sync"
+  fi
+
+  if [[ "$dry_run" -eq 1 ]]; then
+    log "dry-run: would disable ${LABEL_LOGIN} and ${LABEL_UI}"
+    log "dry-run: would bootstrap ${LABEL_NIGHTLY} from ${dest}"
+    if [[ ! -f "$dest" ]]; then
+      log "dry-run: dest plist missing — apply Chezmoi home first"
+    fi
+    return 0
+  fi
+
+  require_cmd launchctl
+  ensure_login_disabled
+
+  if [[ ! -f "$dest" ]]; then
+    die "dest plist missing (${dest}); apply Chezmoi from rig/home first"
+  fi
+
+  mkdir -p "${TMP_DIR}"
+  mkdir -p "${HOME}/Library/LaunchAgents"
+
+  if agent_loaded "$LABEL_NIGHTLY"; then
+    launchctl bootout "$(label_path "$LABEL_NIGHTLY")" >/dev/null 2>&1 || true
+  fi
+  if ! launchctl bootstrap "$(gui_domain)" "$dest"; then
+    log "bootstrap failed for ${LABEL_NIGHTLY}"
+    print_login_item_hint
+    return 1
+  fi
+  launchctl enable "$(label_path "$LABEL_NIGHTLY")" >/dev/null 2>&1 || true
+
+  if agent_loaded "$LABEL_NIGHTLY"; then
+    log "loaded ${LABEL_NIGHTLY} (RunAtLoad=false; calendar 04:00)"
+  else
+    log "${LABEL_NIGHTLY} not visible to launchctl after bootstrap"
+    print_login_item_hint
+    return 1
+  fi
+  return 0
+}
+
+cmd_doctor() {
+  local check_policies="$1"
+  local dest="${HOME}/Library/LaunchAgents/${PLIST_NAME}"
+  local status=0
+  local src_runner=""
+
+  require_cmd kopia
+
+  if env -i HOME="${HOME}" PATH="/opt/homebrew/bin:/usr/bin:/bin" \
+    kopia repository status >/dev/null 2>&1; then
+    log "repository status: ok (launchd-like env)"
+  else
+    log "repository status: FAIL (launchd-like env cannot see repo)"
+    status=1
+  fi
+
+  if kopia_ui_running; then
+    log "KopiaUI: running (nightly run will quit it)"
+  else
+    log "KopiaUI: not running"
+  fi
+
+  if agent_loaded "$LABEL_LOGIN"; then
+    log "login agent ${LABEL_LOGIN}: LOADED (should be disabled)"
+    status=1
+  else
+    log "login agent ${LABEL_LOGIN}: not loaded"
+  fi
+  if agent_loaded "$LABEL_UI"; then
+    log "login agent ${LABEL_UI}: LOADED (should be disabled)"
+    status=1
+  else
+    log "login agent ${LABEL_UI}: not loaded"
+  fi
+
+  if [[ -f "$dest" ]]; then
+    log "nightly plist: present"
+  else
+    log "nightly plist: missing"
+    status=1
+  fi
+  if agent_loaded "$LABEL_NIGHTLY"; then
+    log "nightly agent ${LABEL_NIGHTLY}: loaded"
+  else
+    log "nightly agent ${LABEL_NIGHTLY}: not loaded"
+    print_login_item_hint
+    status=1
+  fi
+
+  if [[ -f "${DEST_RUNNER}" ]] && src_runner="$(repo_runner_path)"; then
+    local dest_hash src_hash
+    dest_hash="$(file_sha256 "${DEST_RUNNER}")"
+    src_hash="$(file_sha256 "${src_runner}")"
+    if [[ "${dest_hash}" == "${src_hash}" ]]; then
+      log "dest runner hash: match"
+    else
+      log "dest runner hash: MISMATCH (run just kopia-nightly-install)"
+      status=1
+    fi
+  elif [[ -f "${DEST_RUNNER}" ]]; then
+    log "dest runner present (no KOPIA_NIGHTLY_REPO source to compare)"
+  fi
+
+  if [[ "$check_policies" -eq 1 ]]; then
+    doctor_policies || status=1
+  fi
+
+  return "$status"
+}
+
+doctor_policies() {
+  require_cmd python3
+  log "diffing script list against live 04:00 policies (one policy list --json)"
+  local listed json_tmp
+  listed="$(source_list)"
+  json_tmp="$(mktemp /tmp/kopia-nightly-policies.XXXXXX)"
+  if ! kopia policy list --json >"${json_tmp}"; then
+    rm -f "${json_tmp}"
+    die "kopia policy list --json failed"
+  fi
+  set +e
+  LISTED_SOURCES="${listed}" HOME="${HOME}" python3 - "${json_tmp}" <<'PY'
+import json
+import os
+import sys
+
+home = os.environ["HOME"].rstrip("/")
+listed = [line for line in os.environ.get("LISTED_SOURCES", "").splitlines() if line]
+listed_set = set(listed)
+
+def is_0400(sched):
+    if not isinstance(sched, dict):
+        return False
+    tod = sched.get("timeOfDay") or sched.get("timesOfDay") or []
+    if not isinstance(tod, list):
+        return False
+    for entry in tod:
+        if not isinstance(entry, dict):
+            continue
+        if int(entry.get("hour", -1)) == 4 and int(entry.get("min", -1)) == 0:
+            return True
+    return False
+
+def target_path(target):
+    if isinstance(target, dict):
+        return (target.get("path") or "").rstrip("/")
+    if isinstance(target, str) and ":" in target:
+        return target.rsplit(":", 1)[-1].rstrip("/")
+    return ""
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        policies = json.load(handle)
+except (OSError, json.JSONDecodeError) as exc:
+    print(f"[kopia-nightly] policy list json: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+if not isinstance(policies, list):
+    print("[kopia-nightly] policy list json: expected a list", file=sys.stderr)
+    sys.exit(1)
+
+live_0400 = set()
+for policy in policies:
+    path = target_path(policy.get("target"))
+    if not path:
+        continue
+    if is_0400(policy.get("scheduling") or {}):
+        live_0400.add(path)
+
+drift = 0
+for path in listed:
+    if path in live_0400:
+        print(f"[kopia-nightly] policy 04:00 ok: {path}")
+    else:
+        print(f"[kopia-nightly] policy 04:00 missing or unread: {path}")
+        drift = 1
+
+for path in sorted(live_0400 - listed_set):
+    if path == home:
+        print(f"[kopia-nightly] note: {path} itself has a 04:00 policy but is intentionally not snapshotted")
+        continue
+    print(f"[kopia-nightly] extra 04:00 source not in script list: {path}")
+    drift = 1
+
+sys.exit(drift)
+PY
+  local rc=$?
+  set -e
+  rm -f "${json_tmp}"
+  return "$rc"
+}
+
+main() {
+  : "${HOME:?HOME is unset}"
+
+  local dry_run=0
+  local mode="run"
+  local policies=0
+  local arg
+
+  for arg in "$@"; do
+    case "$arg" in
+      -h | --help)
+        usage
+        return 0
+        ;;
+    esac
+  done
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run)
+        dry_run=1
+        shift
+        ;;
+      --policies)
+        policies=1
+        shift
+        ;;
+      install)
+        mode="install"
+        shift
+        ;;
+      doctor)
+        mode="doctor"
+        shift
+        ;;
+      -h | --help)
+        usage
+        return 0
+        ;;
+      *)
+        die "unknown argument: $1"
+        ;;
+    esac
+  done
+
+  case "$mode" in
+    run)
+      cmd_run "$dry_run"
+      ;;
+    install)
+      cmd_install "$dry_run"
+      ;;
+    doctor)
+      cmd_doctor "$policies"
+      ;;
+    *)
+      die "unknown mode: $mode"
+      ;;
+  esac
+}
+
+main "$@"

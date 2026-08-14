@@ -29,6 +29,13 @@
       "group": "operate"
     },
     {
+      "slug": "backup",
+      "title": "Backup",
+      "description": "Kopia CLI at 04:00, not at login.",
+      "firstCommand": "just kopia-nightly --dry-run",
+      "group": "operate"
+    },
+    {
       "slug": "shell",
       "title": "Shell",
       "description": "Zsh structure + tools.",

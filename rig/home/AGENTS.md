@@ -13,6 +13,7 @@ Runtime files under `rig/dots/` (`zshrc`, `p10k.zsh`, `gitconfig`, …) are **sy
 - Template machine-specific paths (`{{ .chezmoi.homeDir }}` in Ghostty, etc.)
 - Keep identities, tokens, auth files, histories, caches, and app DBs out of Git
 - Preserve `~/.zshrc.local` and Chezmoi `.local` override patterns
+- Nightly backup: `dot_local/bin/executable_kopia-nightly` is the just/repo source. Dest `$HOME/.local/bin/kopia-nightly` is launchd-only and is copied by `just kopia-nightly-install` (`KOPIA_NIGHTLY_REPO`). LaunchAgent template `Library/LaunchAgents/com.wyattowalsh.kopia-nightly.plist.tmpl` (`RunAtLoad=false`, TimeOut 12h). Do not track repository.config or rclone.conf. Operator runbook: `docs/content/docs/backup.mdx`.
 
 ## Preview
 

@@ -411,6 +411,17 @@ main() {
     run_readonly "Preview Chezmoi home changes" chezmoi --source "$HOME_SOURCE" diff
   fi
 
+  kopia_nightly_src="$HOME_SOURCE/dot_local/bin/executable_kopia-nightly"
+  if [ "$(uname -s)" = "Darwin" ] && [ -x "$kopia_nightly_src" ]; then
+    if [ "$APPLY" -eq 1 ]; then
+      KOPIA_NIGHTLY_REPO="$REPO_ROOT" run_or_print "Install Kopia nightly LaunchAgent" "$kopia_nightly_src" install
+    else
+      KOPIA_NIGHTLY_REPO="$REPO_ROOT" run_readonly "Preview Kopia nightly LaunchAgent" "$kopia_nightly_src" install --dry-run
+    fi
+  else
+    log "Kopia nightly install skipped (non-Darwin or runner source missing)."
+  fi
+
   if [ "$APPLY" -eq 1 ]; then
     if command -v nix >/dev/null 2>&1; then
       run_or_print "Check nix-darwin flake" nix flake check --no-write-lock-file "$DARWIN_FLAKE"

@@ -30,7 +30,7 @@ This repository is a **personal public** dotfiles SSOT for the `w4w-mbp` rig (us
   - `rig/dots/`: tracked runtime files symlinked into `$HOME` (zshrc, p10k, gitconfig, …).
   - `rig/brew/`: curated Homebrew Bundle desired state (`Brewfile`, `exclude.txt`).
   - `rig/darwin/`: nix-darwin/Home Manager scaffold for Apple Silicon macOS.
-  - `rig/home/`: Chezmoi-style home configuration templates + parity mirrors.
+  - `rig/home/`: Chezmoi-style home configuration templates + parity mirrors (includes headless Kopia nightly runner + LaunchAgent).
 - `docs/`: internal Fumadocs operator documentation site (human runbook SSOT).
 - `checks/`: validation and smoke-check scripts (`docs-`, `zsh-`, `freshen-`, `brew-` prefixes).
 - `openspec/`: OpenSpec change notes for non-trivial workflow/public structure changes.
@@ -88,7 +88,7 @@ This repository is a **personal public** dotfiles SSOT for the `w4w-mbp` rig (us
 - Human operator runbooks: `docs/content/docs/` only (Fumadocs). Sidebar: `docs/content/docs/meta.json`. Hub cards: `docs/lib/hub-manifest.json` (parity via `just docs-hub-parity`).
 - Nested `AGENTS.md` files are **agent contracts**, not operator prose — keep them rule-focused and point to docs for runbooks.
 - Subsystem `README.md` files are **optional** and must stay thin (commands + pointers only); they are not a second runbook SSOT.
-- `checks/` scripts use prefix naming (`docs-`, `zsh-`, `freshen-`, `brew-`) instead of deep folders unless an explicit layout migration is approved.
+- `checks/` scripts use prefix naming (`docs-`, `zsh-`, `freshen-`, `brew-`, `kopia-`) instead of deep folders unless an explicit layout migration is approved.
 - When changing justfile recipes, bootstrap phases, Brewfile groups, shell, or home layout — update the matching MDX page (and nested `AGENTS.md` if agent rules change) in the same change.
 - AI harness docs point to `wyattowalsh/agents`; only env var **names** belong in dotfiles.
 - Never paste `local/` inventory, secret values, or absolute `/Users/<name>/` paths into docs.
