@@ -78,7 +78,11 @@ export GIT_EDITOR="$EDITOR"
 # Tool homes (uv/uvx via brew+mise; pnpm; pipx)
 export PIPX_HOME="${XDG_DATA_HOME}/pipx"
 export PIPX_BIN_DIR="${PIPX_BIN_DIR:-$HOME/.local/bin}"
-export PNPM_HOME="${PNPM_HOME:-$HOME/Library/pnpm}"
+if [[ "$OSTYPE" == darwin* ]]; then
+  export PNPM_HOME="${PNPM_HOME:-$HOME/Library/pnpm}"
+else
+  export PNPM_HOME="${PNPM_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/pnpm}"
+fi
 
 if [[ -n ${HOMEBREW_PREFIX:-} && -d "$HOMEBREW_PREFIX/share/tessdata" ]]; then
   export TESSDATA_PREFIX="$HOMEBREW_PREFIX/share/tessdata"
@@ -95,10 +99,16 @@ export DRAWTHINGS_OUTPUT_DIR="${DRAWTHINGS_OUTPUT_DIR:-$HOME/Pictures/draw-thing
 # fzf defaults
 # ───────────────────────────────────────────────────────────────────────────────
 if command -v fzf &>/dev/null; then
-  export FZF_DEFAULT_COMMAND='fd --type f --hidden --follow --exclude .git'
   export FZF_DEFAULT_OPTS='--height 50% --layout=reverse --border'
-  export FZF_CTRL_T_OPTS="--preview 'bat -n --color=always {} 2>/dev/null || cat {}'"
-  export FZF_ALT_C_COMMAND='fd --type d --hidden --follow --exclude .git'
+  if command -v fd &>/dev/null; then
+    export FZF_DEFAULT_COMMAND='fd --type f --hidden --follow --exclude .git'
+    export FZF_ALT_C_COMMAND='fd --type d --hidden --follow --exclude .git'
+  fi
+  if command -v bat &>/dev/null; then
+    export FZF_CTRL_T_OPTS="--preview 'bat -n --color=always {} 2>/dev/null || cat {}'"
+  else
+    export FZF_CTRL_T_OPTS="--preview 'cat {}'"
+  fi
 fi
 
 # ───────────────────────────────────────────────────────────────────────────────
@@ -126,7 +136,7 @@ fi
 path=(
   $HOME/.local/bin
   $PIPX_BIN_DIR
-  $PNPM_HOME
+  $PNPM_HOME(N)
   $PNPM_HOME/bin(N)
   $HOME/go/bin
   $HOME/.rbenv/bin(N)
@@ -186,7 +196,6 @@ VSCODE=cursor
 plugins=(
   git
   gh
-  macos
   safe-paste
   extract
   sudo
@@ -197,6 +206,7 @@ plugins=(
   uv
   zsh-interactive-cd
 )
+[[ "$OSTYPE" == darwin* ]] && plugins+=(macos)
 
 source "$ZSH/oh-my-zsh.sh"
 
@@ -214,11 +224,18 @@ typeset -ga ZSH_AUTOSUGGEST_STRATEGY=(history completion)
 typeset -g ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=20
 if [[ -n ${HOMEBREW_PREFIX:-} && -f "$HOMEBREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh" ]]; then
   source "$HOMEBREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
+elif [[ -f "${ZSH_CUSTOM:-$ZSH/custom}/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh" ]]; then
+  source "${ZSH_CUSTOM:-$ZSH/custom}/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh"
 fi
 
-if command -v fzf &>/dev/null && [[ -n ${HOMEBREW_PREFIX:-} ]]; then
-  [[ -f "$HOMEBREW_PREFIX/opt/fzf/shell/key-bindings.zsh" ]] && source "$HOMEBREW_PREFIX/opt/fzf/shell/key-bindings.zsh"
-  [[ -f "$HOMEBREW_PREFIX/opt/fzf/shell/completion.zsh" ]] && source "$HOMEBREW_PREFIX/opt/fzf/shell/completion.zsh"
+if command -v fzf &>/dev/null; then
+  if [[ -n ${HOMEBREW_PREFIX:-} && -f "$HOMEBREW_PREFIX/opt/fzf/shell/key-bindings.zsh" ]]; then
+    source "$HOMEBREW_PREFIX/opt/fzf/shell/key-bindings.zsh"
+    [[ -f "$HOMEBREW_PREFIX/opt/fzf/shell/completion.zsh" ]] && source "$HOMEBREW_PREFIX/opt/fzf/shell/completion.zsh"
+  elif [[ -f "${ZSH_CUSTOM:-$ZSH/custom}/plugins/fzf/shell/key-bindings.zsh" ]]; then
+    source "${ZSH_CUSTOM:-$ZSH/custom}/plugins/fzf/shell/key-bindings.zsh"
+    [[ -f "${ZSH_CUSTOM:-$ZSH/custom}/plugins/fzf/shell/completion.zsh" ]] && source "${ZSH_CUSTOM:-$ZSH/custom}/plugins/fzf/shell/completion.zsh"
+  fi
 fi
 
 if (( $+functions[zic-completion] )); then
@@ -233,6 +250,12 @@ if command -v zoxide &>/dev/null; then
   eval "$(zoxide init zsh)"
 fi
 
+# nvm if present (Linux bootstrap); mise still wins when both exist
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+if [[ -s "$NVM_DIR/nvm.sh" ]]; then
+  source "$NVM_DIR/nvm.sh"
+fi
+
 # mise once (versioned node/python/pnpm/uv shims as configured)
 if command -v mise &>/dev/null; then
   eval "$(mise activate zsh)"
@@ -244,7 +267,8 @@ if command -v rbenv &>/dev/null; then
 fi
 
 # Cursor / Ghostty shell integration
-if [[ "${TERM_PROGRAM:-}" == "vscode" ]] && command -v cursor &>/dev/null; then
+if [[ "${TERM_PROGRAM:-}" == "vscode" || "${TERM_PROGRAM:-}" == "cursor" ]] \
+  && command -v cursor &>/dev/null; then
   source "$(cursor --locate-shell-integration-path zsh 2>/dev/null)" 2>/dev/null || true
 fi
 if [[ "${TERM_PROGRAM:-}" == "ghostty" && -r "$HOME/.config/ghostty/shell-integration.zsh" ]]; then
@@ -255,7 +279,8 @@ fi
 # Secrets & local overrides
 # ───────────────────────────────────────────────────────────────────────────────
 if [[ -f "$HOME/.zsh/secrets.env" ]]; then
-  if [[ "$(/usr/bin/stat -f '%A' "$HOME/.zsh/secrets.env" 2>/dev/null)" == "600" ]]; then
+  # BSD stat -f '%A' (macOS /usr/bin/stat); GNU stat -c '%a' (Linux)
+  if [[ "$(/usr/bin/stat -f '%A' "$HOME/.zsh/secrets.env" 2>/dev/null || /usr/bin/stat -c '%a' "$HOME/.zsh/secrets.env" 2>/dev/null)" == "600" ]]; then
     source "$HOME/.zsh/secrets.env"
   fi
 fi
@@ -270,7 +295,7 @@ alias zshconfig="\$EDITOR ~/.zshrc"
 alias zshedit="\$EDITOR ~/.zshrc"
 alias zshreload='exec zsh'
 alias ohmyzsh="\$EDITOR ~/.oh-my-zsh"
-alias timeout='gtimeout'
+command -v gtimeout &>/dev/null && alias timeout='gtimeout'
 alias rm='rm -i'
 alias mv='mv -i'
 alias cp='cp -i'
@@ -304,7 +329,7 @@ alias ocr="opencode run"
 alias occ="opencode --continue"
 alias cur="cursor"
 alias curp="cursor ."
-alias chrome-debug='open -a "Google Chrome" --args --remote-debugging-port=9222'
+[[ "$OSTYPE" == darwin* ]] && alias chrome-debug='open -a "Google Chrome" --args --remote-debugging-port=9222'
 alias dbtf="$HOME/.local/bin/dbt"
 
 alias ytdown='yt-dlp \
@@ -337,7 +362,9 @@ alias ofs-debug="ofscraper --output debug"
 # ───────────────────────────────────────────────────────────────────────────────
 # Functions
 # ───────────────────────────────────────────────────────────────────────────────
-code() { /Applications/Cursor.app/Contents/Resources/app/bin/cursor "$@" }
+if [[ "$OSTYPE" == darwin* ]]; then
+  code() { /Applications/Cursor.app/Contents/Resources/app/bin/cursor "$@" }
+fi
 autoload -Uz freshen 2>/dev/null
 autoload -Uz sync-cursor 2>/dev/null
 
@@ -370,4 +397,6 @@ fi
 # ───────────────────────────────────────────────────────────────────────────────
 if [[ -n ${HOMEBREW_PREFIX:-} && -f "$HOMEBREW_PREFIX/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]]; then
   source "$HOMEBREW_PREFIX/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
+elif [[ -f "${ZSH_CUSTOM:-$ZSH/custom}/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]]; then
+  source "${ZSH_CUSTOM:-$ZSH/custom}/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
 fi
