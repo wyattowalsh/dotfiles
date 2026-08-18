@@ -9,6 +9,10 @@ WITH_DEV_ENV=0
 REQUIRE_DEV_ENV=0
 DRY_RUN_FAILED=0
 SUDO_KEEPALIVE_PID=""
+LOCK_FILE="${XDG_RUNTIME_DIR:-$HOME/.cache}/dotfiles/macos-bootstrap.lock"
+LOCK_FALLBACK_DIR="${LOCK_FILE}.lockdir"
+LOCK_FD=9
+LOCK_METHOD=""
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -87,10 +91,68 @@ mode_name() {
   fi
 }
 
+acquire_setup_lock() {
+  mkdir -p "$(dirname "$LOCK_FILE")"
+
+  if command -v flock >/dev/null 2>&1; then
+    eval "exec ${LOCK_FD}>\"$LOCK_FILE\""
+    if flock -n "$LOCK_FD"; then
+      LOCK_METHOD="flock"
+      debug "Acquired flock lock: $LOCK_FILE"
+      return 0
+    fi
+
+    printf 'Another macos.sh process is already running (lock: %s).\n' "$LOCK_FILE" >&2
+    return 1
+  fi
+
+  if mkdir "$LOCK_FALLBACK_DIR" 2>/dev/null; then
+    printf '%s\n' "$$" > "$LOCK_FALLBACK_DIR/pid"
+    LOCK_METHOD="mkdir"
+    debug "Acquired mkdir lock: $LOCK_FALLBACK_DIR"
+    return 0
+  fi
+
+  if [ -f "$LOCK_FALLBACK_DIR/pid" ]; then
+    local lock_pid claim_dir
+    lock_pid="$(cat "$LOCK_FALLBACK_DIR/pid" 2>/dev/null || true)"
+    if [ -n "$lock_pid" ] && ! kill -0 "$lock_pid" 2>/dev/null; then
+      claim_dir="${LOCK_FALLBACK_DIR}.stale.$$"
+      if mv "$LOCK_FALLBACK_DIR" "$claim_dir" 2>/dev/null; then
+        log "Removing stale bootstrap lock from PID $lock_pid."
+        rm -rf "$claim_dir"
+        if mkdir "$LOCK_FALLBACK_DIR" 2>/dev/null; then
+          printf '%s\n' "$$" > "$LOCK_FALLBACK_DIR/pid"
+          LOCK_METHOD="mkdir"
+          debug "Recovered stale mkdir lock: $LOCK_FALLBACK_DIR"
+          return 0
+        fi
+      fi
+    fi
+  fi
+
+  printf 'Another macos.sh process is already running (lock: %s).\n' "$LOCK_FALLBACK_DIR" >&2
+  return 1
+}
+
+release_setup_lock() {
+  case "$LOCK_METHOD" in
+    flock)
+      flock -u "$LOCK_FD" >/dev/null 2>&1 || true
+      eval "exec ${LOCK_FD}>&-"
+      ;;
+    mkdir)
+      rm -rf "$LOCK_FALLBACK_DIR" || true
+      ;;
+  esac
+  LOCK_METHOD=""
+}
+
 cleanup() {
   if [ -n "$SUDO_KEEPALIVE_PID" ] && kill -0 "$SUDO_KEEPALIVE_PID" 2>/dev/null; then
     kill "$SUDO_KEEPALIVE_PID" 2>/dev/null || true
   fi
+  release_setup_lock
 }
 trap cleanup EXIT
 
@@ -102,7 +164,10 @@ keep_sudo_alive() {
     return 0
   fi
   if ! sudo -n true 2>/dev/null; then
-    sudo -v || true
+    if ! sudo -v; then
+      printf 'sudo -v failed; cannot continue apply.\n' >&2
+      exit 1
+    fi
   fi
   (
     while true; do
@@ -111,9 +176,15 @@ keep_sudo_alive() {
     done
   ) >/dev/null 2>&1 &
   SUDO_KEEPALIVE_PID=$!
+  if [ -z "$SUDO_KEEPALIVE_PID" ] || ! kill -0 "$SUDO_KEEPALIVE_PID" 2>/dev/null; then
+    printf 'Unable to start sudo keepalive.\n' >&2
+    exit 1
+  fi
   debug "sudo keepalive pid=${SUDO_KEEPALIVE_PID}"
 }
 
+# Resolve nix-darwin from flake.lock: github locked.owner/repo/rev, or tarball
+# original.owner/repo plus SHA in locked.url (.../archive/<rev>.tar.gz).
 nix_darwin_command() {
   if command -v darwin-rebuild >/dev/null 2>&1; then
     darwin-rebuild "$@"
@@ -130,10 +201,24 @@ nix_darwin_command() {
     return 1
   fi
 
-  local owner repo rev
+  local owner repo rev url
   owner="$(jq -r '.nodes."nix-darwin".locked.owner // empty' "$DARWIN_FLAKE/flake.lock")"
   repo="$(jq -r '.nodes."nix-darwin".locked.repo // empty' "$DARWIN_FLAKE/flake.lock")"
   rev="$(jq -r '.nodes."nix-darwin".locked.rev // empty' "$DARWIN_FLAKE/flake.lock")"
+
+  if [ -z "$owner" ] || [ -z "$repo" ] || [ -z "$rev" ]; then
+    owner="$(jq -r '.nodes."nix-darwin".original.owner // empty' "$DARWIN_FLAKE/flake.lock")"
+    repo="$(jq -r '.nodes."nix-darwin".original.repo // empty' "$DARWIN_FLAKE/flake.lock")"
+    url="$(jq -r '.nodes."nix-darwin".locked.url // empty' "$DARWIN_FLAKE/flake.lock")"
+    rev=""
+    case "$url" in
+      */archive/*.tar.gz)
+        rev="${url##*/archive/}"
+        rev="${rev%.tar.gz}"
+        ;;
+    esac
+    debug "nix-darwin pin from tarball lock: github:${owner}/${repo}/${rev}"
+  fi
 
   if [ -z "$owner" ] || [ -z "$repo" ] || [ -z "$rev" ]; then
     printf 'Unable to read pinned nix-darwin owner, repo, and revision from %s.\n' "$DARWIN_FLAKE/flake.lock" >&2
@@ -398,8 +483,11 @@ main() {
   log "mode=$(mode_name) no_upgrade=$NO_UPGRADE"
 
   if [ "$APPLY" -eq 1 ]; then
+    acquire_setup_lock
     require_darwin_flake_lock
     keep_sudo_alive
+  else
+    log "Dry-run mode enabled; mutation lock acquisition skipped."
   fi
 
   ensure_xcode_clt
