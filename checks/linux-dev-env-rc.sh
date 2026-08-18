@@ -20,6 +20,8 @@ fi
 if ! awk '/^run_dev_env[[:space:]]*\(/,/^}/' "$LINUX_SH" | grep -Eq '^[[:space:]]*set \+e[[:space:]]*$'; then
   fail_msg "run_dev_env must capture wrapper status with set +e"
 fi
+# Literal $wrapper in the source grep (not expanded here).
+# shellcheck disable=SC2016
 if awk '/^run_dev_env[[:space:]]*\(/,/^}/' "$LINUX_SH" | grep -Eq 'if[[:space:]]+bash "\$wrapper"'; then
   fail_msg "run_dev_env must not use if bash \"\$wrapper\"; then ...; fi; rc=\$?"
 fi
@@ -92,13 +94,21 @@ if [ "$DEV_ENV_WRAPPER" = "$ROOT/rig/bootstrap/dev-env.sh" ]; then
   exit 1
 fi
 
+# Globals consumed by sourced run_dev_env() in linux.sh.
+# shellcheck disable=SC2034
 SMOKE_CHECK=0
+# shellcheck disable=SC2034
 VERBOSE=0
+# shellcheck disable=SC2034
 ERRORS=0
+# shellcheck disable=SC2034
 WARNINGS=0
+# shellcheck disable=SC2034
 ACTIONS_RUN=0
+# shellcheck disable=SC2034
 ACTIONS_SKIPPED=0
 
+# shellcheck disable=SC2034
 DRY_RUN=1
 if run_dev_env; then
   dry_rc=0
@@ -109,8 +119,11 @@ if [ "$dry_rc" -ne 0 ]; then
   fail_msg "dry-run path must continue after wrapper failure (rc=${dry_rc})"
 fi
 
+# shellcheck disable=SC2034
 ERRORS=0
+# shellcheck disable=SC2034
 WARNINGS=0
+# shellcheck disable=SC2034
 DRY_RUN=0
 if run_dev_env; then
   apply_rc=0
