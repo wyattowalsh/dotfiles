@@ -20,7 +20,6 @@ ERRORS=0
 NETWORK_RETRY_ATTEMPTS=3
 NETWORK_RETRY_BASE_DELAY=2
 NETWORK_TIMEOUT_SECONDS=120
-SKILLS_INSTALL_TIMEOUT_SECONDS=300
 
 APT_COMMON_OPTS=(-o Dpkg::Use-Pty=0 -o Acquire::Retries=3)
 APT_INSTALL_OPTS=(-y "${APT_COMMON_OPTS[@]}")
@@ -533,6 +532,11 @@ run_smoke_checks() {
     target="${mapping#*:}"
     verify_symlink "$source" "$target" || failed=1
   done
+
+  if [ ! -f "$REPO_ROOT/rig/bootstrap/dev-env.sh" ]; then
+    error "dev-env wrapper missing"
+    failed=1
+  fi
 
   if [ "$failed" -ne 0 ]; then
     return 1
@@ -1096,103 +1100,45 @@ install_ai_clis() {
   fi
 }
 
-install_agent_skills() {
-  if ! command -v npx >/dev/null 2>&1; then
-    warn "npx not found; skipping skills install."
-    mark_action_skipped
-    return
+run_dev_env() {
+  local -a args=()
+  local rc=0
+  local wrapper="$REPO_ROOT/rig/bootstrap/dev-env.sh"
+
+  if [ "$SMOKE_CHECK" -eq 1 ]; then
+    args+=(--check)
+  elif [ "$DRY_RUN" -eq 1 ]; then
+    args+=(--dry-run)
+  else
+    args+=(--apply)
   fi
-
-  local -a agent_args=()
-  command -v claude >/dev/null 2>&1 && agent_args+=(-a claude-code)
-  command -v codex >/dev/null 2>&1 && agent_args+=(-a codex)
-  command -v gemini >/dev/null 2>&1 && agent_args+=(-a gemini-cli)
-  command -v copilot >/dev/null 2>&1 && agent_args+=(-a github-copilot)
-
-  if [ "${#agent_args[@]}" -eq 0 ]; then
-    warn "No supported AI CLIs found; skipping skills install."
-    mark_action_skipped
-    return
+  if [ "$VERBOSE" -eq 1 ]; then
+    args+=(--verbose)
   fi
+  args+=(--skip-mcphub)
 
-  local -a skill_args=(
-    -s add-badges
-    -s agent-conventions
-    -s email-whiz
-    -s frontend-designer
-    -s honest-review
-    -s host-panel
-    -s javascript-conventions
-    -s learn
-    -s mcp-creator
-    -s orchestrator
-    -s prompt-engineer
-    -s python-conventions
-    -s research
-    -s skill-creator
-  )
-
-  local guard_dir="$HOME/.local/state"
-  local guard_file="$guard_dir/dotfiles-agent-skills-v1"
-  local guard_token existing_guard
-  guard_token="$(printf '%s\n' "${skill_args[@]}" "${agent_args[@]}")"
-
-  if [ -f "$guard_file" ]; then
-    existing_guard="$(cat "$guard_file")"
-    if [ "$existing_guard" = "$guard_token" ]; then
-      skip_action "Agent skills already up to date"
-      return
+  if [ ! -f "$wrapper" ]; then
+    if [ "$DRY_RUN" -eq 1 ]; then
+      warn "dev-env wrapper missing; skipping agent-stack bootstrap."
+      mark_action_skipped
+      return 0
     fi
+    error "dev-env wrapper missing; cannot apply agent-stack bootstrap."
+    return 1
   fi
 
+  info "Delegating agent stack to rig/bootstrap/dev-env.sh ${args[*]}"
+  if bash "$wrapper" "${args[@]}"; then
+    mark_action_run
+    return 0
+  fi
+  rc=$?
   if [ "$DRY_RUN" -eq 1 ]; then
-    skip_action "Would install/update agent skills"
-    return
+    warn "Agent-stack bootstrap exited ${rc}; continuing setup."
+    mark_action_skipped
+    return 0
   fi
-
-  local attempt=1
-  local delay="$NETWORK_RETRY_BASE_DELAY"
-  local rc=1
-  local install_output=""
-
-  while [ "$attempt" -le "$NETWORK_RETRY_ATTEMPTS" ]; do
-    debug "Attempt ${attempt}/${NETWORK_RETRY_ATTEMPTS}: Installing agent skills"
-    info "Installing agent skills (attempt ${attempt}/${NETWORK_RETRY_ATTEMPTS}); this may take up to ${SKILLS_INSTALL_TIMEOUT_SECONDS}s."
-    if install_output="$(NETWORK_TIMEOUT_SECONDS="$SKILLS_INSTALL_TIMEOUT_SECONDS" run_with_timeout npx -y skills add --yes wyattowalsh/agents "${skill_args[@]}" "${agent_args[@]}" -g 2>&1)"; then
-      mkdir -p "$guard_dir"
-      printf '%s' "$guard_token" > "$guard_file"
-      mark_action_run
-      return
-    else
-      rc=$?
-    fi
-
-    if [ "$rc" -eq 124 ]; then
-      warn "Skills install attempt ${attempt}/${NETWORK_RETRY_ATTEMPTS} timed out after ${SKILLS_INSTALL_TIMEOUT_SECONDS}s."
-      if [ -n "$install_output" ]; then
-        printf '%s\n' "$install_output" >&2
-      fi
-      warn "Skipping skills install for this run to avoid prolonged startup stalls."
-      mark_action_skipped
-      return
-    fi
-    if is_network_or_auth_error "$install_output"; then
-      warn "Skills install skipped due to network/auth constraints."
-      printf '%s\n' "$install_output" >&2
-      mark_action_skipped
-      return
-    fi
-
-    if [ "$attempt" -lt "$NETWORK_RETRY_ATTEMPTS" ]; then
-      warn "Skills install failed (attempt ${attempt}/${NETWORK_RETRY_ATTEMPTS}); retrying in ${delay}s."
-      sleep "$delay"
-      delay=$((delay * 2))
-    fi
-
-    attempt=$((attempt + 1))
-  done
-
-  printf '%s\n' "$install_output" >&2
+  error "Agent-stack bootstrap exited ${rc}."
   return "$rc"
 }
 
@@ -1286,47 +1232,7 @@ sync_universal_skill_links() {
   done
 }
 
-install_agents() {
-  local target="$HOME/dev/tools/agents"
-
-  if [ -d "$target/.git" ]; then
-    skip_action "agents repository already present: $target"
-  elif [ -e "$target" ]; then
-    warn "Skipping agents clone; path exists and is not a git repo: $target"
-    mark_action_skipped
-  elif [ "$DRY_RUN" -eq 1 ]; then
-    skip_action "Would clone agents repository into $target"
-  else
-    mkdir -p "$(dirname "$target")"
-    retry_with_backoff "Cloning agents repository" git clone https://github.com/wyattowalsh/agents.git "$target"
-    mark_action_run
-  fi
-
-  if command -v uv >/dev/null 2>&1 && ! command -v wagents >/dev/null 2>&1; then
-    if [ "$DRY_RUN" -eq 1 ]; then
-      skip_action "Would install wagents via uv"
-    else
-      local wagents_installed=0
-      if retry_with_backoff "Installing wagents" uv tool install wagents; then
-        wagents_installed=1
-      elif [ -d "$target/.git" ]; then
-        warn "Primary wagents install failed; retrying from local agents source."
-        if retry_with_backoff "Installing wagents from local agents source" uv tool install --from "$target" wagents; then
-          wagents_installed=1
-        fi
-      fi
-
-      if [ "$wagents_installed" -eq 1 ]; then
-        mark_action_run
-      else
-        warn "Unable to install optional wagents tool; continuing setup."
-        mark_action_skipped
-      fi
-    fi
-  elif command -v wagents >/dev/null 2>&1; then
-    skip_action "wagents already installed"
-  fi
-}
+# agents clone + wagents install live in rig/bootstrap/dev-env.sh (run_dev_env).
 
 create_symlinks() {
   link_file "$DOTS_DIR/zshrc" "$HOME/.zshrc"
@@ -1440,9 +1346,8 @@ main() {
   install_go
   install_ai_clis
   ensure_ai_cli_startup_shims
-  install_agent_skills
+  run_dev_env
   sync_universal_skill_links
-  install_agents
   create_symlinks
   set_zsh_default_shell
 

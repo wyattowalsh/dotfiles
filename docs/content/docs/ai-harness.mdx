@@ -1,9 +1,64 @@
 ---
 icon: ai-harness
 title: AI
-description: Harness lives in wyattowalsh/agents.
+description: Agent stack via just bootstrap-dev. Harness SSOT is wyattowalsh/agents.
 ---
 
-**SSOT:** [wyattowalsh/agents](https://github.com/wyattowalsh/agents) — MCP, skills, client configs.
+**SSOT:** [wyattowalsh/agents](https://github.com/wyattowalsh/agents) — MCP, skills, hooks, plugins, client configs.
 
-Dotfiles only: env **names** (e.g. `MCPHUB_BEARER_TOKEN`, `BRAVE_API_KEY`) and Linux CLI/skills install via `setup.sh`. Values stay in `~/.zshrc.local` / private env — never git.
+This repo only stores env **names** (for example `MCPHUB_BEARER_TOKEN`, `BRAVE_API_KEY`). Values stay in `~/.zshrc.local` / private env — never git.
+
+## If you are…
+
+| You are… | First command | Then |
+| --- | --- | --- |
+| On this Mac, want the agent stack | `just bootstrap-dev` | `just bootstrap-dev --apply` |
+| On Debian / WSL / Codespace | `./setup.sh --dry-run` | `./setup.sh` |
+| Already in the agents clone | `./scripts/bootstrap-dev-env.sh --dry-run` | `--apply` |
+| A coding agent | `just bootstrap-dev --format json` | `--apply --format json` |
+| Fresh Mac plus brew/nix | `just bootstrap --dry-run` | `--apply`, then `just bootstrap-dev --apply` |
+| Cursor Cloud Agent | consumer + `--skip-mcphub` in `install` | do not start MCPHub during `install` |
+
+You do not need `just` if you can run `rig/bootstrap/dev-env.sh`. You do not need sudo for the agent-stack installer.
+
+## Never
+
+- Print token values
+- `npx skills add --skill '*'`
+- Write Cursor `cli-config` / `state.vscdb`
+- Start the Cloudflare MCPHub tunnel
+- Attach the public `tunnel` MCP group
+- Vendor MCP JSON into `rig/`
+
+## Fleet
+
+`just bootstrap-dev` projects **repo-core** plus the harnesses you actually use, when they are on `PATH`:
+
+| You use | `--harness` / `--platforms` |
+| --- | --- |
+| Cursor | `cursor` |
+| Claude Code | `claude-code` |
+| Codex | `codex` |
+| Grok Build | `grok` |
+| OpenCode | `opencode` |
+
+Auto with those five installed plans `--platforms repo-core,cursor,claude-code,codex,grok,opencode`. Other CLIs may be detected for skills; they are not remapped into fake stack ids.
+
+## Flags
+
+`just bootstrap-dev` defaults to **dry-run**. Useful flags (passed through): `--apply`, `--check`, `--format json`, `--harness cursor`, `--home`, `--install-skills`, `--mcphub`, `--skip-mcphub`, `--full`.
+
+Default and `--apply` do **not** start MCPHub. Pass `--mcphub` only when you want local loopback `start-local-only.sh`. Linux `./setup.sh` and `just bootstrap --with-dev-env` always pass `--skip-mcphub`.
+
+Live skill installs and home projections are **off** unless you pass those flags.
+
+## Laptop vs Cloud MCP
+
+| Place | What this installer does |
+| --- | --- |
+| Laptop / WSL / Codespace | Project harness files; optional **local** MCPHub on loopback (`harness` group) |
+| Cursor Cloud Agent | Disk/projections only; Cloud MCP and secrets stay on the dashboard |
+
+## After apply
+
+Secrets belong in a private env file. Names only: `MCPHUB_BEARER_TOKEN`, `BRAVE_API_KEY`. See [Linux](/docs/linux-setup) and [Fresh Mac](/docs/fresh-mac).

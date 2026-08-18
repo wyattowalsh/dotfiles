@@ -22,6 +22,7 @@ Personal public dotfiles SSOT. Curated desired state for shell, git, Homebrew, n
 | --- | --- | --- |
 | Apple Silicon macOS | `just bootstrap --dry-run` | [Fresh Mac](./docs/content/docs/fresh-mac.mdx) |
 | Debian/Ubuntu Linux | `./setup.sh --dry-run --verbose` (→ `rig/bootstrap/linux.sh`) | [Linux setup](./docs/content/docs/linux-setup.mdx) |
+| Agent stack (any harness) | `just bootstrap-dev` (→ wyattowalsh/agents) | [AI](./docs/content/docs/ai-harness.mdx) |
 
 ## Quick start (macOS)
 

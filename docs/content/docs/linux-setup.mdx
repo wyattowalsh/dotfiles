@@ -26,4 +26,4 @@ flowchart LR
   B -->|apply| E[Mutate → smoke]
 ```
 
-Needs: Linux x86_64/arm64, bash/git/curl, sudo, apt, network. AI configs → [agents](https://github.com/wyattowalsh/agents).
+Needs: Linux x86_64/arm64, bash/git/curl, sudo, apt, network. After CLI shims, setup delegates the agent stack to `just bootstrap-dev` (wyattowalsh/agents) with `--skip-mcphub`. Apply **fail-closes** if the wrapper or installer fails. `--smoke-check` fails if the wrapper file is missing. It does not run a hardcoded `npx skills add` list. Harness/MCP JSON stays in [agents](https://github.com/wyattowalsh/agents). See [AI](/docs/ai-harness).

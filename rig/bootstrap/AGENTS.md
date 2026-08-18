@@ -6,6 +6,7 @@
 | --- | --- |
 | `rig/bootstrap/macos.sh` | macOS full-rig bootstrap (`just bootstrap`) |
 | `rig/bootstrap/linux.sh` | Debian/Ubuntu bootstrap (root `setup.sh` is a thin wrapper) |
+| `rig/bootstrap/dev-env.sh` | Locate wyattowalsh/agents (`_is_agents_repo` must match agents `locate.sh`) and exec `scripts/bootstrap-dev-env.sh` |
 
 ## Path contract
 
@@ -21,10 +22,10 @@ Machine paths: `$RIG_DIR/{brew,darwin,home,dots}`.
 
 - **Default:** dry-run preview when neither `--dry-run` nor `--apply` is passed
 - **Apply:** requires `rig/darwin/flake.lock`; creates missing parent directories for nested symlink targets; refuses to replace non-symlink home targets
-- **Flags:** `--verbose`, `--no-upgrade` (brew bundle first-restore safety)
-- **Phases:** preflight → sudo keepalive (apply) → Xcode CLT wait → brew/just/nix/chezmoi → OMZ + p10k → Brewfile → **symlinks from `rig/dots/`** → Chezmoi → nix-darwin
+- **Flags:** `--verbose`, `--no-upgrade` (brew bundle first-restore safety), `--with-dev-env`, `--require-dev-env`. `--with-dev-env` always passes `--skip-mcphub`.
+- **Phases:** preflight → sudo keepalive (apply) → Xcode CLT wait → brew/just/nix/chezmoi → OMZ + p10k → Brewfile → **symlinks from `rig/dots/`** → Chezmoi → nix-darwin → optional `dev-env.sh`
 
-Does not install AI harness/MCP configs or build docs. Does not append to shell RC files.
+Does not vendor AI harness/MCP configs or build docs. Agent stack is `just bootstrap-dev` (or `--with-dev-env`). Does not append to shell RC files.
 
 ## Rules
 
@@ -40,5 +41,6 @@ Does not install AI harness/MCP configs or build docs. Does not append to shell 
 ```bash
 just bootstrap --dry-run
 just bootstrap --apply --no-upgrade
-./setup.sh --dry-run --verbose   # → rig/bootstrap/linux.sh
+just bootstrap-dev --dry-run
+./setup.sh --dry-run --verbose   # → rig/bootstrap/linux.sh (includes dev-env)
 ```

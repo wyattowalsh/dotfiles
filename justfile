@@ -2,7 +2,7 @@
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
-shell_files := "setup.sh rig/bootstrap/macos.sh rig/bootstrap/linux.sh checks/apps-manual-inventory.sh checks/brew-exclude-check.sh checks/config-dirs-inventory.sh checks/docs-css-health.sh checks/docs-hub-parity.sh checks/docs-sensitive.sh checks/freshen-smoke.sh checks/freshen-version.sh checks/freshen-privacy.sh checks/kopia-nightly.sh checks/secrets-scan.sh checks/smoke.sh checks/stale-path-freeze.sh checks/validate-json.sh checks/zsh-inventory.sh checks/zsh-structure.sh checks/zsh-structure-test.sh checks/zsh-smoke-interactive.sh checks/zsh-rollback-live.sh rig/home/dot_local/bin/executable_kopia-nightly"
+shell_files := "setup.sh rig/bootstrap/macos.sh rig/bootstrap/linux.sh rig/bootstrap/dev-env.sh checks/apps-manual-inventory.sh checks/brew-exclude-check.sh checks/config-dirs-inventory.sh checks/docs-css-health.sh checks/docs-hub-parity.sh checks/docs-sensitive.sh checks/freshen-smoke.sh checks/freshen-version.sh checks/freshen-privacy.sh checks/kopia-nightly.sh checks/secrets-scan.sh checks/smoke.sh checks/stale-path-freeze.sh checks/validate-json.sh checks/zsh-inventory.sh checks/zsh-structure.sh checks/zsh-structure-test.sh checks/zsh-smoke-interactive.sh checks/zsh-rollback-live.sh rig/home/dot_local/bin/executable_kopia-nightly"
 
 # List available recipes (default).
 default:
@@ -11,6 +11,10 @@ default:
 # Dispatch to the platform bootstrapper. Example: just bootstrap --dry-run
 bootstrap *ARGS:
     ./rig/bootstrap/macos.sh {{ARGS}}
+
+# Portable agent-dev-env preview (wyattowalsh/agents). Defaults to dry-run.
+bootstrap-dev *ARGS:
+    ./rig/bootstrap/dev-env.sh {{ARGS}}
 
 # Run static validation.
 check: check-hooks check-shell check-zsh check-freshen check-json secrets-scan brew-exclude check-stale-paths check-kopia-nightly

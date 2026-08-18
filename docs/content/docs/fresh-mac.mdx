@@ -46,4 +46,6 @@ flowchart TD
 | Home | `just home-diff` |
 | Nix | `just darwin-check` |
 
-Manual: App Store / vendor apps / AI auth. After apply, `just kopia-nightly-install` if the nightly LaunchAgent was skipped. See [Promote](/docs/ssot-workflow), [Brew](/docs/packages), [Backup](/docs/backup), [AI](/docs/ai-harness).
+Manual: App Store / vendor apps / AI auth. After apply, `just kopia-nightly-install` if the nightly LaunchAgent was skipped.
+
+Agent stack (skills, hooks, MCPHub) is a **second** command: `just bootstrap-dev --dry-run`, then `--apply`. Optional `just bootstrap --apply --with-dev-env` runs it in the same mode. See [Promote](/docs/ssot-workflow), [Brew](/docs/packages), [Backup](/docs/backup), [AI](/docs/ai-harness).

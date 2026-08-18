@@ -5,6 +5,8 @@ DRY_RUN=0
 VERBOSE=0
 APPLY=0
 NO_UPGRADE=0
+WITH_DEV_ENV=0
+REQUIRE_DEV_ENV=0
 DRY_RUN_FAILED=0
 SUDO_KEEPALIVE_PID=""
 
@@ -19,12 +21,14 @@ DARWIN_HOST="${DARWIN_HOST:-w4w-mbp}"
 
 usage() {
   cat <<'USAGE'
-Usage: rig/bootstrap/macos.sh [--dry-run] [--apply] [--verbose] [--no-upgrade]
+Usage: rig/bootstrap/macos.sh [--dry-run] [--apply] [--verbose] [--no-upgrade] [--with-dev-env] [--require-dev-env]
 
-  --dry-run      Print planned macOS bootstrap actions without mutating state.
-  --apply        Permit mutating setup actions.
-  --verbose      Print additional diagnostics.
-  --no-upgrade   Pass --no-upgrade to brew bundle install (safer first restore).
+  --dry-run          Print planned macOS bootstrap actions without mutating state.
+  --apply            Permit mutating setup actions.
+  --verbose          Print additional diagnostics.
+  --no-upgrade       Pass --no-upgrade to brew bundle install (safer first restore).
+  --with-dev-env     Also run the portable agent-stack installer (just bootstrap-dev).
+  --require-dev-env  Fail if --with-dev-env is set and the agent-stack installer fails.
 USAGE
 }
 
@@ -162,6 +166,13 @@ parse_args() {
         ;;
       --no-upgrade)
         NO_UPGRADE=1
+        ;;
+      --with-dev-env)
+        WITH_DEV_ENV=1
+        ;;
+      --require-dev-env)
+        REQUIRE_DEV_ENV=1
+        WITH_DEV_ENV=1
         ;;
       -h|--help)
         usage
@@ -445,6 +456,30 @@ main() {
     fi
   else
     log "nix unavailable; nix-darwin switch remains planned."
+  fi
+
+  if [ "$WITH_DEV_ENV" -eq 1 ]; then
+    local -a dev_args=()
+    if [ "$APPLY" -eq 1 ]; then
+      dev_args+=(--apply)
+    else
+      dev_args+=(--dry-run)
+    fi
+    if [ "$VERBOSE" -eq 1 ]; then
+      dev_args+=(--verbose)
+    fi
+    dev_args+=(--skip-mcphub)
+    if bash "$REPO_ROOT/rig/bootstrap/dev-env.sh" "${dev_args[@]}"; then
+      log "Agent-stack installer finished."
+    else
+      if [ "$REQUIRE_DEV_ENV" -eq 1 ]; then
+        printf 'Agent-stack installer failed (--require-dev-env).\n' >&2
+        exit 1
+      fi
+      log "Agent-stack installer failed; continuing. Re-run: just bootstrap-dev --dry-run"
+    fi
+  else
+    log "Agent stack is a separate step: just bootstrap-dev --dry-run"
   fi
 
   if [ "$APPLY" -eq 1 ]; then

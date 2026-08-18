@@ -86,7 +86,8 @@
     {
       "slug": "ai-harness",
       "title": "AI",
-      "description": "→ wyattowalsh/agents.",
+      "description": "just bootstrap-dev → agents + local MCPHub.",
+      "firstCommand": "just bootstrap-dev",
       "group": "reference"
     },
     {

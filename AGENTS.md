@@ -58,8 +58,8 @@ This repository is a **personal public** dotfiles SSOT for the `w4w-mbp` rig (us
 ## Linux AI bootstrap notes (CLIs only — configs in agents repo)
 - `setup.sh` installs `@anthropic-ai/claude-code`, `@google/gemini-cli`, `@github/copilot`, and `@openai/codex` via npm when missing, and installs `github/gh-copilot` for `gh` when available.
 - `setup.sh` maintains startup shim links for `claude`, `gemini`, `copilot`, and `codex` in `~/.local/bin`.
-- `setup.sh` installs skills from `wyattowalsh/agents` via non-interactive `npx -y skills add --yes` when CLIs exist.
-- Universal skills from `~/.agents/skills` are mirrored into per-agent skill dirs for installed CLIs.
+- `setup.sh` delegates the agent stack to `rig/bootstrap/dev-env.sh` → wyattowalsh/agents `scripts/bootstrap-dev-env.sh` with `--skip-mcphub`. Apply fails if the wrapper or installer fails. It does not run a hardcoded `npx skills add` skill list.
+- Universal skills from `~/.agents/skills` are mirrored into per-agent skill dirs for installed CLIs when that store exists.
 - Do **not** add MCP JSON, client manifests, or harness configs to this repo — change `wyattowalsh/agents` instead.
 - `setup.sh` skips `chsh` default-shell updates in Codespaces or non-interactive sessions.
 
