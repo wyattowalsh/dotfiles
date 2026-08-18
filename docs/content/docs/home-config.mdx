@@ -14,4 +14,4 @@ just home-diff
 just check-zsh          # dots ↔ home parity
 ```
 
-Parity mirrors (`dot_zshrc.tmpl`, `dot_p10k.zsh`) are ignored by chezmoi apply — `cmp` only. Overrides: `~/.zshrc.local`, untracked includes. Nightly backup: `dot_local/bin/executable_kopia-nightly` + LaunchAgent template — [Backup](/docs/backup). See [Shell](/docs/shell), [Terminal](/docs/terminal).
+Parity mirrors (`dot_zshrc.tmpl`, `dot_p10k.zsh`) stay in the Chezmoi source tree for `cmp` only. [`.chezmoiignore`](https://www.chezmoi.io/reference/special-files/chezmoiignore/) must list **target** paths (`.zshrc`, `.p10k.zsh`, `AGENTS.md`) — source names match nothing. Gate: `just check-chezmoi-ignore`. Ghostty defaults live in `rig/home/.chezmoidata.toml`. Overrides: `~/.zshrc.local`, untracked includes, optional `~/.config/ghostty/config.local`. Nightly backup: `dot_local/bin/executable_kopia-nightly` + LaunchAgent template — [Backup](/docs/backup). See [Shell](/docs/shell), [Terminal](/docs/terminal).

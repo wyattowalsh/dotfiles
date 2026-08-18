@@ -1,3 +1,6 @@
-# Mirrored from repo root; deployed via bootstrap/setup symlinks, not Chezmoi apply.
-dot_zshrc.tmpl
-dot_p10k.zsh
+# Chezmoi matches target paths, not source names.
+# Runtime zshrc/p10k are bootstrap symlinks from rig/dots — not chezmoi-applied.
+.zshrc
+.p10k.zsh
+# Repo agent contract; do not deploy to ~/AGENTS.md
+AGENTS.md

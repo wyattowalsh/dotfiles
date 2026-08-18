@@ -3,6 +3,7 @@ gui:
   showCommandLog: false
 git:
   paging:
+    # delta --dark is pager contrast, independent of Ghostty's light theme.
     pager: delta --dark --paging=never
 customCommands:
   - key: '<c-o>'

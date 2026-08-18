@@ -45,7 +45,7 @@ repos:
         entry: just check-shell
         language: system
         pass_filenames: false
-        files: ^(setup\.sh|rig/bootstrap/macos\.sh|rig/bootstrap/linux\.sh|checks/.*\.sh|justfile)$
+        files: ^(setup\.sh|rig/bootstrap/(macos|linux|dev-env)\.sh|checks/.*\.sh|justfile|rig/home/dot_local/bin/executable_kopia-nightly)$
 
       - id: dotfiles-zsh-parity
         name: dotfiles zsh syntax and parity

@@ -2,7 +2,7 @@
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
-shell_files := "setup.sh rig/bootstrap/macos.sh rig/bootstrap/linux.sh rig/bootstrap/dev-env.sh checks/apps-manual-inventory.sh checks/brew-exclude-check.sh checks/config-dirs-inventory.sh checks/docs-css-health.sh checks/docs-hub-parity.sh checks/docs-sensitive.sh checks/freshen-smoke.sh checks/freshen-version.sh checks/freshen-privacy.sh checks/kopia-nightly.sh checks/secrets-scan.sh checks/smoke.sh checks/stale-path-freeze.sh checks/validate-json.sh checks/zsh-inventory.sh checks/zsh-structure.sh checks/zsh-structure-test.sh checks/zsh-smoke-interactive.sh checks/zsh-rollback-live.sh rig/home/dot_local/bin/executable_kopia-nightly"
+shell_files := "setup.sh rig/bootstrap/macos.sh rig/bootstrap/linux.sh rig/bootstrap/dev-env.sh checks/apps-manual-inventory.sh checks/brew-exclude-check.sh checks/chezmoi-ignore.sh checks/config-dirs-inventory.sh checks/darwin-lock.sh checks/docs-css-health.sh checks/docs-hub-parity.sh checks/docs-sensitive.sh checks/freshen-smoke.sh checks/freshen-version.sh checks/freshen-privacy.sh checks/kopia-nightly.sh checks/linux-dev-env-rc.sh checks/secrets-scan.sh checks/shell-files-sync.sh checks/smoke.sh checks/stale-path-freeze.sh checks/validate-json.sh checks/zsh-inventory.sh checks/zsh-structure.sh checks/zsh-structure-test.sh checks/zsh-smoke-interactive.sh checks/zsh-rollback-live.sh rig/home/dot_local/bin/executable_kopia-nightly"
 
 # List available recipes (default).
 default:
@@ -10,14 +10,29 @@ default:
 
 # Dispatch to the platform bootstrapper. Example: just bootstrap --dry-run
 bootstrap *ARGS:
-    ./rig/bootstrap/macos.sh {{ARGS}}
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "$(uname -s)" in
+      Darwin) exec ./rig/bootstrap/macos.sh {{ARGS}} ;;
+      Linux) exec ./rig/bootstrap/linux.sh {{ARGS}} ;;
+      *)
+        printf 'just bootstrap is supported on Darwin and Linux only.\n' >&2
+        exit 1
+        ;;
+    esac
 
 # Portable agent-dev-env preview (wyattowalsh/agents). Defaults to dry-run.
 bootstrap-dev *ARGS:
-    ./rig/bootstrap/dev-env.sh {{ARGS}}
+    #!/usr/bin/env bash
+    set -euo pipefail
+    extra=( {{ARGS}} )
+    if [ "${#extra[@]}" -eq 0 ]; then
+      extra=(--dry-run)
+    fi
+    exec ./rig/bootstrap/dev-env.sh "${extra[@]}"
 
 # Run static validation.
-check: check-hooks check-shell check-zsh check-freshen check-json secrets-scan brew-exclude check-stale-paths check-kopia-nightly
+check: check-hooks check-shell check-zsh check-freshen check-json secrets-scan brew-exclude check-stale-paths check-kopia-nightly check-chezmoi-ignore check-darwin-lock check-linux-dev-env-rc check-shell-files
 
 # Run the validation suite used by CI.
 ci: check smoke docs-ci
@@ -88,6 +103,22 @@ check-stale-paths:
 # Static contract for the headless Kopia nightly runner (no live kopia/launchctl).
 check-kopia-nightly:
     ./checks/kopia-nightly.sh
+
+# Chezmoi ignore file must use destination/target path names.
+check-chezmoi-ignore:
+    ./checks/chezmoi-ignore.sh
+
+# flake.lock JSON + recoverable nix-darwin pin (no nix apply).
+check-darwin-lock:
+    ./checks/darwin-lock.sh
+
+# Linux run_dev_env exit-status capture (no $HOME mutation).
+check-linux-dev-env-rc:
+    ./checks/linux-dev-env-rc.sh
+
+# justfile shell_files must match tracked *.sh plus the kopia runner.
+check-shell-files:
+    ./checks/shell-files-sync.sh
 
 # Nightly Kopia CLI runner (install/doctor/dry-run). Always uses repo source.
 kopia-nightly *ARGS:

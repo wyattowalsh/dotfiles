@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-bash -n setup.sh rig/bootstrap/macos.sh rig/bootstrap/linux.sh checks/config-dirs-inventory.sh checks/freshen-smoke.sh checks/freshen-version.sh checks/secrets-scan.sh checks/smoke.sh checks/validate-json.sh checks/zsh-inventory.sh
-
 if [ "$(uname -s)" = "Darwin" ]; then
   # Dry-run may exit 1 when read-only probes fail (e.g. brew bundle check)
   # after printing a full plan. Accept 0 or 1 if the preview completed.
@@ -36,7 +34,20 @@ if [ "$(uname -s)" = "Darwin" ]; then
     exit 1
   fi
 else
-  ./setup.sh --dry-run --verbose >/dev/null
+  set +e
+  dry_output="$(./setup.sh --dry-run --verbose 2>&1)"
+  dry_status=$?
+  set -e
+  if [ "$dry_status" -ne 0 ]; then
+    printf 'Expected setup.sh --dry-run to exit 0, got %s\n' "$dry_status" >&2
+    printf '%s\n' "$dry_output" >&2
+    exit 1
+  fi
+  if ! printf '%s\n' "$dry_output" | rg -q 'setup.sh finished'; then
+    printf 'Expected setup.sh --dry-run to print a finished summary\n' >&2
+    printf '%s\n' "$dry_output" >&2
+    exit 1
+  fi
 fi
 
 echo "Smoke checks completed."

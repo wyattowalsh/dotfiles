@@ -879,7 +879,8 @@ install_nvm_and_node() {
       return 1
     fi
 
-    if ! run_action "Installing nvm" bash "$installer"; then
+    # PROFILE=/dev/null: do not append nvm lines into ~/.zshrc (may be a repo symlink).
+    if ! run_action "Installing nvm" env PROFILE=/dev/null bash "$installer"; then
       rm -f "$installer"
       return 1
     fi

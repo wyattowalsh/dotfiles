@@ -4,9 +4,10 @@ title: Terminal
 description: Ghostty + fonts.
 ---
 
-- Config: `rig/home/private_dot_config/ghostty/config.tmpl`
+- Config: `rig/home/private_dot_config/ghostty/config.tmpl` (defaults in `rig/home/.chezmoidata.toml`)
+- Optional overlay: `~/.config/ghostty/config.local` (`config-file = ?…`; missing file is fine)
 - Fonts: Nerd Font casks in `rig/brew/Brewfile`
-- Backgrounds: `~/.config/ghostty/backgrounds/` (local only)
+- Backgrounds: `~/.config/ghostty/backgrounds/` (local only; missing PNG is expected until copied)
 
 ```bash
 just home-diff

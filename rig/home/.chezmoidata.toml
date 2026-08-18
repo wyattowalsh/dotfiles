@@ -1,0 +1,7 @@
+# Public aesthetic defaults for Chezmoi templates (not secrets).
+# Local overrides: ~/.config/ghostty/config.local (optional include).
+
+[ghostty]
+theme = "APEX Light Ultra"
+fontFamily = "Monaspace Xenon NF"
+fontSize = "14"

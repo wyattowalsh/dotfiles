@@ -8,8 +8,7 @@ prepend_previewers = [
   { name = "*.xlsx", run = "duckdb" },
   { name = "*.db", run = "duckdb" },
   { name = "*.duckdb", run = "duckdb" },
-  { name = "*.ipynb", run = "nbpreview" }, # https://github.com/AnirudhG07/nbpreview.yazi
-  { mime = "application/bittorrent", run = "torrent-preview" } # https://github.com/kirasok/torrent-preview.yazi
+  # nbpreview / torrent-preview plugins are local-only (not in Brewfile).
 ]
 
 prepend_preloaders = [
