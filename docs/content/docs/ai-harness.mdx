@@ -6,7 +6,9 @@ description: Agent stack via just bootstrap-dev. Harness SSOT is wyattowalsh/age
 
 **SSOT:** [wyattowalsh/agents](https://github.com/wyattowalsh/agents) — MCP, skills, hooks, plugins, client configs.
 
-This repo only stores env **names** (for example `MCPHUB_BEARER_TOKEN`, `BRAVE_API_KEY`). Values stay in `~/.zshrc.local` / private env — never git.
+This repo only stores env **names** (for example `MCPHUB_BEARER_TOKEN`, `BRAVE_API_KEY`, `WAGENTS_REPO_ROOT`). Values stay in `~/.zshrc.local` / private env — never git.
+
+`just bootstrap-dev` with **no args injects `--dry-run`**. It execs `rig/bootstrap/dev-env.sh`, which locates the agents clone via `WAGENTS_REPO_ROOT` (if that path is an agents repo), then `~/dev/projects/agents`, `~/dev/tools/agents`, or a sibling `agents` next to this repo.
 
 ## If you are…
 
@@ -61,4 +63,4 @@ Live skill installs and home projections are **off** unless you pass those flags
 
 ## After apply
 
-Secrets belong in a private env file. Names only: `MCPHUB_BEARER_TOKEN`, `BRAVE_API_KEY`. See [Linux](/docs/linux-setup) and [Fresh Mac](/docs/fresh-mac).
+Secrets belong in a private env file. Names only: `MCPHUB_BEARER_TOKEN`, `BRAVE_API_KEY`. Clone path override: `WAGENTS_REPO_ROOT`. See [Linux](/docs/linux-setup) and [Fresh Mac](/docs/fresh-mac).

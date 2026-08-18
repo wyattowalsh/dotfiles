@@ -4,14 +4,22 @@ title: Nix
 description: darwin flake.
 ---
 
+`rig/brew/Brewfile` is the **package SSOT**. `rig/darwin/modules/packages.nix` is a tiny nix-darwin bootstrap CLI set (`bash`, `curl`, `git`, `jq`, `ripgrep`). Overlap with those Brewfile formulae is OK.
+
 | Path | Role |
 | --- | --- |
 | `rig/darwin/flake.nix` + `flake.lock` | Flake; lock required for `--apply` |
 | `rig/darwin/hosts/` | Host values |
-| `rig/darwin/modules/` | Packages, defaults |
+| `rig/darwin/modules/packages.nix` | Bootstrap CLI only |
+| `rig/darwin/modules/macos-defaults.nix` | macOS defaults |
+
+Modules on disk are **those two files** plus the host import. Do not expect separate shell / services / user module splits.
+
+`flake.lock` inputs may be `type: tarball` (archive URL) instead of a github `locked.owner` / `repo` / `rev`. `macos.sh` recovers the nix-darwin pin from github lock fields **or** `original.owner` / `repo` plus the SHA in `locked.url` (`…/archive/<rev>.tar.gz`), then `nix run github:…#darwin-rebuild` when `darwin-rebuild` is not on `PATH`. Gate: `just check-darwin-lock`.
 
 ```bash
 nix flake lock ./rig/darwin
 just darwin-check
+just check-darwin-lock
 just bootstrap --dry-run
 ```
