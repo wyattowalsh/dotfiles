@@ -103,3 +103,17 @@ The startup update script (see the Cloud Agent environment) installs `zsh`, `rip
 - **Expected non-fatal warnings:** `just smoke` and `./setup.sh --dry-run` print `[WARN] ... symlink missing/not a symlink` for `$HOME` dotfiles and an `agents checkout not found` notice. This is normal on a cloud VM where the rig is not applied; both still exit 0. Do not try to "fix" these by creating symlinks.
 - **Do not apply the rig here:** never run `./setup.sh` (non-dry-run) or `just bootstrap --apply` in the cloud VM — they mutate `$HOME`/system state for the real Mac/Linux rig. Use `--dry-run` to exercise the bootstrap path.
 - **Optional linters:** `shellcheck` (for `just check-shell`) and `pre-commit` (for `just check-hooks`) are installed but the recipes skip gracefully if absent; `pre-commit` resolves via `/usr/local/bin` symlink to the `uv`-managed install in `~/.local/bin`.
+
+### AI harness (wyattowalsh/agents) bootstrap
+SSOT for the harness is [wyattowalsh/agents](https://github.com/wyattowalsh/agents); this repo only delegates via `rig/bootstrap/dev-env.sh` (`just bootstrap-dev`). It is **not** part of the update script (heavy second repo + optional). Provision on demand:
+
+```bash
+git clone --depth 1 https://github.com/wyattowalsh/agents.git ~/dev/projects/agents
+uv sync --project ~/dev/projects/agents          # builds the wagents env (Python 3.13+, auto-provisioned)
+just bootstrap-dev --apply --home                # projects repo + ~/.cursor harness surfaces (cloud profile auto --skip-mcphub)
+```
+
+Cloud-specific caveats found during setup:
+- **Seed `~/.codex/config.toml` first** (`mkdir -p ~/.codex && : > ~/.codex/config.toml`). `scripts/sync_agent_stack.py` reads it unconditionally and crashes with `FileNotFoundError` on a machine without codex; an empty file parses fine.
+- **`wagents` CLI is currently broken at agents HEAD** — `cannot import name 'web_app' from 'wagents.docs'` (`wagents/cli.py`). The `sync-repo`/`sync-home` projection (agents, hooks, rules, skill symlinks) and MCPHub are unaffected, but the `skills-preview` and `hooks` phases warn until this is fixed upstream. This is not a dotfiles bug.
+- **MCPHub is opt-in and loopback-only.** `just bootstrap-dev --apply --mcphub` (or `bash ~/dev/projects/agents/scripts/mcphub/start-local-only.sh`) starts `npx @samanhappy/mcphub` on `127.0.0.1:46683`; it needs `~/dev/projects/agents/.env.mcphub` (gitignored) with local `ADMIN_PASSWORD`/`JWT_SECRET`/`MCPHUB_BEARER_TOKEN`. The running hub persists OAuth client state into `mcp/mcphub/mcp_settings.json`, so `generate_mcphub_settings.py --check` reports drift once the hub has run — expected, not source drift.
