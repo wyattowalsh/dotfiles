@@ -4,10 +4,16 @@ title: Git
 description: gitconfig + delta.
 ---
 
-SSOT: `rig/dots/gitconfig` → `~/.gitconfig` (bootstrap link).
+SSOT: `rig/dots/gitconfig` → `~/.gitconfig` (bootstrap link). Public identity: `wyattowalsh` / `wyattowalsh@gmail.com`.
 
 ```bash
 git config --global --list
 ```
 
-Credentials / OAuth stay local. Identity overrides via local config / `includeIf`.
+| Setting | Role |
+| --- | --- |
+| `[credential]` helpers | Empty `helper=` clears the chain, then `!gh auth git-credential` (PATH `gh`, not a Homebrew absolute path) |
+| `[include] path` | `~/.gitconfig.local` for local signing/identity overrides (do not commit keys) |
+| `[core] pager` / `[delta]` | `delta` pager + interactive `diffFilter` (`navigate`, `line-numbers`) |
+
+Credentials / OAuth stay local. Signing keys and machine identity belong in `~/.gitconfig.local`, not the tracked file.
