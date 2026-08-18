@@ -28,12 +28,15 @@ Usage: kopia-nightly [--dry-run]
        kopia-nightly install [--dry-run]
        kopia-nightly doctor [--policies]
 
-  (default)   Snapshot the 04:00 source list, then disable KopiaUI login agents.
+  (default)   Snapshot the 04:00 source list (wall-clock cap), then disable
+              KopiaUI login agents.
   --dry-run   Print plan / sources; no repository writes; no launchctl mutations.
   install     Sync dest runner (if KOPIA_NIGHTLY_REPO is set), disable UI login
               agents, bootstrap the nightly LaunchAgent.
   doctor      Check launchd-like repo access, dest/source hash, login-agent state.
   --policies  With doctor: two-way 04:00 drift vs live policies (network).
+
+  KOPIA_NIGHTLY_TIMEOUT_SEC  snapshot wall-clock cap in seconds (default 43200).
 USAGE
 }
 
@@ -127,14 +130,60 @@ file_sha256() {
   shasum -a 256 "$1" | awk '{print $1}'
 }
 
+# launchd TimeOut is unimplemented; enforce the cap in this runner.
+snapshot_timeout_sec() {
+  local raw="${KOPIA_NIGHTLY_TIMEOUT_SEC:-43200}"
+  if [[ ! "$raw" =~ ^[1-9][0-9]*$ ]]; then
+    die "KOPIA_NIGHTLY_TIMEOUT_SEC must be a positive integer (got: ${raw})"
+  fi
+  printf '%s\n' "$raw"
+}
+
+resolve_timeout_bin() {
+  if command -v timeout >/dev/null 2>&1; then
+    printf '%s\n' timeout
+    return 0
+  fi
+  if command -v gtimeout >/dev/null 2>&1; then
+    printf '%s\n' gtimeout
+    return 0
+  fi
+  return 1
+}
+
+# Prefer GNU timeout; Homebrew coreutils ships gtimeout. `command timeout`
+# bypasses a shell alias (zshrc maps timeout → gtimeout).
+run_timeout() {
+  local sec="$1"
+  shift
+  if command -v timeout >/dev/null 2>&1; then
+    command timeout --kill-after=60 "$sec" "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    command gtimeout --kill-after=60 "$sec" "$@"
+  else
+    die "missing timeout/gtimeout (coreutils) for ${sec}s wall-clock cap"
+  fi
+}
+
 run_snapshot_loop() {
+  local timeout_sec="$1"
   local ok=0
   local skip=0
   local fail=0
   local src
   local rc=0
+  local start now remaining
+  start="$(date +%s)"
 
   while IFS= read -r src; do
+    now="$(date +%s)"
+    remaining=$((timeout_sec - (now - start)))
+    if [[ "$remaining" -le 0 ]]; then
+      log "snapshot wall-clock cap reached (${timeout_sec}s)"
+      fail=$((fail + 1))
+      log "summary ok=${ok} skip=${skip} fail=${fail}"
+      return 1
+    fi
     if [[ ! -e "$src" ]]; then
       log "skip missing: $src"
       skip=$((skip + 1))
@@ -142,9 +191,15 @@ run_snapshot_loop() {
     fi
     log "snapshot: $src"
     set +e
-    kopia snapshot create --progress --no-fail-fast "$src"
+    run_timeout "$remaining" kopia snapshot create --progress --no-fail-fast "$src"
     rc=$?
     set -e
+    if [[ "$rc" -eq 124 || "$rc" -eq 137 ]]; then
+      log "snapshot wall-clock cap reached (${timeout_sec}s) rc=${rc}: $src"
+      fail=$((fail + 1))
+      log "summary ok=${ok} skip=${skip} fail=${fail}"
+      return 1
+    fi
     if [[ "$rc" -eq 0 ]]; then
       ok=$((ok + 1))
     else
@@ -168,9 +223,15 @@ cmd_run() {
   local ok=0
   local skip=0
   local src
+  local timeout_sec timeout_bin
+  timeout_sec="$(snapshot_timeout_sec)"
+  if ! timeout_bin="$(resolve_timeout_bin)"; then
+    die "missing timeout/gtimeout (coreutils) for ${timeout_sec}s wall-clock cap"
+  fi
 
   if [[ "$dry_run" -eq 1 ]]; then
     log "dry-run: would require kopia and rclone (present)"
+    log "dry-run: would cap snapshot at ${timeout_sec}s via ${timeout_bin} (KOPIA_NIGHTLY_TIMEOUT_SEC)"
     while IFS= read -r src; do
       if [[ -e "$src" ]]; then
         log "would snapshot: $src"
@@ -210,7 +271,8 @@ cmd_run() {
     log "caffeinate missing; snapshots may sleep mid-upload"
   fi
 
-  run_snapshot_loop
+  log "snapshot wall-clock cap ${timeout_sec}s via ${timeout_bin}"
+  run_snapshot_loop "$timeout_sec"
 }
 
 cmd_install() {

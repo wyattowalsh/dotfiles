@@ -17,7 +17,7 @@ just kopia-nightly-install             # sync dest runner + bootstrap agent
 just check-kopia-nightly               # static; no live kopia
 ```
 
-`just kopia-nightly*` always runs the **repo source**. Launchd runs the dest copy at `$HOME/.local/bin/kopia-nightly`. `just kopia-nightly-install` sets `KOPIA_NIGHTLY_REPO` and `/bin/cp -f`s the dest runner. Dest plist still comes from Chezmoi: `$HOME/Library/LaunchAgents/com.wyattowalsh.kopia-nightly.plist`.
+`just kopia-nightly*` always runs the **repo source**. Launchd runs `$HOME/.local/bin/kopia-nightly`. Chezmoi apply and `just kopia-nightly-install` both write that dest runner; install copies with `/bin/cp -f` when `KOPIA_NIGHTLY_REPO` is set. Dest plist still comes from Chezmoi: `$HOME/Library/LaunchAgents/com.wyattowalsh.kopia-nightly.plist`.
 
 ## Sources (04:00)
 
@@ -33,8 +33,14 @@ If the nightly label is not loaded after install, allow it under System Settings
 
 ## Sleep
 
-If the Mac is asleep at 04:00, launchd runs the job at the next user-session wake. No wake schedule. While a snapshot is running, the job holds idle sleep with `caffeinate -i`. launchd SIGTERMs the process after 12 hours; the runner trap still disables the KopiaUI login agents.
+If the Mac is asleep at 04:00, launchd runs the job at the next user-session wake. No wake schedule. While a snapshot is running, the job holds idle sleep with `caffeinate -i`.
+
+The runner caps snapshot wall-clock time at 43200s (override `KOPIA_NIGHTLY_TIMEOUT_SEC`) with `timeout` or `gtimeout`. The EXIT trap still disables the KopiaUI login agents.
 
 ## Secrets
 
-Repo password, rclone config, and Drive folder ids stay local. Docs and tracked files use `$HOME` / Chezmoi templates only. See [Security](/docs/security).
+Repo password, rclone config, and Drive folder ids stay local. Docs and tracked files use `$HOME` / Chezmoi templates only.
+
+`$HOME/.github` is in the 04:00 source list and may contain credentials that then exist in the **backup remote**. That is not a git leak — this repo does not track those files.
+
+See [Security](/docs/security).

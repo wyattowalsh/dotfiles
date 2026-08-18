@@ -6,6 +6,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUNNER="$ROOT/rig/home/dot_local/bin/executable_kopia-nightly"
 PLIST="$ROOT/rig/home/Library/LaunchAgents/com.wyattowalsh.kopia-nightly.plist.tmpl"
 JUSTFILE="$ROOT/justfile"
+DOCS="$ROOT/docs/content/docs/backup.mdx"
 
 fail=0
 
@@ -26,6 +27,7 @@ require_file() {
 require_file "$RUNNER" || true
 require_file "$PLIST" || true
 require_file "$JUSTFILE" || true
+require_file "$DOCS" || true
 
 if [[ -f "$JUSTFILE" ]]; then
   if rg -q 'if \[\[ -x "\$\{HOME\}/\.local/bin/kopia-nightly" \]\]' "$JUSTFILE"; then
@@ -69,6 +71,15 @@ if [[ -f "$RUNNER" ]]; then
   fi
   if rg -q '/4:00/' "$RUNNER"; then
     fail_msg "runner must not use awk /4:00/ substring matching"
+  fi
+  if ! rg -q 'KOPIA_NIGHTLY_TIMEOUT_SEC' "$RUNNER"; then
+    fail_msg "runner must honor KOPIA_NIGHTLY_TIMEOUT_SEC"
+  fi
+  if ! rg -q 'gtimeout' "$RUNNER"; then
+    fail_msg "runner must fall back to gtimeout"
+  fi
+  if ! rg -q -e 'command timeout' -e 'command -v timeout' "$RUNNER"; then
+    fail_msg "runner must invoke timeout/gtimeout for the wall-clock cap"
   fi
 
   expected_suffixes=(
@@ -114,17 +125,23 @@ if [[ -f "$PLIST" ]]; then
   if ! rg -q 'chezmoi.homeDir' "$PLIST"; then
     fail_msg "plist must template paths with chezmoi.homeDir"
   fi
-  if ! rg -q '<integer>43200</integer>' "$PLIST"; then
-    fail_msg "plist TimeOut must be 43200"
-  fi
-  if rg -q '<integer>21600</integer>' "$PLIST"; then
-    fail_msg "plist must not keep the old 21600 TimeOut"
+  if rg -q '<key>TimeOut</key>' "$PLIST"; then
+    fail_msg "plist must not set unimplemented TimeOut (runner enforces the cap)"
   fi
   if rg -q '/Users/' "$PLIST"; then
     fail_msg "plist must not hardcode /Users/ paths"
   fi
   if rg -qi 'drive-root-folder-id|KOPIA_PASSWORD' "$PLIST"; then
     fail_msg "plist must not embed secrets"
+  fi
+fi
+
+if [[ -f "$DOCS" ]]; then
+  if rg -qi 'sigterm' "$DOCS"; then
+    fail_msg "backup.mdx must not claim launchd SIGTERM (cap is in the runner)"
+  fi
+  if rg -qi 'timeout after 12 hours' "$DOCS"; then
+    fail_msg "backup.mdx must not treat launchd TimeOut as a 12h kill"
   fi
 fi
 
