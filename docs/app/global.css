@@ -519,6 +519,11 @@ nav:has(.site-wordmark) {
     transform: translateY(0);
   }
 
+  .path-chip:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-fd-background), 0 0 0 4px var(--color-fd-ring);
+  }
+
   .path-chip__top {
     display: flex;
     align-items: center;
@@ -581,6 +586,14 @@ nav:has(.site-wordmark) {
   .page-row:hover {
     background: color-mix(in oklab, var(--color-fd-muted) 55%, transparent);
     box-shadow: inset 2px 0 0 var(--color-fd-primary);
+  }
+
+  .page-row:focus-visible {
+    outline: none;
+    box-shadow:
+      inset 2px 0 0 var(--color-fd-primary),
+      0 0 0 2px var(--color-fd-background),
+      0 0 0 4px var(--color-fd-ring);
   }
 
   .page-row__main {

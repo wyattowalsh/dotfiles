@@ -14,7 +14,7 @@ applyTo: "docs/**,README.md,**/AGENTS.md"
 
 ## Content graph
 
-See `docs/content/docs/meta.json`. Primary paths: `index`, `fresh-mac`, `linux-setup`, `ssot-workflow`, `home-config`, `shell`, `freshen`, `validation`, `packages`, `ai-harness`, `security`, `docs-maintenance`.
+See `docs/content/docs/meta.json`. Primary paths: `index`, `fresh-mac`, `linux-setup`, `ssot-workflow`, `home-config`, `backup`, `shell`, `freshen`, `terminal`, `git`, `validation`, `packages`, `nix`, `ai-harness`, `security`, `domain-map`, `docs-maintenance`.
 
 ## Validate
 

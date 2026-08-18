@@ -2,6 +2,7 @@ import type { Icon } from "@phosphor-icons/react";
 import {
   ArrowRight,
   BookOpen,
+  Database,
   House,
   MapTrifold,
   Robot,
@@ -63,6 +64,8 @@ const sectionBrands: Record<string, BrandMark> = {
 
 const sectionFallback: Record<string, Icon> = {
   "home-config": House,
+  backup: Database,
+  database: Database,
   "ai-harness": Robot,
   security: ShieldCheck,
   "domain-map": MapTrifold,

@@ -5,8 +5,8 @@ Design system for the Fumadocs site under `docs/`. Implementation: `app/global.c
 **Palette:** Signal Graphite — cool paper / ink navy + teal signal.  
 **Icons:** [Simple Icons](https://simpleicons.org) (CC0) official tech marks in brand color (Apple, Linux, Zsh, Git, Homebrew, Nix, Ghostty, Actions). Phosphor duotone (MIT) only for non-brand concepts.  
 **Brand:** lowercase `dotfiles` wordmark (JetBrains Mono + gradient) + hex `icon.svg` (favicon, apple, OG, nav).  
-**Chrome:** GitHub via `githubUrl`, Runbooks / Start / Validate nav.  
-**Layers:** fixed grid + glow under content; glass cards.  
+**Chrome:** GitHub via `githubUrl`; nav `docs` / `mac` / `linux` / `promote` / `check`.  
+**Layers:** fixed grid + glow under content; translucent path chips and page lists.  
 **Diagrams:** Mermaid card nodes, teal stroke, linear edges, site fonts (`lib/mermaid-theme.ts`).
 
 ## Intent
@@ -33,9 +33,9 @@ Correct hierarchy (nav, cards, TOC) beats novel chrome.
 
 ### 3. Calm density
 
-Tight spacing; no hero theater. Cards and tables carry weight.
+Tight spacing; no hero theater. Lists and tables carry weight.
 
-- **Application:** Landing uses group labels + card grids; runbooks use short sections.
+- **Application:** Landing uses a path-chip strip + grouped page-list rows; runbooks use short sections.
 - **Trade-off:** Accepts less “wow” for faster operator throughput.
 
 ### 4. Token fidelity
@@ -49,13 +49,13 @@ Use Fumadocs/shadcn semantic colors (`fd-*` / theme vars). Do not invent one-off
 
 ≈150ms transitions on border/shadow/opacity; honor `prefers-reduced-motion`.
 
-- **Application:** `motion-reduce:transition-none` on interactive cards; global reduced-motion kill-switch in CSS.
+- **Application:** ~150ms on `.path-chip` / `.page-row`; global reduced-motion kill-switch in CSS.
 
 ### 6. Accessible by default
 
 Visible focus rings, ≥44px primary hit targets, contrast AA+.
 
-- **Application:** Primary CTA `min-h-11`; focus-visible rings on cards and buttons.
+- **Application:** Visible `:focus-visible` rings on `.path-chip` and `.page-row` (and leftover `.home-cta` / `.doc-card` styles).
 
 ## Color — Signal Graphite
 
@@ -78,8 +78,8 @@ Light/dark via `next-themes` (RootProvider) and `.dark` on `<html>`.
 | --- | --- |
 | Package | `@phosphor-icons/react` (MIT) |
 | Weight | **duotone** on hub/group/nav marks; regular/bold sparingly |
-| Density | One icon per hub card + group label + nav brand — **not** every MDX heading |
-| Map | `lib/icons.tsx` keyed by hub slug / group |
+| Density | One icon per path chip + page row + group label + nav brand — **not** every MDX heading |
+| Map | `lib/icons.tsx` keyed by hub slug, frontmatter icon name, and group (e.g. slug `backup` and icon `database` → Phosphor Database) |
 
 ## Mermaid — global theme
 
@@ -97,29 +97,34 @@ Light/dark via `next-themes` (RootProvider) and `.dark` on `<html>`.
 | UI / body | System sans (`--font-sans`) |
 | Commands / paths | System mono (`--font-mono`) |
 | H1 | `text-3xl`–`text-4xl`, tight tracking, bold |
-| Section labels | `text-sm`, uppercase, muted, wide tracking |
-| Card title | `text-base` semibold |
-| Card body | `text-sm` muted |
+| Section labels | Mono `text-xs`, lowercase, muted (`.group-label`) |
+| Page-row title | `~0.9rem` semibold |
+| Page-row body | `~0.8rem` muted |
 
 ## Layout
 
 - Max content width: `--fd-layout-width: 1400px`.
-- Landing: `max-w-5xl` column; responsive **1 → 2 → 3** card grid.
+- Landing (`app/page.tsx`): `home-shell` **`max-w-3xl`** column. Not a 1–2–3 card grid and not `max-w-5xl`.
+  - Header: lowercase `dotfiles` kicker + `bootstrap · promote · validate`.
+  - **Path strip** (`.path-strip` / `.path-chip`): four primary routes (mac / linux / promote / check) with first commands; 1 → 2 → 4 columns.
+  - **Page index:** `groupOrder` sections (`bootstrap` / `daily` / `map`) as `.page-list` of `.page-row` links (title, one-line description, optional first command). Same list pattern on `/docs` via `components/docs-hub.tsx`.
 - Docs: Fumadocs DocsLayout (sidebar + TOC).
 
 ## Components
 
 Prefer Fumadocs UI: `HomeLayout`, DocsLayout, Cards, Callouts, Tabs, Steps, Accordions, Mermaid MDX.
 
-Landing cards: `rounded-xl border bg-fd-card`; hover border toward primary; focus-visible ring.
+Landing path chips: bordered, translucent `fd-card` fill; hover border toward primary; `:focus-visible` ring.
 
-Primary CTA: solid `bg-fd-primary`, min height 44px.
+Landing page rows: stacked list inside a bordered `.page-list`; hover inset signal bar + title to primary; `:focus-visible` ring.
+
+`.doc-card` / `.home-cta` remain in `global.css` but are **not** the live landing.
 
 ## Content density
 
 | Surface | Density |
 | --- | --- |
-| Landing hub | High — groups + cards + first command |
+| Landing hub | High — path chips + grouped page-list rows + first command |
 | Runbooks | Medium — short sections, copy-paste commands |
 | Reference | High — tables, path maps |
 
