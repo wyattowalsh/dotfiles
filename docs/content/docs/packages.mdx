@@ -11,4 +11,43 @@ just inventory-redacted
 just brew-check
 ```
 
-Promote curated names only. Docker Desktop cask is primary — not formula `docker`. Kopia CLI is `kopia/test-builds/kopia` (nightly job); `kopiaui` cask is manual restore only. See [Promote](/docs/ssot-workflow), [Backup](/docs/backup).
+`rig/brew/Brewfile` is the package SSOT. `rig/darwin/modules/packages.nix` is a tiny nix-darwin bootstrap CLI set (`bash`, `curl`, `git`, `jq`, `ripgrep`); overlap with those Brewfile formulae is OK.
+
+## Groups
+
+Comment group headers in `rig/brew/Brewfile`:
+
+| Header | Section |
+| --- | --- |
+| `taps` | Homebrew taps required by promoted packages |
+| `core-cli` | Core CLI formulae |
+| `shell-plugins` | Zsh plugin formulae |
+| `shell-aliases` | CLIs used from shell aliases |
+| `dev-languages / containers` | Languages, build tools, optional colima |
+| `ai-tools` | AI CLI tooling |
+| `media-cli` | Media conversion CLI |
+| `data / db` | Database servers |
+| `security / RE` | Security and reverse-engineering CLI |
+| `cloud CLIs` | Cloud vendor CLIs |
+| `other CLI leaves` | Remaining CLI formulae (tap-qualified stripe/supabase) |
+| `browsers / editors / AI desktop` | Browser, editor, and AI desktop casks |
+| `comms / collaboration` | Chat and collaboration casks |
+| `media` | Media player and download casks |
+| `productivity / files` | Files, notes, and cleanup casks |
+| `desktop utilities` | Window, menu bar, and clipboard casks |
+| `dev containers / mobile` | Docker Desktop and Android tools |
+| `creative / AI local` | Local creative and AI casks |
+| `fonts` | Font casks |
+| `quicklook` | Quick Look plugins |
+| `other casks` | Remaining casks |
+| `mas — selected App Store apps (requires Apple ID on target Mac)` | Selected Mac App Store apps |
+
+## Policy
+
+| Topic | Rule |
+| --- | --- |
+| Docker | Primary is `cask "docker-desktop"`. `brew "colima"` is optional secondary — do not run both engines together. Formula `docker` stays in `exclude.txt`. |
+| Kopia | CLI is `kopia/test-builds/kopia` (nightly job). Keep the `kopia/test-builds` tap. `kopiaui` cask is manual restore only. |
+| VS Code | Extension lines are inventory only under `local/` — not tracked in the Brewfile. |
+
+Promote curated names only. See [Promote](/docs/ssot-workflow), [Backup](/docs/backup).

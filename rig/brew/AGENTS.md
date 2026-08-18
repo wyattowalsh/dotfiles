@@ -10,9 +10,9 @@
 
 - **Inventory is private** — `just inventory-redacted` writes gitignored `local/` only; never commit dumps
 - **Promote with intent** — full-transfer is allowed for this personal rig, but still skip junk (see exclude)
-- Group entries with comment headers; **no duplicate** brew/cask/mas names
+- Group entries with comment headers; **no duplicate** brew/cask basenames (last path segment after `/`). Taps may share a name with a formula. mas vs cask overlap (e.g. WhatsApp) is allowed when dual-channel is intentional
 - Docker primary is `cask "docker-desktop"`; do not re-add formula `docker` (excluded)
-- Only declare taps required by promoted packages; no test-build taps
+- Only declare taps required by promoted packages. The sole test-build tap exception is `kopia/test-builds` (required for the kopia nightly CLI). Do not add other test-build taps
 - Document `restart_service` explicitly; keep DBs/cloud daemons stopped unless intentional
 - Do **not** mass-commit `vscode` extension lines (local inventory only)
 - Validate with `just brew-check` (includes `checks/brew-exclude-check.sh`)
