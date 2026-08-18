@@ -55,10 +55,11 @@ EOF
 # shellcheck disable=SC1090
 source "$FIXTURE"
 
-set +e
-run_wrapper_with_captured_rc "$MOCK_WRAPPER"
-fixture_rc=$?
-set -e
+if run_wrapper_with_captured_rc "$MOCK_WRAPPER"; then
+  fixture_rc=0
+else
+  fixture_rc=$?
+fi
 if [ "$fixture_rc" -eq 0 ]; then
   fail_msg "fixture capture returned 0 for a wrapper that exits 7"
 elif [ "$fixture_rc" -ne 7 ]; then
@@ -99,10 +100,11 @@ ACTIONS_RUN=0
 ACTIONS_SKIPPED=0
 
 DRY_RUN=1
-set +e
-run_dev_env
-dry_rc=$?
-set -e
+if run_dev_env; then
+  dry_rc=0
+else
+  dry_rc=$?
+fi
 if [ "$dry_rc" -ne 0 ]; then
   fail_msg "dry-run path must continue after wrapper failure (rc=${dry_rc})"
 fi
@@ -110,10 +112,11 @@ fi
 ERRORS=0
 WARNINGS=0
 DRY_RUN=0
-set +e
-run_dev_env
-apply_rc=$?
-set -e
+if run_dev_env; then
+  apply_rc=0
+else
+  apply_rc=$?
+fi
 if [ "$apply_rc" -eq 0 ]; then
   fail_msg "apply-style path must return nonzero after wrapper failure"
 fi
