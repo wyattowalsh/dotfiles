@@ -6,8 +6,9 @@ The repository SHALL expose a dry-run-default agent-stack installer that locates
 
 #### Scenario: Preview agent stack
 
-- **WHEN** `just bootstrap-dev` or `just bootstrap-dev --dry-run` is run
-- **THEN** planned agent-stack actions are printed without mutating this repo's machine desired-state files
+- **WHEN** `just bootstrap-dev` is run with no arguments, or with `--dry-run`
+- **THEN** the justfile injects `--dry-run` when the argument list is empty
+- **AND** planned agent-stack actions are printed without mutating this repo's machine desired-state files
 
 #### Scenario: Missing agents checkout
 
@@ -30,6 +31,7 @@ Linux `setup.sh` SHALL install AI CLI packages as before, then delegate harness 
 
 - **WHEN** `./setup.sh` apply mode is run and `rig/bootstrap/dev-env.sh` is missing or exits non-zero
 - **THEN** setup exits non-zero
+- **AND** `run_dev_env` captures the wrapper status with `set +e` / `rc=$?` (a failed `if cmd; then` MUST NOT be treated as success)
 
 ### Requirement: Fleet platforms stay in sync
 

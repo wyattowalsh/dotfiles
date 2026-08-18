@@ -7,7 +7,7 @@ The repository SHALL expose bootstrap, validation, inventory, docs, package, and
 #### Scenario: Run aggregate checks
 
 - **WHEN** `just check` is run
-- **THEN** shell syntax, shell lint, zsh runtime syntax, freshen version SSOT smoke, JSON validation, and secret scanning are executed without mutating managed files.
+- **THEN** the following static gates run without mutating managed files: `check-hooks`, `check-shell`, `check-zsh`, `check-freshen`, `check-json`, `secrets-scan`, `brew-exclude`, `check-stale-paths`, `check-kopia-nightly`, `check-chezmoi-ignore`, `check-darwin-lock`, `check-linux-dev-env-rc`, and `check-shell-files`.
 
 #### Scenario: Run CI checks
 
@@ -44,8 +44,25 @@ The repository SHALL include a macOS bootstrap path that can run in dry-run mode
 
 - **WHEN** `just bootstrap --apply` needs nix-darwin and `darwin-rebuild` is not already installed
 - **THEN** the bootstrap uses the pinned nix-darwin revision from `rig/darwin/flake.lock`.
+- **AND** the pin SHALL be recoverable from github `locked.owner` / `repo` / `rev` **or** a tarball `locked.url` archive SHA plus `original.owner` / `repo`.
 - **AND** if `rig/darwin/flake.lock` is missing, setup fails before applying system changes with an actionable lock-generation command instead of resolving a moving branch.
+
+### Requirement: Platform bootstrap dispatch
+
+`just bootstrap` SHALL exec `rig/bootstrap/macos.sh` on Darwin and `rig/bootstrap/linux.sh` on Linux. Other kernels SHALL fail with an actionable error. Linux setup SHALL mutate by default (no `--apply` flag); macOS SHALL default to dry-run unless `--apply` is passed.
+
+#### Scenario: Linux just bootstrap
+
+- **WHEN** `just bootstrap --dry-run` is run on Linux
+- **THEN** execution reaches `rig/bootstrap/linux.sh` with the same flags
+- **AND** it does not invoke `rig/bootstrap/macos.sh`
 
 ### Requirement: External AI Harness SSOT
 
 AI and MCP client configuration SHALL live in `wyattowalsh/agents`. This repository MAY document env var names in `.env.example` only.
+
+#### Scenario: Env names only
+
+- **WHEN** an agent documents AI or MCP credentials in this repository
+- **THEN** only environment variable names appear (for example in `.env.example`)
+- **AND** harness JSON, client manifests, and secret values are not committed here

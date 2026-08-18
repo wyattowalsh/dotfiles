@@ -33,7 +33,7 @@ This repository is a **personal public** dotfiles SSOT for the `w4w-mbp` rig (us
   - `rig/home/`: Chezmoi-style home configuration templates + parity mirrors (includes headless Kopia nightly runner + LaunchAgent).
 - `docs/`: internal Fumadocs operator documentation site (human runbook SSOT).
 - `checks/`: validation and smoke-check scripts (`docs-`, `zsh-`, `freshen-`, `brew-` prefixes).
-- `openspec/`: OpenSpec change notes for non-trivial workflow/public structure changes.
+- `openspec/`: capability baselines in `openspec/specs/`; active work in `openspec/changes/<name>/`; shipped work in `openspec/changes/archive/YYYY-MM-DD-*` (archive after apply — do not leave completed work as fake-active changes).
 - `local/`: **ignored** redacted inventory and local research artifacts (never commit).
 - `.env.example`: documented env var names for AI/MCP (values stay local).
 - `.github/`: Copilot path instructions, LSP config, CI workflow (may reference `AGENTS.md`).

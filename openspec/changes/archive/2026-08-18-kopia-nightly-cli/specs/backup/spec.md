@@ -31,6 +31,7 @@ KopiaUI login LaunchAgents SHALL NOT start the app at session load.
 - **WHEN** the nightly LaunchAgent is installed
 - **THEN** it uses `StartCalendarInterval` at 04:00
 - **AND** `RunAtLoad` is false
+- **AND** wall-clock cap is enforced in the runner (`KOPIA_NIGHTLY_TIMEOUT_SEC`, default 43200), not launchd `TimeOut`
 
 ### Requirement: Secrets stay off git
 
