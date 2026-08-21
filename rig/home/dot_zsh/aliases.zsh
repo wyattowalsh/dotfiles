@@ -138,6 +138,12 @@ command -v jc &>/dev/null && alias jcp='jc -p'
 command -v mtr &>/dev/null && alias mtrc='mtr --report --report-cycles 20'
 #: Atuin history recorded by AI coding agents
 alias atuin-agents="atuin search --author '\$all-agent' -- ''"
+if command -v xh &>/dev/null; then
+  #: xh as httpie-compatible client
+  (( $+commands[http] )) || alias http='xh'
+  #: xh forcing HTTPS
+  (( $+commands[https] )) || alias https='xh --https'
+fi
 
 # Catalog lister (do not name this function aliases — that is zsh's $aliases map)
 alias-help() {

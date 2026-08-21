@@ -8,6 +8,7 @@ description: Chezmoi + rig/dots links.
 | --- | --- | --- |
 | Runtime links | `rig/dots/*` → `$HOME` | bootstrap |
 | Chezmoi | `rig/home/` | `chezmoi --source rig/home` |
+| Ghostty template data | `rig/home/.chezmoidata.toml` | public `[ghostty]` defaults so `config.tmpl` applies without live Chezmoi data; `config.local` stays machine-only |
 | direnv | `rig/home/private_dot_config/direnv/` | chezmoi (do not `use mise`) |
 | fd ignore | `rig/home/private_dot_config/fd/ignore` | chezmoi |
 | bat config | `rig/home/private_dot_config/bat/config` | chezmoi |

@@ -20,7 +20,7 @@ Promote curated names only. Docker Desktop cask is primary — not formula `dock
 | `# data / db` | `xo/xo/usql` (tap `xo/xo`). Source-built (no bottle); `brew bundle` needs a current Xcode. GitHub release fallback: `https://github.com/xo/usql/releases`. Track highlight in `~/.usqlrc` only — DSNs stay local. |
 | `# security / RE` | Includes `gitleaks` with the reverse-engineering and security toolset. |
 | `# shell-plugins` | Includes `zsh-you-should-use`. |
-| `# trial-agent-deck` | `agent-deck` plus `tmux`; tmux is the Agent Deck backend only (`tmux -L agent-deck`), while Ghostty owns everyday terminal splits. Linux `setup.sh` skips this trial. |
+| `# trial-agent-deck` | `agent-deck` plus `tmux`; tmux is the Agent Deck backend only (`tmux -L agent-deck`), while Ghostty owns everyday terminal splits. Linux `setup.sh` skips this trial. Formula is a prebuilt `darwin_arm64` tarball, but Homebrew still refuses to pour it when Xcode is older than the macOS SDK (Xcode 27 on this host). Fallback: GitHub release `agent-deck_*_darwin_arm64.tar.gz` into `~/.local/bin` until `brew install asheshgoplani/tap/agent-deck` succeeds. |
 | Deferred | **Gita** — wait until this repo tracks global `uv tool` installs. |
 
 `just` is the only task runner (Brew binary; do not install via mise). `mise` is toolchain shims only — no repo-root `mise.toml` and no mise `[tasks]`. `go-task` stays inventory leftover; do not teach it as a runner. direnv is env + `layout_uv`, not versions.

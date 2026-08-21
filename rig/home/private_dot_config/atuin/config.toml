@@ -1,20 +1,22 @@
 # Local-only Atuin. Do not commit ~/.local/share/atuin/{history.db,key,session}.
-# Ctrl-R cycles directory → workspace → session → global. Up-arrow stays zsh HISTFILE.
+# Ctrl-R is Atuin (host → session → directory → workspace → global).
+# Up-arrow stays native zsh; Atuin AI keybinding is disabled in zshrc.
 
 auto_sync = false
 update_check = false
 secrets_filter = true
 store_failed = true
 workspaces = true
-filter_mode = "directory"
-search_mode = "fuzzy"
+filter_mode = "host"
+search_mode = "daemon-fuzzy"
 style = "compact"
 inline_height = 20
 enter_accept = true
 show_preview = true
 keymap_mode = "emacs"
+ctrl_n_shortcuts = true
 
-# Extra exclusions beyond the built-in secrets_filter (command prefixes only).
+# Extra exclusions beyond the built-in secrets_filter (literals only; no secret values).
 history_filter = [
   "^op login",
   "^op item ",
@@ -27,4 +29,8 @@ history_filter = [
 enabled = false
 
 [search]
-filters = ["directory", "workspace", "session", "global"]
+filters = ["host", "session", "directory", "workspace", "global"]
+
+[daemon]
+enabled = true
+autostart = true

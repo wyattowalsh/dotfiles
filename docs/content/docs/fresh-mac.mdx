@@ -47,7 +47,7 @@ flowchart TD
 | Home | `just home-diff` |
 | Nix | `just darwin-check` |
 | Atuin | bootstrap runs `atuin import zsh` only if the history db is missing; Ctrl-R is Atuin (CTRL-T stays fzf) |
-| Agent Deck | trial only: `agent-deck` in Ghostty, `tmux -L agent-deck ls`. Do not run conductor setup. Uninstall: brew uninstall the formula + tap, then drop the isolated tmux socket. |
+| Agent Deck | trial only: `agent-deck` in Ghostty, `tmux -L agent-deck ls`. Do not run conductor setup. If `brew bundle` refuses the formula (Xcode vs SDK), install the GitHub `darwin_arm64` tarball to `~/.local/bin`. Uninstall: brew uninstall the formula + tap (or drop the local binary), then drop the isolated tmux socket. |
 
 Manual: App Store / vendor apps / AI auth. After apply, `just kopia-nightly-install` if the nightly LaunchAgent was skipped.
 
