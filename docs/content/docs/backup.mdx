@@ -14,7 +14,7 @@ just kopia-nightly doctor
 just kopia-nightly doctor --policies   # two-way 04:00 drift (network)
 just kopia-nightly-install --dry-run
 just kopia-nightly-install             # sync dest runner + bootstrap agent
-just check-kopia-nightly               # static + stubbed behavior; no live services
+just check-kopia-nightly               # static; no live kopia
 ```
 
 `just kopia-nightly*` always runs the **repo source**. Launchd runs `$HOME/.local/bin/kopia-nightly`. Chezmoi apply and `just kopia-nightly-install` both write that dest runner; install copies with `/bin/cp -f` when `KOPIA_NIGHTLY_REPO` is set. Dest plist still comes from Chezmoi: `$HOME/Library/LaunchAgents/com.wyattowalsh.kopia-nightly.plist`. After runner edits, re-run `just kopia-nightly-install` so dest picks up the new script.
@@ -25,29 +25,17 @@ just check-kopia-nightly               # static + stubbed behavior; no live serv
 
 Not snapshotted: `$HOME` itself. Never `kopia snapshot create --all`.
 
-## Nightly job
-
-Only a normal live run enters the fixed GNU `gtimeout` wrapper: TERM after 43,140 seconds, then KILL after a 60-second grace. That bounds the entire run to 43,200 seconds. `--dry-run`, `install`, and `doctor` bypass the whole-run wrapper.
-
-Before snapshots, repository readiness gets at most eight quiet probes. Each `kopia repository status` probe is bounded to 30 seconds plus a five-second KILL grace; failed probes back off for `5, 10, 20, 30, 30, 30, 30` seconds. Exhaustion is an operational failure.
-
-The runner holds a single-run `flock`. Launchd/non-TTY snapshots omit `--progress`; rclone start timeouts retry per source. After the snapshot loop, `kopia maintenance run --full` runs. A maintenance-only failure attempts at most one warning notification and preserves exit zero. Snapshot, readiness, signal, or cleanup failures exit non-zero and attempt at most one failure notification. Notification delivery is itself bounded to ten seconds plus a two-second KILL grace and never replaces the primary status.
-
 ## Login / background
 
-`install` and each nightly run disable the launchd labels `com.kopia.kopiaui.login` and `KopiaUI`; finalization re-disables both before other cleanup. Opening KopiaUI by hand can put a login agent back; the next run removes it.
+`install` and each nightly run disable `com.kopia.kopiaui.login` and `KopiaUI`. Opening KopiaUI by hand can put a login agent back; the next run removes it.
 
-The nightly label is `com.wyattowalsh.kopia-nightly`. Use these labels for diagnosis because System Settings display names can vary. If the nightly label is not loaded after install, allow it under System Settings → General → Login Items & Extensions → Allow in the Background, then re-run `just kopia-nightly-install`.
+The nightly label is `com.wyattowalsh.kopia-nightly`. If it is not loaded after install, allow it under System Settings → General → Login Items & Extensions → Allow in the Background, then re-run `just kopia-nightly-install`.
 
 ## Sleep
 
-If the Mac is asleep at 04:00, launchd runs the job at the next user-session wake. No wake schedule. After wake, the bounded readiness loop runs before snapshots. While work is active, `caffeinate -i -w $$` holds idle sleep and exits with the runner.
+If the Mac is asleep at 04:00, launchd runs the job at the next user-session wake. No wake schedule. While a snapshot is running, the job holds idle sleep with `caffeinate -i`.
 
-The runner caps snapshot wall-clock time at 43200s (override `KOPIA_NIGHTLY_TIMEOUT_SEC`) with `timeout` or `gtimeout`. The plist has `ExitTimeOut=120` only as launchd's termination grace; it deliberately has no `TimeOut` wall-clock key. The EXIT trap still disables the KopiaUI login agents.
-
-## Offline assurance
-
-`just check-kopia-nightly` combines static contract checks with disposable command stubs. Its matrix covers success, readiness exhaustion, a timed-out status probe, snapshot failure, maintenance warning, cleanup failure, TERM/INT, and notification failure. It never contacts the real repository, changes launchd state, or posts a desktop notification.
+The runner caps snapshot wall-clock time at 43200s (override `KOPIA_NIGHTLY_TIMEOUT_SEC`) with `timeout` or `gtimeout`. The plist deliberately has no `TimeOut` key; launchd does not implement that wall-clock limit. The EXIT trap still disables the KopiaUI login agents.
 
 ## Secrets
 

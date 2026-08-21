@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-printf 'flock|%s\n' "$*" >>"${KOPIA_NIGHTLY_TEST_STATE:?}/calls"
-
-if [[ "${KOPIA_NIGHTLY_TEST_SCENARIO:-}" == "lock_contention" ]]; then
-  exit 1
-fi

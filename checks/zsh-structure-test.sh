@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2016,SC2329 # Literal awk programs; cleanup is trap-invoked.
+# shellcheck disable=SC2016,SC2317,SC2329 # Literal awk programs; cleanup is trap-invoked.
 # Fixture-TDD for zsh-structure.sh
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-printf 'sleep|%s\n' "$*" >>"${KOPIA_NIGHTLY_TEST_STATE:?}/calls"

@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-printf 'osascript|%s\n' "$*" >>"${KOPIA_NIGHTLY_TEST_STATE:?}/calls"
-if [[ "${KOPIA_NIGHTLY_TEST_SCENARIO:-}" == "notification_failure" ]]; then
-  exit 13
-fi

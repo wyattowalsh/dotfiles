@@ -26,7 +26,7 @@ just docs-ci
 | `just check-zsh` | zsh syntax/mirror parity, exact plugin/history/load ordering, tracked pnpm completion, `fkill` PID safety, and activation-only `layout_uv` fixtures |
 | `just check-rig-ecosystem-assurance` | Agent Deck/tmux ownership, nbdime provider and Git wiring, no unapproved `dft`/difftastic wiring, and no G4 macOS defaults |
 | `just check-yazi-config` | Current fields, resolved plugin/flavor locks, dark/light theme mapping, Option DuckDB keys, and isolated native parsing when Yazi is available |
-| `just check-kopia-nightly` | Static runner/plist rules plus offline stub scenarios for timeouts, signals, cleanup, maintenance, and notifications |
+| `just check-kopia-nightly` | Static runner/plist contract (cap in the runner, no launchd `TimeOut`; no live `kopia` / launchd) |
 | `just check-bats` | File-only Bats coverage when Bats is present; required in CI |
 
 ```mermaid
@@ -41,7 +41,7 @@ flowchart LR
   E --> H["shfmt -d"]
   I --> J["zsh + Yazi"]
   I --> K["Brew/Git/Nix"]
-  I --> L["Kopia fixtures"]
+  I --> L["Kopia contract"]
 ```
 
 ## `just check`
