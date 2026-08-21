@@ -2,7 +2,9 @@
 
 ## Scope
 
-Fumadocs documentation site (`docs/`). Serves operator runbooks for macOS bootstrap, SSOT workflow, validation, packages, shell, and AI harness pointers. Design SSOT: `DESIGN.md`. Theme: Tailwind v4 + Fumadocs shadcn preset via `app/global.css` (never import fumadocs CSS without Tailwind).
+Fumadocs documentation site (`docs/`). Serves operator runbooks for macOS bootstrap, SSOT workflow, validation, packages, shell, and AI harness pointers.
+
+**Design SSOT:** `DESIGN.md`. Theme: Tailwind v4 + Fumadocs shadcn preset via `app/global.css` (never import fumadocs CSS without Tailwind). Landing is a path-chip strip + grouped **page-list** (not a card grid) — do not contradict `DESIGN.md`.
 
 ## Content rules
 
@@ -18,7 +20,7 @@ Fumadocs documentation site (`docs/`). Serves operator runbooks for macOS bootst
 | Repo change | Update |
 | --- | --- |
 | New justfile recipe | `validation.mdx` |
-| Bootstrap behavior | `fresh-mac.mdx` |
+| Bootstrap behavior | `fresh-mac.mdx` / `linux-setup.mdx` |
 | Brewfile group changes | `packages.mdx` |
 | Chezmoi/home layout | `home-config.mdx` |
 | Shell structure / tools | `shell.mdx` |
@@ -26,7 +28,7 @@ Fumadocs documentation site (`docs/`). Serves operator runbooks for macOS bootst
 | AI harness pointer | `ai-harness.mdx` (SSOT: wyattowalsh/agents) |
 | SSOT promotion flow | `ssot-workflow.mdx` |
 | Docs workflow itself | `docs-maintenance.mdx` |
-| Sidebar / hub cards | `meta.json` **and** `lib/hub-manifest.json` |
+| Sidebar / landing page-list | `meta.json` **and** `lib/hub-manifest.json` |
 | Visual / theme tokens | `DESIGN.md` + `app/global.css` |
 
 ## Validation
@@ -45,12 +47,16 @@ Commit `docs/pnpm-lock.yaml` whenever `docs/package.json` changes.
 
 - `app/global.css` — Tailwind v4 + shadcn/preset CSS entry
 - `postcss.config.mjs` — `@tailwindcss/postcss`
-- `app/page.tsx` — landing from `lib/sections.ts`
+- `app/page.tsx` — landing from `lib/sections.ts` (page-list, not cards)
 - `app/docs/` — Fumadocs DocsLayout + slug routing
-- `components/mdx.tsx` — Callout, Mermaid, Steps, Tabs, Cards
+- `components/mdx.tsx` — Callout, Mermaid, Steps, Tabs, Cards (MDX; not the landing)
 - `app/api/search` — static Orama index
+- `app/llms.txt/route.ts` — Fumadocs `llms` index
+- `app/llms-full.txt/route.ts` — concatenated page text
 - `lib/source.ts` — loader from `content/docs`
 - `DESIGN.md` — design principles + tokens
+
+Operator prose lives under `docs/content/docs/` only.
 
 ## Not in scope
 

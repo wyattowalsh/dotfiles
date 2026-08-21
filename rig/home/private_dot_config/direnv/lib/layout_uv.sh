@@ -42,7 +42,7 @@ _layout_uv_activate() {
 }
 
 layout_uv() {
-  if (( $# )); then
+  if (($#)); then
     log_error "uv: layout uv is activation-only and takes no sync arguments; run layout_uv_sync explicitly."
     return 2
   fi

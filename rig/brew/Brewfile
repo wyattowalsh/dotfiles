@@ -3,6 +3,7 @@
 # Exclude list: brew/exclude.txt (junk installers/auto-updaters).
 # vscode extensions: inventory only under local/ — not tracked here.
 # Docker primary: cask "docker-desktop"; colima is optional secondary (do not run both engines together).
+# Dual-channel (intentional): WhatsApp cask+mas; Ice + Hidden Bar (jordanbaird-ice + hiddenbar); Maccy + CopyQ.
 
 # taps
 tap "ariga/tap"
@@ -157,8 +158,6 @@ brew "mcp-toolbox"
 brew "ollama"
 brew "pueue", restart_service: true
 brew "repomix"
-brew "stripe"
-brew "supabase"
 
 # media-cli
 brew "ffmpeg-full"
@@ -288,7 +287,7 @@ cask "discord"
 cask "zoom"
 cask "signal"
 cask "telegram-desktop"
-cask "whatsapp"
+cask "whatsapp" # intentional dual-channel with mas "WhatsApp"
 cask "messenger"
 cask "notion"
 cask "notion-mail"
@@ -344,12 +343,12 @@ cask "nordvpn"
 
 # desktop utilities
 cask "rectangle"
-cask "jordanbaird-ice"
-cask "hiddenbar"
+cask "jordanbaird-ice" # intentional dual-channel with hiddenbar (Ice + Hidden Bar)
+cask "hiddenbar" # intentional dual-channel with jordanbaird-ice (Ice + Hidden Bar)
 cask "betterdisplay"
 cask "stats"
-cask "maccy"
-cask "copyq"
+cask "maccy" # intentional dual-channel with copyq
+cask "copyq" # intentional dual-channel with maccy
 cask "menubarx"
 cask "pika"
 cask "flowvision"
@@ -475,6 +474,6 @@ mas "waifu2x", id: 1286485858
 mas "Wappalyzer - Technology profiler", id: 1520333300
 mas "Wayback Machine", id: 1472432422
 mas "WhatFont", id: 1437138382
-mas "WhatsApp", id: 310633997
+mas "WhatsApp", id: 310633997 # intentional dual-channel with cask "whatsapp"
 mas "Whisk", id: 1502044457
 mas "Xcode", id: 497799835

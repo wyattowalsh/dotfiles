@@ -1,6 +1,6 @@
 # ~/.zsh/functions/freshen
 #compdef freshen
-# freshen v1.9.2 — System maintenance: brew + caches + App Store + storage planning
+# freshen v1.9.3 — System maintenance: brew + caches + App Store + storage planning
 
 typeset -g _FRESHEN_VERSION _FRESHEN_RELEASE_DATE
 if [[ -z "$_FRESHEN_VERSION" ]]; then
@@ -12,8 +12,8 @@ if [[ -z "$_FRESHEN_VERSION" ]]; then
         fi
         break
     done
-    [[ -n "$_FRESHEN_VERSION" ]] || _FRESHEN_VERSION="1.9.2"
-    [[ -n "$_FRESHEN_RELEASE_DATE" ]] || _FRESHEN_RELEASE_DATE="2026-08-12"
+    [[ -n "$_FRESHEN_VERSION" ]] || _FRESHEN_VERSION="1.9.3"
+    [[ -n "$_FRESHEN_RELEASE_DATE" ]] || _FRESHEN_RELEASE_DATE="2026-08-18"
 fi
 
 # ── Helper: help text ──────────────────────────────────────────────────────
@@ -901,10 +901,10 @@ freshen() {
             ocmd=(brew outdated --formula --quiet)
         fi
         if (( timeout_s > 0 )) && command -v timeout >/dev/null 2>&1; then
-            timeout "$timeout_s" "${ocmd[@]}" >| "$outpath" 2>/dev/null
+            command timeout "$timeout_s" "${ocmd[@]}" >| "$outpath" 2>/dev/null
             return $?
         elif (( timeout_s > 0 )) && command -v gtimeout >/dev/null 2>&1; then
-            gtimeout "$timeout_s" "${ocmd[@]}" >| "$outpath" 2>/dev/null
+            command gtimeout "$timeout_s" "${ocmd[@]}" >| "$outpath" 2>/dev/null
             return $?
         fi
         "${ocmd[@]}" >| "$outpath" 2>/dev/null
@@ -1596,7 +1596,8 @@ freshen() {
         fi
         local old_pid=""
         [[ -r "${lock_dir}/pid" ]] && old_pid="$(< "${lock_dir}/pid")"
-        if [[ "$old_pid" == <-> ]] && ! kill -0 "$old_pid" 2>/dev/null; then
+        # Empty or non-numeric pid files are stale (do not require old_pid == <->).
+        if [[ "$old_pid" != <-> ]] || ! kill -0 "$old_pid" 2>/dev/null; then
             rm -rf -- "$lock_dir" 2>/dev/null || true
             if mkdir "$lock_dir" 2>/dev/null; then
                 print -r -- "$$" >| "${lock_dir}/pid"
@@ -1796,9 +1797,9 @@ freshen() {
     # Bound inventory children when GNU timeout/gtimeout exists (0 = unlimited).
     if (( do_formulae )); then
         if (( _outdated_timeout > 0 )) && command -v timeout >/dev/null 2>&1; then
-            timeout "$_outdated_timeout" brew outdated --formula --quiet > "$tmp/formulae" 2>"$tmp/formulae.err" &
+            command timeout "$_outdated_timeout" brew outdated --formula --quiet > "$tmp/formulae" 2>"$tmp/formulae.err" &
         elif (( _outdated_timeout > 0 )) && command -v gtimeout >/dev/null 2>&1; then
-            gtimeout "$_outdated_timeout" brew outdated --formula --quiet > "$tmp/formulae" 2>"$tmp/formulae.err" &
+            command gtimeout "$_outdated_timeout" brew outdated --formula --quiet > "$tmp/formulae" 2>"$tmp/formulae.err" &
         else
             brew outdated --formula --quiet > "$tmp/formulae" 2>"$tmp/formulae.err" &
         fi
@@ -1806,18 +1807,18 @@ freshen() {
     fi
     if (( do_casks && cask_greedy )); then
         if (( _outdated_timeout > 0 )) && command -v timeout >/dev/null 2>&1; then
-            timeout "$_outdated_timeout" brew outdated --cask --greedy --quiet > "$tmp/casks" 2>"$tmp/casks.err" &
+            command timeout "$_outdated_timeout" brew outdated --cask --greedy --quiet > "$tmp/casks" 2>"$tmp/casks.err" &
         elif (( _outdated_timeout > 0 )) && command -v gtimeout >/dev/null 2>&1; then
-            gtimeout "$_outdated_timeout" brew outdated --cask --greedy --quiet > "$tmp/casks" 2>"$tmp/casks.err" &
+            command gtimeout "$_outdated_timeout" brew outdated --cask --greedy --quiet > "$tmp/casks" 2>"$tmp/casks.err" &
         else
             brew outdated --cask --greedy --quiet > "$tmp/casks" 2>"$tmp/casks.err" &
         fi
         _inventory_casks_pid=$!
     elif (( do_casks )); then
         if (( _outdated_timeout > 0 )) && command -v timeout >/dev/null 2>&1; then
-            timeout "$_outdated_timeout" brew outdated --cask --quiet > "$tmp/casks" 2>"$tmp/casks.err" &
+            command timeout "$_outdated_timeout" brew outdated --cask --quiet > "$tmp/casks" 2>"$tmp/casks.err" &
         elif (( _outdated_timeout > 0 )) && command -v gtimeout >/dev/null 2>&1; then
-            gtimeout "$_outdated_timeout" brew outdated --cask --quiet > "$tmp/casks" 2>"$tmp/casks.err" &
+            command gtimeout "$_outdated_timeout" brew outdated --cask --quiet > "$tmp/casks" 2>"$tmp/casks.err" &
         else
             brew outdated --cask --quiet > "$tmp/casks" 2>"$tmp/casks.err" &
         fi

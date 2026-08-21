@@ -13,7 +13,7 @@ alias zshreload='exec zsh'
 #: edit Oh My Zsh in $EDITOR
 alias ohmyzsh="\$EDITOR ~/.oh-my-zsh"
 #: GNU timeout via gtimeout
-alias timeout='gtimeout'
+command -v gtimeout &>/dev/null && alias timeout='gtimeout'
 #: rm with confirmation
 alias rm='rm -i'
 #: mv with confirmation
@@ -78,7 +78,7 @@ alias curp="cursor ."
 #: Cursor CLI
 alias agt='agent'
 #: Chrome with remote debugging on 9222
-alias chrome-debug='open -a "Google Chrome" --args --remote-debugging-port=9222'
+[[ "$OSTYPE" == darwin* ]] && alias chrome-debug='open -a "Google Chrome" --args --remote-debugging-port=9222'
 #: local dbt wrapper
 alias dbtf="$HOME/.local/bin/dbt"
 

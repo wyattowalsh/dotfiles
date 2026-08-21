@@ -9,35 +9,45 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate:
     name: Validate
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6.1.0
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v6.0.10
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 11.9.0
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6.5.0
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: "24"
           cache: pnpm
           cache-dependency-path: docs/pnpm-lock.yaml
 
       - name: Install just
-        uses: extractions/setup-just@v4
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
 
       - name: Set up system validation tools
         run: |
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y zsh ripgrep shellcheck shfmt bats
+          sudo apt-get install -y zsh ripgrep jq shellcheck shfmt bats
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            echo "shellcheck missing after install" >&2
+            exit 1
+          fi
 
       - name: Run CI validation
         run: just ci

@@ -34,7 +34,7 @@ This repository is a **personal public** dotfiles SSOT for the `w4w-mbp` rig (us
   - `rig/home/`: Chezmoi-style home configuration templates + parity mirrors (includes headless Kopia nightly runner + LaunchAgent).
 - `docs/`: internal Fumadocs operator documentation site (human runbook SSOT).
 - `checks/`: validation and smoke-check scripts (`docs-`, `zsh-`, `freshen-`, `brew-` prefixes).
-- `openspec/`: OpenSpec change notes for non-trivial workflow/public structure changes.
+- `openspec/`: capability baselines in `openspec/specs/`; active work in `openspec/changes/<name>/`; shipped work in `openspec/changes/archive/YYYY-MM-DD-*` (archive after apply — do not leave completed work as fake-active changes).
 - `local/`: **ignored** redacted inventory and local research artifacts (never commit).
 - `.env.example`: documented env var names for AI/MCP (values stay local).
 - `.github/`: Copilot path instructions, LSP config, CI workflow (may reference `AGENTS.md`).
@@ -95,3 +95,27 @@ This repository is a **personal public** dotfiles SSOT for the `w4w-mbp` rig (us
 - AI harness docs point to `wyattowalsh/agents`; only env var **names** belong in dotfiles.
 - Never paste `local/` inventory, secret values, or absolute `/Users/<name>/` paths into docs.
 - Validate doc changes with `just docs-ci` and `just secrets-scan` before merge.
+
+## Cursor Cloud specific instructions
+The startup update script (see the Cloud Agent environment) installs `zsh`, `ripgrep`, `shellcheck`, `just` 1.39.0 (to `/usr/local/bin`), `uv` + `pre-commit`, and runs `pnpm -C docs install --frozen-lockfile`. Node/pnpm ship in the base image. After startup you can run everything below without extra PATH setup.
+
+- **Canonical validation:** `just ci` (= `check` + `smoke` + `docs-ci`) — same command GitHub CI runs. `just check` is static-only; docs steps live in `just docs-ci`.
+- **`just` version matters:** the `justfile` uses the `[working-directory: 'docs']` attribute, which needs `just >= 1.24`. Ubuntu's apt `just` (1.21) is too old and fails to parse the file — always use the pinned 1.39.0 the update script installs, not `apt install just`.
+- **Docs site is the runnable app:** `pnpm -C docs dev` serves Fumadocs/Next.js 16 (Turbopack) at http://localhost:3000. Static build: `just docs-build` (output `docs/out`). Frozen install + typecheck + build + doc health checks run via `just docs-ci`.
+- **Expected non-fatal warnings:** `just smoke` and `./setup.sh --dry-run` print `[WARN] ... symlink missing/not a symlink` for `$HOME` dotfiles and an `agents checkout not found` notice. This is normal on a cloud VM where the rig is not applied; both still exit 0. Do not try to "fix" these by creating symlinks.
+- **Do not apply the rig here:** never run `./setup.sh` (non-dry-run) or `just bootstrap --apply` in the cloud VM — they mutate `$HOME`/system state for the real Mac/Linux rig. Use `--dry-run` to exercise the bootstrap path.
+- **Optional linters:** `shellcheck` (for `just check-shell`) and `pre-commit` (for `just check-hooks`) are installed but the recipes skip gracefully if absent; `pre-commit` resolves via `/usr/local/bin` symlink to the `uv`-managed install in `~/.local/bin`.
+
+### AI harness (wyattowalsh/agents) bootstrap
+SSOT for the harness is [wyattowalsh/agents](https://github.com/wyattowalsh/agents); this repo only delegates via `rig/bootstrap/dev-env.sh` (`just bootstrap-dev`). It is **not** part of the update script (heavy second repo + optional). Provision on demand:
+
+```bash
+git clone --depth 1 https://github.com/wyattowalsh/agents.git ~/dev/projects/agents
+uv sync --project ~/dev/projects/agents          # builds the wagents env (Python 3.13+, auto-provisioned)
+just bootstrap-dev --apply --home                # projects repo + ~/.cursor harness surfaces (cloud profile auto --skip-mcphub)
+```
+
+Cloud-specific caveats found during setup:
+- **Seed `~/.codex/config.toml` first** (`mkdir -p ~/.codex && : > ~/.codex/config.toml`). `scripts/sync_agent_stack.py` reads it unconditionally and crashes with `FileNotFoundError` on a machine without codex; an empty file parses fine.
+- **`wagents` CLI is currently broken at agents HEAD** — `cannot import name 'web_app' from 'wagents.docs'` (`wagents/cli.py`). The `sync-repo`/`sync-home` projection (agents, hooks, rules, skill symlinks) and MCPHub are unaffected, but the `skills-preview` and `hooks` phases warn until this is fixed upstream. This is not a dotfiles bug.
+- **MCPHub is opt-in and loopback-only.** `just bootstrap-dev --apply --mcphub` (or `bash ~/dev/projects/agents/scripts/mcphub/start-local-only.sh`) starts `npx @samanhappy/mcphub` on `127.0.0.1:46683`; it needs `~/dev/projects/agents/.env.mcphub` (gitignored) with local `ADMIN_PASSWORD`/`JWT_SECRET`/`MCPHUB_BEARER_TOKEN`. The running hub persists OAuth client state into `mcp/mcphub/mcp_settings.json`, so `generate_mcphub_settings.py --check` reports drift once the hub has run — expected, not source drift.

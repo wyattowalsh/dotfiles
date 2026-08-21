@@ -68,11 +68,11 @@ if hist_path.is_file():
         s = s.split("|", 1)[0].split("&&", 1)[0].split(";", 1)[0].strip()
         if not s:
             continue
-        token = s.split()[0].strip("'\"")
-        if "/" in token:
-            token = Path(token).name
-        if token and token not in {"export", "unset", "\\"}:
-            hist_counts[token] += 1
+        cmd = s.split()[0].strip("'\"")
+        if "/" in cmd:
+            cmd = Path(cmd).name
+        if cmd and cmd not in {"export", "unset", "\\"}:
+            hist_counts[cmd] += 1
 
 defined_hits = [(name, hist_counts.get(name, 0)) for name in defined]
 defined_hits.sort(key=lambda item: (-item[1], item[0]))

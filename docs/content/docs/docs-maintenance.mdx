@@ -10,10 +10,17 @@ description: Site update rules.
 | `docs/DESIGN.md` | Design SSOT |
 | `docs/app/global.css` | Tailwind + theme |
 | `lib/hub-manifest.json` + `meta.json` | Hub + sidebar |
+| `docs/app/api/search` | Static Orama search index |
+| `docs/app/llms.txt/route.ts` | `/llms.txt` — Fumadocs page index |
+| `docs/app/llms-full.txt/route.ts` | `/llms-full.txt` — concatenated page text |
 
 ```bash
-just docs-ci    # typecheck + build + CSS health + sensitive + hub-parity
+just docs-ci    # frozen lockfile + typecheck + build + CSS + sensitive + hub-parity
 cd docs && pnpm dev
 ```
+
+`just docs-ci` runs `pnpm install --frozen-lockfile` (then typecheck, build, `docs-css-health`, `docs-sensitive`, `docs-hub-parity`). Local `just docs-install` is unfrozen `pnpm install`. Commit `docs/pnpm-lock.yaml` whenever `docs/package.json` changes.
+
+Search is the docs dialog over the static Orama index (`app/api/search` + `components/search.tsx`). LLM exports: `/llms.txt` (index) and `/llms-full.txt` (full processed pages).
 
 CSS: always `global.css` → Tailwind pipeline — never raw `fumadocs-ui/css/*` imports in TSX. Page add/rename → update **both** `meta.json` and `hub-manifest.json`.

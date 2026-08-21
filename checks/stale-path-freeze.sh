@@ -12,12 +12,13 @@ scan_file() {
   [ -f "$file" ] || return 0
 
   # Skip intentional policy lines that mention old paths only to forbid them.
+  # Do not skip a line merely because it also contains a canonical rig/ path;
+  # a stale brew/Brewfile token on the same line must still fail.
   local line_no=0
   while IFS= read -r line || [ -n "$line" ]; do
     line_no=$((line_no + 1))
     case "$line" in
       *'do not reintroduce'* | *'Do not reintroduce'* | *'must not reintroduce'*) continue ;;
-      *'rig/brew'* | *'rig/bootstrap'* | *'rig/dots'* | *'rig/home'* | *'rig/darwin'*) continue ;;
     esac
 
     if printf '%s\n' "$line" | rg -q \
@@ -62,6 +63,12 @@ done < <(find .github -type f \( -name '*.md' -o -name '*.yml' -o -name '*.yaml'
 while IFS= read -r -d '' f; do
   scan_file "$f"
 done < <(find rig -type f -name 'AGENTS.md' -print0 2>/dev/null)
+
+if [ -d openspec ]; then
+  while IFS= read -r -d '' f; do
+    scan_file "$f"
+  done < <(find openspec -type f \( -name '*.md' -o -name '*.mdx' -o -name '*.yml' -o -name '*.yaml' -o -name '*.txt' \) -print0 2>/dev/null)
+fi
 
 if [ "$hits" -gt 0 ]; then
   printf 'stale-path-freeze: %s hit(s)\n' "$hits" >&2

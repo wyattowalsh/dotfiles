@@ -212,10 +212,6 @@ retry_with_backoff() {
   return "$rc"
 }
 
-is_network_or_auth_error() {
-  printf '%s' "$1" | grep -Eqi 'auth|unauthorized|forbidden|network|timeout|timed out|eai_again|enotfound|econnrefused|econnreset|401|403|could not resolve host|could not resolve hostname|name or service not known|failed to clone|repository not found|could not read from remote repository'
-}
-
 have_privilege() {
   [ "$(id -u)" -eq 0 ] || command -v sudo >/dev/null 2>&1
 }
@@ -358,14 +354,27 @@ format_duration() {
 
 cleanup() {
   local rc=$?
+  trap - EXIT
   release_setup_lock
 
-  if [ "$rc" -ne 0 ]; then
+  # error() already increments ERRORS; only count uncounted command failures.
+  if [ "$rc" -ne 0 ] && [ "$ERRORS" -eq 0 ]; then
     ERRORS=$((ERRORS + 1))
+  fi
+
+  if [ "$rc" -ne 0 ]; then
     printf '%s setup.sh failed with exit code %s\n' "$(styled_tag ERROR "$COLOR_ERROR")" "$rc" >&2
   fi
 
   print_summary
+
+  if [ "$ERRORS" -gt 0 ]; then
+    if [ "$rc" -ne 0 ]; then
+      exit "$rc"
+    fi
+    exit 1
+  fi
+  exit 0
 }
 
 parse_args() {
@@ -382,6 +391,7 @@ parse_args() {
         ;;
       -h | --help)
         usage
+        trap - EXIT
         exit 0
         ;;
       *)
@@ -674,8 +684,7 @@ github_asset_url() {
 
   release_json="$(retry_with_backoff "Fetch latest release metadata for ${repo}" curl -fsSL "https://api.github.com/repos/${repo}/releases/latest")"
   printf '%s\n' "$release_json" \
-    | jq -r --arg regex "$regex" '.assets[] | select(.name | test($regex)) | .browser_download_url' \
-    | head -n1
+    | jq -r --arg regex "$regex" '[.assets[] | select(.name | test($regex)) | .browser_download_url][0] // empty'
 }
 
 install_tar_binary_from_github() {
@@ -724,7 +733,7 @@ install_tar_binary_from_github() {
     rm -rf "$tmpdir"
     return 1
   fi
-  binary_path="$(find "$tmpdir" -type f -name "$binary" | head -n1)"
+  binary_path="$(find "$tmpdir" -type f -name "$binary" -print -quit)"
 
   if [ -z "$binary_path" ]; then
     error "Binary ${binary} not found in downloaded archive from ${repo}."
@@ -875,7 +884,8 @@ install_nvm_and_node() {
       return 1
     fi
 
-    if ! run_action "Installing nvm" bash "$installer"; then
+    # PROFILE=/dev/null: do not append nvm lines into ~/.zshrc (may be a repo symlink).
+    if ! run_action "Installing nvm" env PROFILE=/dev/null bash "$installer"; then
       rm -f "$installer"
       return 1
     fi
@@ -955,7 +965,7 @@ install_go() {
 
   local version_text version archive_url tmpdir archive
   version_text="$(retry_with_backoff "Fetch latest Go version" curl -fsSL https://go.dev/VERSION?m=text)"
-  version="$(printf '%s\n' "$version_text" | head -n1)"
+  version="${version_text%%$'\n'*}"
 
   if [ -z "$version" ]; then
     error "Unable to determine latest Go version."
@@ -971,8 +981,25 @@ install_go() {
     return 1
   fi
 
+  # Extract first; replace /usr/local/go only after a successful extract.
+  if ! run_action "Extracting Go archive" tar -C "$tmpdir" -xzf "$archive"; then
+    rm -rf "$tmpdir"
+    return 1
+  fi
+  if [ ! -d "$tmpdir/go" ]; then
+    error "Go archive did not contain a go/ directory."
+    rm -rf "$tmpdir"
+    return 1
+  fi
+
+  run_privileged rm -rf /usr/local/go.new
+  if ! run_action "Staging Go at /usr/local/go.new" run_privileged cp -a "$tmpdir/go" /usr/local/go.new; then
+    run_privileged rm -rf /usr/local/go.new || true
+    rm -rf "$tmpdir"
+    return 1
+  fi
   run_privileged rm -rf /usr/local/go
-  run_privileged tar -C /usr/local -xzf "$archive"
+  run_privileged mv /usr/local/go.new /usr/local/go
   run_privileged ln -sfn /usr/local/go/bin/go /usr/local/bin/go
   run_privileged ln -sfn /usr/local/go/bin/gofmt /usr/local/bin/gofmt
   rm -rf "$tmpdir"
@@ -1107,7 +1134,7 @@ install_ai_clis() {
 run_dev_env() {
   local -a args=()
   local rc=0
-  local wrapper="$REPO_ROOT/rig/bootstrap/dev-env.sh"
+  local wrapper="${DEV_ENV_WRAPPER:-$REPO_ROOT/rig/bootstrap/dev-env.sh}"
 
   if [ "$SMOKE_CHECK" -eq 1 ]; then
     args+=(--check)
@@ -1131,12 +1158,16 @@ run_dev_env() {
     return 1
   fi
 
-  info "Delegating agent stack to rig/bootstrap/dev-env.sh ${args[*]}"
-  if bash "$wrapper" "${args[@]}"; then
+  info "Delegating agent stack to ${wrapper} ${args[*]}"
+  # After a failed `if cmd; then`, bash $? is 0. Capture before branching.
+  set +e
+  bash "$wrapper" "${args[@]}"
+  rc=$?
+  set -e
+  if [ "$rc" -eq 0 ]; then
     mark_action_run
     return 0
   fi
-  rc=$?
   if [ "$DRY_RUN" -eq 1 ]; then
     warn "Agent-stack bootstrap exited ${rc}; continuing setup."
     mark_action_skipped
@@ -1200,6 +1231,7 @@ sync_universal_skill_links() {
   fi
 
   local -a target_dirs=()
+  command -v claude >/dev/null 2>&1 && target_dirs+=("$HOME/.claude/skills")
   command -v copilot >/dev/null 2>&1 && target_dirs+=("$HOME/.copilot/skills")
   command -v codex >/dev/null 2>&1 && target_dirs+=("$HOME/.codex/skills")
   command -v grok >/dev/null 2>&1 && target_dirs+=("$HOME/.grok/skills")
@@ -1334,7 +1366,10 @@ main() {
     else
       run_smoke_checks
     fi
-    return
+    if [ "$ERRORS" -gt 0 ]; then
+      return 1
+    fi
+    return 0
   fi
 
   if [ "$DRY_RUN" -eq 0 ]; then
@@ -1345,6 +1380,8 @@ main() {
 
   ensure_local_bin
   install_apt_tools
+  # Link dots before OMZ so KEEP_ZSHRC=yes cannot plant a real ~/.zshrc.
+  create_symlinks
   install_oh_my_zsh
   install_github_release_tools
   install_nvm_and_node
@@ -1354,7 +1391,6 @@ main() {
   ensure_ai_cli_startup_shims
   run_dev_env
   sync_universal_skill_links
-  create_symlinks
   set_zsh_default_shell
 
   if [ "$DRY_RUN" -eq 0 ]; then
@@ -1362,7 +1398,13 @@ main() {
   elif [ "$VERBOSE" -eq 1 ]; then
     run_smoke_checks || warn "Post-run smoke checks reported issues."
   fi
+
+  if [ "$ERRORS" -gt 0 ]; then
+    return 1
+  fi
 }
 
-trap cleanup EXIT
-main "$@"
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  trap cleanup EXIT
+  main "$@"
+fi

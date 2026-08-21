@@ -1,11 +1,13 @@
+{{- /* chezmoi:template:missing-key=zero */ -}}
 # Ghostty configuration — promoted from live rig (w4w-mbp).
-# Machine-specific overrides: ~/.config/ghostty/config.local
+# Optional local overlay (file may be absent): ~/.config/ghostty/config.local
+# Background PNG is local-only; missing file is expected until copied.
 #
 # Validate:
 #   ghostty +validate-config
 #   ghostty +show-config --changes-only
 
-config-file = ?config.local
+config-file = ?{{ .chezmoi.homeDir }}/.config/ghostty/config.local
 
 theme = {{ .ghostty.theme | default "APEX Light Ultra" }}
 palette-generate = true

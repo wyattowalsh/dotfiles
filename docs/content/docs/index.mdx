@@ -12,5 +12,7 @@ Tracked state only. AI harness → [wyattowalsh/agents](https://github.com/wyatt
 just --list
 just check
 just bootstrap --dry-run
-just bootstrap-dev
+just bootstrap-dev          # no args injects --dry-run
 ```
+
+`just bootstrap` → Darwin `macos.sh` (dry-run default; `--apply` to mutate) or Linux `linux.sh` (mutates unless `--dry-run`). `just bootstrap-dev` always dry-runs when you pass no flags.

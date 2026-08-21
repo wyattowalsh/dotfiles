@@ -11,6 +11,7 @@ description: Zsh structure + tools.
 | `rig/home/dot_zsh/aliases.zsh` | → `~/.zsh/aliases.zsh` (still sourced from zshrc) |
 | `rig/home/dot_zsh/functions/` | autoload: `freshen`, `sync-cursor`, `bak`, `tmpd`, `fkill` |
 | `checks/zsh-structure.sh` | L0–L4 gate |
+| `checks/zsh-structure-test.sh` | fixture-TDD; part of `just check-zsh` |
 
 | Knob | Value |
 | --- | --- |
@@ -76,4 +77,14 @@ just check-zsh-smoke    # local only
 just zsh-alias-usage    # local HISTFILE tokens → local/zsh-alias-usage.txt
 ```
 
-After first Atuin install, bootstrap imports zsh history only when `$XDG_DATA_HOME/atuin/history.db` is missing (`atuin import zsh`). Do not run that on every apply. Structure rules + fixtures: `checks/fixtures/zshrc/`. Rollback: `checks/zsh-rollback-live.sh`. [freshen](/docs/freshen) · [Home](/docs/home-config) · [Brew](/docs/packages).
+`just check-zsh` runs `zsh -n` (when `zsh` exists), `cmp` of dots ↔ Chezmoi parity mirrors, **`checks/zsh-structure-test.sh`**, `checks/zsh-structure.sh rig/dots/zshrc all`, plus Atuin init and `zsh-home-behavior-test.sh`.
+
+| Behavior | Live rule |
+| --- | --- |
+| `timeout` alias | Guarded: `command -v gtimeout && alias timeout='gtimeout'` in `~/.zsh/aliases.zsh`. Unguarded `alias timeout=` in zshrc fails L0. |
+| nvm | Sourced if `$NVM_DIR/nvm.sh` exists (Linux bootstrap). |
+| mise | `mise activate zsh` when `mise` is on `PATH` (wins if both nvm and mise exist). |
+| Linux OMZ plugins | `linux.sh` clones p10k, zsh-autosuggestions, and zsh-syntax-highlighting under `$ZSH_CUSTOM`. `zshrc` prefers Homebrew shares, then that custom path. macOS bootstrap does not clone the brew-managed plugins. |
+| Atuin | After first install, bootstrap imports zsh history only when `$XDG_DATA_HOME/atuin/history.db` is missing (`atuin import zsh`). Do not run that on every apply. |
+
+Structure rules + fixtures: `checks/fixtures/zshrc/`. Rollback: `checks/zsh-rollback-live.sh`. [freshen](/docs/freshen) · [Home](/docs/home-config) · [Brew](/docs/packages).

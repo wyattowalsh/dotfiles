@@ -17,7 +17,7 @@ just kopia-nightly-install             # sync dest runner + bootstrap agent
 just check-kopia-nightly               # static + stubbed behavior; no live services
 ```
 
-`just kopia-nightly*` always runs the **repo source**. Launchd runs the dest copy at `$HOME/.local/bin/kopia-nightly`. `just kopia-nightly-install` sets `KOPIA_NIGHTLY_REPO` and `/bin/cp -f`s the dest runner. Dest plist still comes from Chezmoi: `$HOME/Library/LaunchAgents/com.wyattowalsh.kopia-nightly.plist`. After runner edits, re-run `just kopia-nightly-install` so dest picks up the new script.
+`just kopia-nightly*` always runs the **repo source**. Launchd runs `$HOME/.local/bin/kopia-nightly`. Chezmoi apply and `just kopia-nightly-install` both write that dest runner; install copies with `/bin/cp -f` when `KOPIA_NIGHTLY_REPO` is set. Dest plist still comes from Chezmoi: `$HOME/Library/LaunchAgents/com.wyattowalsh.kopia-nightly.plist`. After runner edits, re-run `just kopia-nightly-install` so dest picks up the new script.
 
 ## Sources (04:00)
 
@@ -41,7 +41,9 @@ The nightly label is `com.wyattowalsh.kopia-nightly`. Use these labels for diagn
 
 ## Sleep
 
-If the Mac is asleep at 04:00, launchd runs the job at the next user-session wake. No wake schedule. After wake, the bounded readiness loop runs before snapshots. While work is active, `caffeinate -i -w $$` holds idle sleep and exits with the runner. The plist has `ExitTimeOut=120` only as launchd's termination grace; it deliberately has no `TimeOut` wall-clock key because the external `gtimeout` wrapper owns that ceiling.
+If the Mac is asleep at 04:00, launchd runs the job at the next user-session wake. No wake schedule. After wake, the bounded readiness loop runs before snapshots. While work is active, `caffeinate -i -w $$` holds idle sleep and exits with the runner.
+
+The runner caps snapshot wall-clock time at 43200s (override `KOPIA_NIGHTLY_TIMEOUT_SEC`) with `timeout` or `gtimeout`. The plist has `ExitTimeOut=120` only as launchd's termination grace; it deliberately has no `TimeOut` wall-clock key. The EXIT trap still disables the KopiaUI login agents.
 
 ## Offline assurance
 
@@ -49,8 +51,10 @@ If the Mac is asleep at 04:00, launchd runs the job at the next user-session wak
 
 ## Secrets
 
-Repo password, rclone config, and Drive folder ids stay local. Docs and tracked files use `$HOME` / Chezmoi templates only. Never track `rclone.conf`. See [Security](/docs/security).
+Repo password, rclone config, and Drive folder ids stay local. Docs and tracked files use `$HOME` / Chezmoi templates only. Never track `rclone.conf`.
 
-## rclone vs s5cmd
+`$HOME/.github` is in the 04:00 source list and may contain credentials that then exist in the **backup remote**. That is not a git leak — this repo does not track those files.
 
 rclone remains the Kopia Google Drive backend. `s5cmd` is a separate high-throughput S3/local CLI. Do not retarget Kopia to s5cmd, and do not track AWS keys or add an `aws` alias.
+
+See [Security](/docs/security).

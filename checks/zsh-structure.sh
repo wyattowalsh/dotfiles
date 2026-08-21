@@ -28,6 +28,16 @@ if [[ $lvl == L0 || $lvl == all ]]; then
   if grep -Eq 'mise hook-env' "$f"; then
     fail "mise hook-env present"
   fi
+  # gtimeout is Homebrew/coreutils; never alias timeout= on its own line
+  if grep -Eq '^[[:space:]]*alias timeout=' "$f"; then
+    fail "unguarded alias timeout= (guard with command -v gtimeout on the same line)"
+  fi
+  # secrets.env mode 600: BSD stat -f is not enough on Linux (need GNU stat -c)
+  if grep -q 'secrets.env' "$f"; then
+    if grep -Eq 'stat[[:space:]]+-f' "$f" && ! grep -Eq 'stat[[:space:]]+-c' "$f"; then
+      fail "secrets.env gated only with BSD stat -f (need GNU stat -c too)"
+    fi
+  fi
 fi
 
 if [[ $lvl == L1 || $lvl == all ]]; then
