@@ -276,6 +276,7 @@ hooks-update:
     pre-commit autoupdate
 
 # Generate local redacted inventory artifacts under ignored local/.
+
 # Never commit local/ — package names / paths-only evidence for promotion.
 inventory-redacted:
     #!/usr/bin/env bash
