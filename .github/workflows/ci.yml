@@ -43,7 +43,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y shellcheck jq ripgrep zsh
+          sudo apt-get install -y zsh ripgrep jq shellcheck shfmt bats
           if ! command -v shellcheck >/dev/null 2>&1; then
             echo "shellcheck missing after install" >&2
             exit 1

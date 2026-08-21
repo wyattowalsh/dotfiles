@@ -25,7 +25,7 @@ Machine paths: `$RIG_DIR/{brew,darwin,home,dots}`.
 - **Default:** dry-run preview when neither `--dry-run` nor `--apply` is passed
 - **Apply:** flock (mkdir fallback); `sudo -v` fail-fast keepalive; requires `rig/darwin/flake.lock`; creates missing parent directories for nested symlink targets; refuses to replace non-symlink home targets
 - **Flags:** `--verbose`, `--no-upgrade` (brew bundle first-restore safety), `--with-dev-env`, `--require-dev-env`. `--with-dev-env` always passes `--skip-mcphub`.
-- **Phases:** preflight → sudo keepalive (apply) → Xcode CLT wait → brew/just/nix/chezmoi → OMZ + p10k → Brewfile → **symlinks from `rig/dots/`** → Chezmoi → **Kopia nightly LaunchAgent** (when `rig/home/dot_local/bin/executable_kopia-nightly` exists) → nix-darwin → optional `dev-env.sh`
+- **Phases:** preflight → sudo keepalive (apply) → Xcode CLT wait → brew/just/nix/chezmoi → OMZ + p10k → Brewfile → **symlinks from `rig/dots/`** → Chezmoi → first-run Atuin import if the history db is missing → **Kopia nightly LaunchAgent** (when `rig/home/dot_local/bin/executable_kopia-nightly` exists) → nix-darwin → optional `dev-env.sh`
 - **`nix_darwin_command`:** use `darwin-rebuild` if present; else pin from `flake.lock` — `locked.owner`/`repo`/`rev` **or** tarball `locked.url` archive SHA (`…/archive/<rev>.tar.gz`) plus `original.owner`/`repo`
 
 Does not vendor AI harness/MCP configs or build docs. Agent stack is `just bootstrap-dev` (or `--with-dev-env`). Does not append to shell RC files.

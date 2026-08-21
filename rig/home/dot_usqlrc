@@ -1,0 +1,2 @@
+# Highlight only. Named connections / DSNs stay untracked (macOS Application Support or local override).
+\set SYNTAX_HL_STYLE monokai

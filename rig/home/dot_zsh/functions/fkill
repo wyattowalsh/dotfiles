@@ -1,0 +1,49 @@
+#compdef fkill
+# fkill — multi-select process killer via fzf (never special/self PIDs)
+
+fkill() {
+    emulate -L zsh
+
+    if ! command -v fzf >/dev/null 2>&1; then
+        print -u2 "fkill: fzf not found"
+        return 127
+    fi
+
+    local selection line pid normalized
+    local -i pid_num
+    local -a pids
+    local -A seen
+
+    if [[ "$OSTYPE" == darwin* ]]; then
+        selection="$(ps -eo pid,user,comm,args | command fzf -m)" || return $?
+    else
+        selection="$(ps -eo pid,user,comm,args | command fzf -m)" || return $?
+    fi
+
+    [[ -n "$selection" ]] || return 0
+
+    for line in "${(@f)selection}"; do
+        pid="${line[(w)1]}"
+        [[ "$pid" =~ '^[0-9]+$' ]] || continue
+
+        # Normalize as decimal before arithmetic. Reject overlong input first so
+        # an fzf row can never feed an unbounded integer expression to zsh.
+        normalized="$pid"
+        while [[ ${#normalized} -gt 1 && ${normalized[1]} == 0 ]]; do
+            normalized="${normalized[2,-1]}"
+        done
+        (( ${#normalized} <= 10 )) || continue
+        [[ ${#normalized} -lt 10 || "$normalized" < 2147483648 ]] || continue
+
+        pid_num=$(( 10#$normalized ))
+        (( pid_num >= 2 && pid_num <= 2147483647 && pid_num != $$ )) || continue
+        [[ -z ${seen[$pid_num]:-} ]] || continue
+        seen[$pid_num]=1
+        pids+=("$pid_num")
+    done
+
+    (( ${#pids} )) || return 0
+    kill -- "${pids[@]}"
+}
+
+fkill "$@"

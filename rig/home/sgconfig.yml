@@ -1,0 +1,3 @@
+# Global ast-grep fallback. A project sgconfig.yml closer to cwd wins.
+# Not a secrets scanner (just secrets-scan remains SSOT).
+ruleDirs: []

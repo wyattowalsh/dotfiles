@@ -107,7 +107,7 @@ acquire_setup_lock() {
   fi
 
   if mkdir "$LOCK_FALLBACK_DIR" 2>/dev/null; then
-    printf '%s\n' "$$" > "$LOCK_FALLBACK_DIR/pid"
+    printf '%s\n' "$$" >"$LOCK_FALLBACK_DIR/pid"
     LOCK_METHOD="mkdir"
     debug "Acquired mkdir lock: $LOCK_FALLBACK_DIR"
     return 0
@@ -122,7 +122,7 @@ acquire_setup_lock() {
         log "Removing stale bootstrap lock from PID $lock_pid."
         rm -rf "$claim_dir"
         if mkdir "$LOCK_FALLBACK_DIR" 2>/dev/null; then
-          printf '%s\n' "$$" > "$LOCK_FALLBACK_DIR/pid"
+          printf '%s\n' "$$" >"$LOCK_FALLBACK_DIR/pid"
           LOCK_METHOD="mkdir"
           debug "Recovered stale mkdir lock: $LOCK_FALLBACK_DIR"
           return 0
@@ -259,7 +259,7 @@ parse_args() {
         REQUIRE_DEV_ENV=1
         WITH_DEV_ENV=1
         ;;
-      -h|--help)
+      -h | --help)
         usage
         exit 0
         ;;
@@ -438,6 +438,20 @@ link_repo_file() {
   run_or_print "Link $(basename "$target_path")" ln -sfn "$source_path" "$target_path"
 }
 
+maybe_import_atuin_history() {
+  local hist_db="${XDG_DATA_HOME:-$HOME/.local/share}/atuin/history.db"
+
+  if ! command -v atuin >/dev/null 2>&1; then
+    debug "atuin not on PATH; skip history import"
+    return 0
+  fi
+  if [ -f "$hist_db" ]; then
+    debug "Atuin history db exists; skip import"
+    return 0
+  fi
+  run_or_print "Import zsh history into Atuin (first run)" atuin import zsh
+}
+
 link_root_dotfiles() {
   link_repo_file "$DOTS_DIR/zshrc" "$HOME/.zshrc"
   link_repo_file "$DOTS_DIR/p10k.zsh" "$HOME/.p10k.zsh"
@@ -505,9 +519,11 @@ main() {
   if [ "$APPLY" -eq 1 ]; then
     link_root_dotfiles
     run_or_print "Apply Chezmoi home changes" chezmoi --source "$HOME_SOURCE" apply
+    maybe_import_atuin_history
   else
     link_root_dotfiles
     run_readonly "Preview Chezmoi home changes" chezmoi --source "$HOME_SOURCE" diff
+    maybe_import_atuin_history
   fi
 
   kopia_nightly_src="$HOME_SOURCE/dot_local/bin/executable_kopia-nightly"

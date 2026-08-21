@@ -33,7 +33,7 @@ FAKE_HOME="$TMP/home"
 mkdir -p "$FAKE_HOME"
 
 MOCK_WRAPPER="$TMP/dev-env.sh"
-cat > "$MOCK_WRAPPER" <<'EOF'
+cat >"$MOCK_WRAPPER" <<'EOF'
 #!/usr/bin/env bash
 # Mock agents wrapper: always fail so rc-capture is observable.
 exit 7
@@ -41,7 +41,7 @@ EOF
 chmod +x "$MOCK_WRAPPER"
 
 FIXTURE="$TMP/rc-capture.bash"
-cat > "$FIXTURE" <<'EOF'
+cat >"$FIXTURE" <<'EOF'
 # Mirrors rig/bootstrap/linux.sh run_dev_env rc capture.
 run_wrapper_with_captured_rc() {
   local wrapper="$1"

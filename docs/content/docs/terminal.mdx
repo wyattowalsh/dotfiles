@@ -4,11 +4,13 @@ title: Terminal
 description: Ghostty + fonts.
 ---
 
-- Config: `rig/home/private_dot_config/ghostty/config.tmpl` (defaults in `rig/home/.chezmoidata.toml`)
-- Optional overlay: `~/.config/ghostty/config.local` (`config-file = ?…`; missing file is fine)
-- Fonts: Nerd Font casks in `rig/brew/Brewfile`
-- Backgrounds: `~/.config/ghostty/backgrounds/` (local only; missing PNG is expected until copied)
+SSOT: `rig/home/private_dot_config/ghostty/config.tmpl` (defaults in `rig/home/.chezmoidata.toml`). Fonts: Nerd Font casks in `rig/brew/Brewfile`.
+
+The tmpl enables contextual alternates with `font-feature = calt`, disables standard ligatures with `font-feature = -liga`, generates the palette, includes an optional overlay `config-file = ?…/.config/ghostty/config.local` (missing file is fine), and uses native bell audio. The bell sound file stays local (`~/.config/ghostty/sounds/`). Backgrounds: `~/.config/ghostty/backgrounds/` (local only; missing PNG is expected until copied).
+
+Ghostty owns everyday splits. The tracked tmux formula exists only as Agent Deck's backend. Left Option is mapped to Alt for bindings such as Yazi's DuckDB preview keys.
 
 ```bash
 just home-diff
+ghostty +validate-config
 ```

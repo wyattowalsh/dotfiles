@@ -6,6 +6,8 @@ description: No secrets in git.
 
 Never track: tokens, keys, OAuth DBs, histories, raw secret-shaped inventory.
 
+Atuin is **local-only** (`auto_sync = false`). Do not commit `~/.local/share/atuin/history.db`, `key`, or `session`. usql named connections / DSNs stay untracked (not in `dot_usqlrc`).
+
 ```bash
 just secrets-scan
 just inventory-redacted   # scrubbed → local/ only

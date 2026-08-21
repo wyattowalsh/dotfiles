@@ -1,0 +1,5 @@
+--theme="auto:system"
+--theme-dark="Monokai Extended"
+--theme-light="Monokai Extended Light"
+--style="numbers,changes,header"
+--italic-text=always

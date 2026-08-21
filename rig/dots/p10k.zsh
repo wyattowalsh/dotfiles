@@ -49,6 +49,7 @@
     kubecontext             # current kubernetes context
     terraform               # terraform workspace
     aws                     # aws profile
+    azure                   # azure account name
     context                 # user@hostname
     yazi                    # yazi shell
     nix_shell               # nix shell
@@ -191,6 +192,12 @@
     go.mod
     package.json
     stack.yaml
+    mise.toml
+    uv.lock
+    pyproject.toml
+    flake.nix
+    flake.lock
+    .envrc
   )
   typeset -g POWERLEVEL9K_SHORTEN_FOLDER_MARKER="(${(j:|:)anchor_files})"
   # If set to "first" ("last"), remove everything before the first (last) subdirectory that contains
@@ -1578,7 +1585,7 @@
   # Current time color.
   typeset -g POWERLEVEL9K_TIME_FOREGROUND=66
   # Format for the current time: 09:51:02. See `man 3 strftime`.
-  typeset -g POWERLEVEL9K_TIME_FORMAT='%D{%I:%M:%S %p}'
+  typeset -g POWERLEVEL9K_TIME_FORMAT='%D{%I:%M %p}'
   # If set to true, time will update when you hit enter. This way prompts for the past
   # commands will contain the start times of their commands as opposed to the default
   # behavior where they contain the end times of their preceding commands.

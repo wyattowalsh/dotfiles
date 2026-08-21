@@ -24,5 +24,6 @@ GitHub Copilot instructions, path-specific `.github/instructions/`, LSP config, 
 
 ```yaml
 # .github/workflows/ci.yml → just ci
+# apt: zsh ripgrep shellcheck shfmt bats
 # check + smoke + docs-ci
 ```

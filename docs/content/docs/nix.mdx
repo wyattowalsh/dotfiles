@@ -17,6 +17,10 @@ Modules on disk are **those two files** plus the host import. Do not expect sepa
 
 `flake.lock` inputs may be `type: tarball` (archive URL) instead of a github `locked.owner` / `repo` / `rev`. `macos.sh` recovers the nix-darwin pin from github lock fields **or** `original.owner` / `repo` plus the SHA in `locked.url` (`…/archive/<rev>.tar.gz`), then `nix run github:…#darwin-rebuild` when `darwin-rebuild` is not on `PATH`. Gate: `just check-darwin-lock`.
 
+Host `w4w-mbp` sets `primaryUser`, `nix.enable = false` (Determinate owns `nix.conf`), Touch ID sudo, and hostname.
+
+`macos-defaults` manages keyboard repeat and press-and-hold, smart quote/dash/autocorrect behavior, Dock recents/space ordering, tap-to-click and three-finger drag, plus Finder list/search/path/status preferences. It does not manage guest-login or WindowManager/Stage Manager/desktop-click keys.
+
 ```bash
 nix flake lock ./rig/darwin
 just darwin-check

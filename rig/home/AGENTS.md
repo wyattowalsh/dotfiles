@@ -2,7 +2,7 @@
 
 ## Scope
 
-Chezmoi source tree (`rig/home/`) for `~/.config/*`, `~/.zsh/functions/*`, and related home templates.
+Chezmoi source tree (`rig/home/`) for `~/.config/*`, `~/.zsh/aliases.zsh`, `~/.zsh/functions/*`, and related home templates.
 
 Runtime files under `rig/dots/` (`zshrc`, `p10k.zsh`, `gitconfig`, …) are **symlinked** by bootstrap into `$HOME` — not applied by Chezmoi.
 
@@ -11,9 +11,11 @@ Runtime files under `rig/dots/` (`zshrc`, `p10k.zsh`, `gitconfig`, …) are **sy
 - `.chezmoiignore` lists **target** (destination) paths: `.zshrc`, `.p10k.zsh`, `AGENTS.md`. Chezmoi matches dest names; source names (`dot_zshrc.tmpl`, `dot_p10k.zsh`) match nothing. Gate: `just check-chezmoi-ignore`.
 - `dot_zshrc.tmpl` and `dot_p10k.zsh` are parity mirrors only. `just check-zsh` `cmp`s them against `rig/dots/*`.
 - Ghostty defaults live in `rig/home/.chezmoidata.toml`. Template `private_dot_config/ghostty/config.tmpl` uses `chezmoi:template:missing-key=zero` and optional `config-file = ?…/.config/ghostty/config.local`.
-- Keep identities, tokens, auth files, histories, caches, and app DBs out of Git.
-- Preserve `~/.zshrc.local` and Chezmoi `.local` override patterns.
-- Nightly backup: source `dot_local/bin/executable_kopia-nightly`. Dest `~/.local/bin/kopia-nightly` is written by Chezmoi apply **and** copied by `just kopia-nightly-install` (`/bin/cp -f` when `KOPIA_NIGHTLY_REPO` is set). Plist: `Library/LaunchAgents/com.wyattowalsh.kopia-nightly.plist.tmpl` (`RunAtLoad=false`, 04:00 calendar). Wall-clock cap is in the **runner** (`KOPIA_NIGHTLY_TIMEOUT_SEC`, default 43200). Do **not** set launchd `TimeOut` (unimplemented) or claim launchd SIGTERM after 12h. Do not track `repository.config` or `rclone.conf`. Operator runbook: `docs/content/docs/backup.mdx`.
+- Template machine-specific paths (`{{ .chezmoi.homeDir }}` in Ghostty, etc.)
+- Keep identities, tokens, auth files, histories, caches, and app DBs out of Git (including Atuin `history.db`/`key`/`session` and usql DSNs)
+- Preserve `~/.zshrc.local` and Chezmoi `.local` override patterns
+- XDG tools: `private_dot_config/{atuin,ast-grep,agent-deck,xh,lnav,visidata,yazi,direnv,fd,bat,git}/` plus `sgconfig.yml`, `dot_duckdbrc`, `dot_usqlrc` (highlight only). Claude/Codex Atuin hooks live in wyattowalsh/agents.
+- Nightly backup: source `dot_local/bin/executable_kopia-nightly`. Dest `~/.local/bin/kopia-nightly` is written by Chezmoi apply **and** copied by `just kopia-nightly-install` (`/bin/cp -f` when `KOPIA_NIGHTLY_REPO` is set). Plist: `Library/LaunchAgents/com.wyattowalsh.kopia-nightly.plist.tmpl` (`RunAtLoad=false`, 04:00 calendar). Wall-clock cap is in the **runner** (`KOPIA_NIGHTLY_TIMEOUT_SEC`, default 43200). Do **not** set launchd `TimeOut` (unimplemented) or claim launchd SIGTERM after 12h. Keep offline stubs under `checks/fixtures/kopia-nightly/`; never point them at live Kopia, launchctl, or Notification Center. Do not track `repository.config` or `rclone.conf`. Operator runbook: `docs/content/docs/backup.mdx`.
 
 ## Preview
 

@@ -7,7 +7,7 @@
 #   • fpath complete before Oh My Zsh (no user compinit)
 #   • direnv export before instant prompt; hook after OMZ
 #   • zsh-autosuggestions + zsh-syntax-highlighting (highlight last)
-#   • zoxide, fzf, modern CLI aliases
+#   • zoxide, fzf (CTRL-T / ALT-C), atuin (Ctrl-R), modern CLI aliases
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # ───────────────────────────────────────────────────────────────────────────────
@@ -78,11 +78,7 @@ export GIT_EDITOR="$EDITOR"
 # Tool homes (uv/uvx via brew+mise; pnpm; pipx)
 export PIPX_HOME="${XDG_DATA_HOME}/pipx"
 export PIPX_BIN_DIR="${PIPX_BIN_DIR:-$HOME/.local/bin}"
-if [[ "$OSTYPE" == darwin* ]]; then
-  export PNPM_HOME="${PNPM_HOME:-$HOME/Library/pnpm}"
-else
-  export PNPM_HOME="${PNPM_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/pnpm}"
-fi
+export PNPM_HOME="${PNPM_HOME:-$HOME/Library/pnpm}"
 
 if [[ -n ${HOMEBREW_PREFIX:-} && -d "$HOMEBREW_PREFIX/share/tessdata" ]]; then
   export TESSDATA_PREFIX="$HOMEBREW_PREFIX/share/tessdata"
@@ -99,16 +95,18 @@ export DRAWTHINGS_OUTPUT_DIR="${DRAWTHINGS_OUTPUT_DIR:-$HOME/Pictures/draw-thing
 # fzf defaults
 # ───────────────────────────────────────────────────────────────────────────────
 if command -v fzf &>/dev/null; then
+  export FZF_DEFAULT_COMMAND='fd --type f --hidden --follow --exclude .git'
   export FZF_DEFAULT_OPTS='--height 50% --layout=reverse --border'
-  if command -v fd &>/dev/null; then
-    export FZF_DEFAULT_COMMAND='fd --type f --hidden --follow --exclude .git'
-    export FZF_ALT_C_COMMAND='fd --type d --hidden --follow --exclude .git'
-  fi
-  if command -v bat &>/dev/null; then
-    export FZF_CTRL_T_OPTS="--preview 'bat -n --color=always {} 2>/dev/null || cat {}'"
+  export FZF_CTRL_T_COMMAND='fd --hidden --follow --strip-cwd-prefix --exclude .git'
+  export FZF_CTRL_T_OPTS="--preview '${HOMEBREW_PREFIX}/opt/fzf/bin/fzf-preview.sh {} 2>/dev/null || bat -n --color=always {} 2>/dev/null || cat {}'"
+  export FZF_ALT_C_COMMAND='fd --type d --hidden --follow --exclude .git'
+  if command -v eza &>/dev/null; then
+    export FZF_ALT_C_OPTS="--preview 'eza --tree --color=always --icons {}'"
   else
-    export FZF_CTRL_T_OPTS="--preview 'cat {}'"
+    export FZF_ALT_C_OPTS="--preview 'ls -la {}'"
   fi
+  # Atuin owns Ctrl-R; empty command disables fzf's history widget.
+  export FZF_CTRL_R_COMMAND=
 fi
 
 # ───────────────────────────────────────────────────────────────────────────────
@@ -136,7 +134,7 @@ fi
 path=(
   $HOME/.local/bin
   $PIPX_BIN_DIR
-  $PNPM_HOME(N)
+  $PNPM_HOME
   $PNPM_HOME/bin(N)
   $HOME/go/bin
   $HOME/.rbenv/bin(N)
@@ -170,6 +168,7 @@ path=(
 fpath=(
   ${HOMEBREW_PREFIX:+$HOMEBREW_PREFIX/share/zsh/site-functions}
   ${HOMEBREW_PREFIX:+$HOMEBREW_PREFIX/share/zsh-completions}
+  $HOME/.zsh/completions(N)
   $HOME/.zfunc(N)
   $HOME/.zsh/functions(N)
   $HOME/.docker/completions(N)
@@ -196,25 +195,26 @@ VSCODE=cursor
 plugins=(
   git
   gh
-  safe-paste
+  macos
+  vscode
   extract
   sudo
   docker
-  docker-compose
+  brew
   aws
   terraform
   uv
   zsh-interactive-cd
 )
-[[ "$OSTYPE" == darwin* ]] && plugins+=(macos)
 
 source "$ZSH/oh-my-zsh.sh"
 
 # ───────────────────────────────────────────────────────────────────────────────
-# History (OMZ sets defaults; raise SAVEHIST to match HISTSIZE)
+# History (OMZ sets defaults; HISTSIZE > SAVEHIST so expire-dups can work)
 # ───────────────────────────────────────────────────────────────────────────────
-HISTSIZE=50000
+HISTSIZE=60000
 SAVEHIST=50000
+setopt hist_reduce_blanks hist_find_no_dups hist_fcntl_lock
 HISTFILE="${HISTFILE:-$HOME/.zsh_history}"
 
 # ───────────────────────────────────────────────────────────────────────────────
@@ -224,18 +224,16 @@ typeset -ga ZSH_AUTOSUGGEST_STRATEGY=(history completion)
 typeset -g ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=20
 if [[ -n ${HOMEBREW_PREFIX:-} && -f "$HOMEBREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh" ]]; then
   source "$HOMEBREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
-elif [[ -f "${ZSH_CUSTOM:-$ZSH/custom}/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh" ]]; then
-  source "${ZSH_CUSTOM:-$ZSH/custom}/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh"
 fi
 
-if command -v fzf &>/dev/null; then
-  if [[ -n ${HOMEBREW_PREFIX:-} && -f "$HOMEBREW_PREFIX/opt/fzf/shell/key-bindings.zsh" ]]; then
-    source "$HOMEBREW_PREFIX/opt/fzf/shell/key-bindings.zsh"
-    [[ -f "$HOMEBREW_PREFIX/opt/fzf/shell/completion.zsh" ]] && source "$HOMEBREW_PREFIX/opt/fzf/shell/completion.zsh"
-  elif [[ -f "${ZSH_CUSTOM:-$ZSH/custom}/plugins/fzf/shell/key-bindings.zsh" ]]; then
-    source "${ZSH_CUSTOM:-$ZSH/custom}/plugins/fzf/shell/key-bindings.zsh"
-    [[ -f "${ZSH_CUSTOM:-$ZSH/custom}/plugins/fzf/shell/completion.zsh" ]] && source "${ZSH_CUSTOM:-$ZSH/custom}/plugins/fzf/shell/completion.zsh"
-  fi
+if command -v fzf &>/dev/null && [[ -n ${HOMEBREW_PREFIX:-} ]]; then
+  [[ -f "$HOMEBREW_PREFIX/opt/fzf/shell/key-bindings.zsh" ]] && source "$HOMEBREW_PREFIX/opt/fzf/shell/key-bindings.zsh"
+  [[ -f "$HOMEBREW_PREFIX/opt/fzf/shell/completion.zsh" ]] && source "$HOMEBREW_PREFIX/opt/fzf/shell/completion.zsh"
+fi
+
+# Atuin owns Ctrl-R (directory/workspace/session/global). Up-arrow stays zsh HISTFILE. `?` is not Atuin AI.
+if command -v atuin &>/dev/null; then
+  eval "$(atuin init zsh --disable-up-arrow --disable-ai)"
 fi
 
 if (( $+functions[zic-completion] )); then
@@ -271,12 +269,14 @@ if [[ "${TERM_PROGRAM:-}" == "vscode" || "${TERM_PROGRAM:-}" == "cursor" ]] \
   && command -v cursor &>/dev/null; then
   source "$(cursor --locate-shell-integration-path zsh 2>/dev/null)" 2>/dev/null || true
 fi
-if [[ "${TERM_PROGRAM:-}" == "ghostty" && -r "$HOME/.config/ghostty/shell-integration.zsh" ]]; then
+# Official Ghostty integration only; skip custom afplay helper (double-notify with native notify-on-command-finish).
+if [[ "${TERM_PROGRAM:-}" == "ghostty" && -r "$HOME/.config/ghostty/shell-integration.zsh" ]] \
+  && command grep -qE 'GHOSTTY_RESOURCES_DIR|ghostty-integration' "$HOME/.config/ghostty/shell-integration.zsh"; then
   source "$HOME/.config/ghostty/shell-integration.zsh"
 fi
 
 # ───────────────────────────────────────────────────────────────────────────────
-# Secrets & local overrides
+# Secrets, aliases, local overrides (local wins over tracked aliases)
 # ───────────────────────────────────────────────────────────────────────────────
 if [[ -f "$HOME/.zsh/secrets.env" ]]; then
   # BSD stat -f '%A' (macOS /usr/bin/stat); GNU stat -c '%a' (Linux)
@@ -284,89 +284,35 @@ if [[ -f "$HOME/.zsh/secrets.env" ]]; then
     source "$HOME/.zsh/secrets.env"
   fi
 fi
-[[ -f "$HOME/.zshrc.local" ]] && source "$HOME/.zshrc.local"
 [[ -f "$HOME/.config/copilot-subagents.env" ]] && source "$HOME/.config/copilot-subagents.env"
+[[ -f "$HOME/.zsh/aliases.zsh" ]] && source "$HOME/.zsh/aliases.zsh"
+[[ -f "$HOME/.zshrc.local" ]] && source "$HOME/.zshrc.local"
 
-# ───────────────────────────────────────────────────────────────────────────────
-# Aliases
-# ───────────────────────────────────────────────────────────────────────────────
-alias c='clear'
-alias zshconfig="\$EDITOR ~/.zshrc"
-alias zshedit="\$EDITOR ~/.zshrc"
-alias zshreload='exec zsh'
-alias ohmyzsh="\$EDITOR ~/.oh-my-zsh"
-command -v gtimeout &>/dev/null && alias timeout='gtimeout'
-alias rm='rm -i'
-alias mv='mv -i'
-alias cp='cp -i'
-alias ..='cd ..'
-alias ...='cd ../..'
-alias ....='cd ../../..'
-
-# uv: avoid glob expansion on CLI args
-alias uv='noglob uv'
-
-if command -v eza &>/dev/null; then
-  alias ls='eza --icons --group-directories-first'
-  alias ll='eza -l --git --icons --group-directories-first'
-  alias la='eza -la --git --icons --group-directories-first'
-  alias lt='eza -T --icons --git-ignore -L 3'
-  alias ltl='eza -T --icons --git-ignore -L 5'
+# zsh-you-should-use after aliases (and local overrides); must be before syntax-highlighting
+# Not an OMZ plugins=() entry — those load before aliases.zsh.
+YSU_MESSAGE_POSITION=after
+YSU_MODE=BESTMATCH
+if [[ -z ${YSU_DISABLE:-} ]]; then
+  _ysu=""
+  if [[ -n ${HOMEBREW_PREFIX:-} ]]; then
+    for _ysu_cand in \
+      "$HOMEBREW_PREFIX/share/zsh-you-should-use/you-should-use.plugin.zsh" \
+      "$HOMEBREW_PREFIX/share/zsh-you-should-use/zsh-you-should-use.plugin.zsh"
+    do
+      [[ -f $_ysu_cand ]] && _ysu=$_ysu_cand && break
+    done
+  fi
+  [[ -n $_ysu && -f $_ysu ]] && source "$_ysu"
+  unset _ysu _ysu_cand
 fi
-command -v bat &>/dev/null && alias cat='bat --paging=never'
-command -v fd &>/dev/null && alias fdf='fd'
-command -v dust &>/dev/null && alias du='dust'
-command -v duf &>/dev/null && alias df='duf'
-command -v lazygit &>/dev/null && alias lg='lazygit'
-
-alias mcphub='PORT=7654 MCPHUB_SETTING_PATH="$HOME/dev/tools/mcp/mcphub/mcp_settings.json" mcphub'
-alias mcphubtunnel='cloudflared tunnel --config ~/.cloudflared/config.yml run mcphub'
-
-alias gm="gemini"
-alias gm3="gemini -m gemini-3.0-pro-max"
-alias gmy="gemini -y"
-alias ocr="opencode run"
-alias occ="opencode --continue"
-alias cur="cursor"
-alias curp="cursor ."
-[[ "$OSTYPE" == darwin* ]] && alias chrome-debug='open -a "Google Chrome" --args --remote-debugging-port=9222'
-alias dbtf="$HOME/.local/bin/dbt"
-
-alias ytdown='yt-dlp \
-  -f "bv*+ba/b" \
-  -S "res,fps,hdr:12,vcodec,br,asr" \
-  --merge-output-format mkv \
-  --remote-components ejs:github \
-  --embed-metadata \
-  --embed-thumbnail \
-  --embed-chapters \
-  --add-metadata \
-  --embed-subs \
-  --sub-langs "all,-live_chat" \
-  --sponsorblock-mark all \
-  --sponsorblock-remove all \
-  --download-archive "$HOME/Downloads/yt-archive.txt" \
-  --concurrent-fragments 8 \
-  --retries 10 \
-  --extractor-retries 10 \
-  --retry-sleep extractor:5 \
-  --no-mtime \
-  --no-part \
-  -o "$HOME/Downloads/%(upload_date>%Y-%m-%d)s - %(uploader)s - %(title).200B [%(id)s].%(ext)s"'
-
-alias ofs="ofscraper"
-alias ofs-all="ofscraper --posts all --username ALL --action download"
-alias ofs-daemon="ofscraper --daemon 10 --posts all --action download"
-alias ofs-debug="ofscraper --output debug"
 
 # ───────────────────────────────────────────────────────────────────────────────
 # Functions
 # ───────────────────────────────────────────────────────────────────────────────
-if [[ "$OSTYPE" == darwin* ]]; then
-  code() { /Applications/Cursor.app/Contents/Resources/app/bin/cursor "$@" }
-fi
+code() { /Applications/Cursor.app/Contents/Resources/app/bin/cursor "$@" }
 autoload -Uz freshen 2>/dev/null
 autoload -Uz sync-cursor 2>/dev/null
+autoload -Uz bak tmpd fkill 2>/dev/null
 
 function y() {
   local tmp cwd
@@ -395,8 +341,7 @@ fi
 # ───────────────────────────────────────────────────────────────────────────────
 # zsh-syntax-highlighting MUST be last (ZLE hooks)
 # ───────────────────────────────────────────────────────────────────────────────
+typeset -ga ZSH_HIGHLIGHT_HIGHLIGHTERS=(main brackets)
 if [[ -n ${HOMEBREW_PREFIX:-} && -f "$HOMEBREW_PREFIX/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]]; then
   source "$HOMEBREW_PREFIX/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
-elif [[ -f "${ZSH_CUSTOM:-$ZSH/custom}/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]]; then
-  source "${ZSH_CUSTOM:-$ZSH/custom}/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
 fi

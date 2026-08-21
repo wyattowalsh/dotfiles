@@ -10,12 +10,15 @@
 config-file = ?{{ .chezmoi.homeDir }}/.config/ghostty/config.local
 
 theme = {{ .ghostty.theme | default "APEX Light Ultra" }}
+palette-generate = true
 
 font-family = {{ .ghostty.fontFamily | default "Monaspace Xenon NF" }}
 font-size = {{ .ghostty.fontSize | default "14" }}
 font-thicken = true
 font-thicken-strength = 80
 adjust-cell-height = 2
+font-feature = calt
+font-feature = -liga
 
 minimum-contrast = 1.1
 
@@ -112,7 +115,9 @@ clipboard-paste-bracketed-safe = true
 
 right-click-action = context-menu
 
-bell-features = attention,title
+bell-features = audio,attention,title
+bell-audio-path = {{ .chezmoi.homeDir }}/.config/ghostty/sounds/notification.aiff
+bell-audio-volume = 0.5
 
 auto-update = download
 auto-update-channel = stable

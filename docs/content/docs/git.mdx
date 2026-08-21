@@ -1,13 +1,31 @@
 ---
 icon: git
 title: Git
-description: gitconfig + delta.
+description: gitconfig + delta + lazygit.
 ---
 
 SSOT: `rig/dots/gitconfig` → `~/.gitconfig` (bootstrap link). Public identity: `wyattowalsh` / `wyattowalsh@gmail.com`.
 
+| Surface | Path |
+| --- | --- |
+| Config | `rig/dots/gitconfig` |
+| XDG ignore + attributes | `rig/home/private_dot_config/git/` → `~/.config/git/` (Chezmoi) |
+| lazygit | `rig/home/private_dot_config/lazygit/config.yml` |
+
+| Tracked knobs | |
+| --- | --- |
+| fetch / pull / push | prune, rebase + autoStash, autoSetupRemote |
+| rerere | enabled + autoUpdate |
+| LFS | `filter.lfs` clean / smudge / process |
+| delta | pager; `hyperlinks` |
+| notebooks | XDG `*.ipynb` attributes select the tracked nbdime diff/merge drivers; Brew Bundle provides `uv "nbdime"` |
+| difftools | Generic difftool remains non-interactive; no `dft` alias or difftastic tool wiring |
+| lazygit pager | `delta --dark --paging=never` (pager contrast; independent of Ghostty's light theme) |
+
 ```bash
 git config --global --list
+just home-diff
+gh extension install dlvhdr/gh-dash
 ```
 
 | Setting | Role |
@@ -15,5 +33,7 @@ git config --global --list
 | `[credential]` helpers | Empty `helper=` clears the chain, then `!gh auth git-credential` (PATH `gh`, not a Homebrew absolute path) |
 | `[include] path` | `~/.gitconfig.local` for local signing/identity overrides (do not commit keys) |
 | `[core] pager` / `[delta]` | `delta` pager + interactive `diffFilter` (`navigate`, `line-numbers`) |
+
+`gh-dash` is a live `gh extension`, not Brew. The `difftastic` formula remains available as a standalone CLI; it is not registered as this gitconfig's difftool.
 
 Credentials / OAuth stay local. Signing keys and machine identity belong in `~/.gitconfig.local`, not the tracked file.

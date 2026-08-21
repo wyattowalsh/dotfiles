@@ -8,10 +8,51 @@ description: Chezmoi + rig/dots links.
 | --- | --- | --- |
 | Runtime links | `rig/dots/*` → `$HOME` | bootstrap |
 | Chezmoi | `rig/home/` | `chezmoi --source rig/home` |
+| Ghostty template data | `rig/home/.chezmoidata.toml` | public `[ghostty]` defaults so `config.tmpl` applies without live Chezmoi data; `config.local` stays machine-only |
+| direnv | `rig/home/private_dot_config/direnv/` | chezmoi (do not `use mise`) |
+| fd ignore | `rig/home/private_dot_config/fd/ignore` | chezmoi |
+| bat config | `rig/home/private_dot_config/bat/config` | chezmoi |
+| atuin | `rig/home/private_dot_config/atuin/config.toml` | chezmoi; db/key stay in `~/.local/share/atuin/` |
+| ast-grep | `rig/home/sgconfig.yml` → `~/sgconfig.yml` (XDG copy under `private_dot_config/ast-grep/`) | chezmoi; not a secrets scanner |
+| DuckDB | `rig/home/dot_duckdbrc` | chezmoi; no auto-install extensions |
+| xh | `rig/home/private_dot_config/xh/config.json` | chezmoi; sessions untracked |
+| lnav | `rig/home/private_dot_config/lnav/configs/dotfiles/` | chezmoi |
+| visidata | `rig/home/private_dot_config/visidata/config.py` | chezmoi |
+| Agent Deck trial | `rig/home/private_dot_config/agent-deck/config.toml` | chezmoi; isolated `tmux -L agent-deck`; no conductor |
+| usql | `rig/home/dot_usqlrc` | chezmoi; no DSNs |
+| yazi | `rig/home/private_dot_config/yazi/` (`yazi.toml`, `init.lua`, `keymap.toml`, `package.toml`, `theme.toml`) | chezmoi; locked plugins/flavors; `gv` opens VisiData |
+| git XDG | `rig/home/private_dot_config/git/` | chezmoi |
+
+## direnv + uv
+
+Routine `layout uv` evaluation is activation-only: it activates the existing `UV_PROJECT_ENVIRONMENT` (default `.venv`) and returns an actionable error when the environment is absent. Package synchronization is an explicit `.envrc` action; call the direnv library function from an allowed project `.envrc`:
+
+```bash
+layout_uv_sync                 # uv sync --frozen, then activate
+layout_uv_sync 3.12 --no-dev   # explicit Python and uv sync options
+```
+
+This keeps an ordinary `cd` from creating an environment, resolving packages, or reaching the network.
+
+## Yazi packages and theme
+
+`package.toml` pins the official `git`, `toggle-pane`, and `piper` plugins plus the existing DuckDB, torrent, and notebook preview plugins. It also pins both Rosé Pine flavors; `theme.toml` maps `rose-pine` to dark mode and `rose-pine-dawn` to light mode.
+
+Install the tracked lock after applying the home config. Use fully qualified references when intentionally refreshing the official plugin locks:
+
+```bash
+ya pkg install
+ya pkg add yazi-rs/plugins:git
+ya pkg add yazi-rs/plugins:toggle-pane
+ya pkg add yazi-rs/plugins:piper
+```
+
+DuckDB horizontal preview scrolling uses Left Option-H / Left Option-L (`<A-h>` / `<A-l>`); Yazi's preset `g h`, `H`, and `L` navigation remains available. Ghostty maps the left Option key to Alt.
 
 ```bash
 just home-diff
 just check-zsh          # dots ↔ home parity
+just check-yazi-config  # fields, locks, flavors, keys, isolated parse
 ```
 
-Parity mirrors (`dot_zshrc.tmpl`, `dot_p10k.zsh`) stay in the Chezmoi source tree for `cmp` only. [`.chezmoiignore`](https://www.chezmoi.io/reference/special-files/chezmoiignore/) must list **target** paths (`.zshrc`, `.p10k.zsh`, `AGENTS.md`) — source names match nothing. Gate: `just check-chezmoi-ignore`. Ghostty defaults live in `rig/home/.chezmoidata.toml`. Overrides: `~/.zshrc.local`, untracked includes, optional `~/.config/ghostty/config.local`. Nightly backup: `dot_local/bin/executable_kopia-nightly` + LaunchAgent template — [Backup](/docs/backup). See [Shell](/docs/shell), [Terminal](/docs/terminal).
+Parity mirrors (`dot_zshrc.tmpl`, `dot_p10k.zsh`) stay in the Chezmoi source tree for `cmp` only. [`.chezmoiignore`](https://www.chezmoi.io/reference/special-files/chezmoiignore/) must list **target** paths (`.zshrc`, `.p10k.zsh`, `AGENTS.md`) — source names match nothing. Gate: `just check-chezmoi-ignore`. Ghostty defaults live in `rig/home/.chezmoidata.toml`. Aliases: `dot_zsh/aliases.zsh` → `~/.zsh/aliases.zsh`. Overrides: `~/.zshrc.local`, untracked includes, optional `~/.config/ghostty/config.local`. Nightly backup: `dot_local/bin/executable_kopia-nightly` + LaunchAgent template — [Backup](/docs/backup). See [Shell](/docs/shell), [Terminal](/docs/terminal).

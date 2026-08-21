@@ -1,0 +1,12 @@
+#compdef tmpd
+# tmpd — cd into a new mktemp directory
+
+tmpd() {
+    emulate -L zsh
+
+    local dir
+    dir="$(mktemp -d)" || return 1
+    cd -- "$dir"
+}
+
+tmpd "$@"

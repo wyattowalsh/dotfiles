@@ -1,24 +1,32 @@
+[mgr]
+ratio = [1, 2, 5]
+
 [plugin]
 prepend_previewers = [
-  { name = "*.csv", run = "duckdb" },
-  { name = "*.tsv", run = "duckdb" },
-  { name = "*.json", run = "duckdb" },
-  { name = "*.parquet", run = "duckdb" },
-  { name = "*.txt", run = "duckdb" },
-  { name = "*.xlsx", run = "duckdb" },
-  { name = "*.db", run = "duckdb" },
-  { name = "*.duckdb", run = "duckdb" },
-  # nbpreview / torrent-preview plugins are local-only (not in Brewfile).
+  { url = "*.csv", run = "duckdb" },
+  { url = "*.tsv", run = "duckdb" },
+  { url = "*.parquet", run = "duckdb" },
+  { url = "*.xlsx", run = "duckdb" },
+  { url = "*.db", run = "duckdb" },
+  { url = "*.duckdb", run = "duckdb" },
+  { url = "*.ipynb", run = "nbpreview" }, # https://github.com/AnirudhG07/nbpreview.yazi
+  { mime = "application/bittorrent", run = "torrent-preview" }, # https://github.com/kirasok/torrent-preview.yazi
+  { url = "*.md", run = 'piper -- CLICOLOR_FORCE=1 glow -w=$w -- "$1"' },
 ]
 
 prepend_preloaders = [
-  { name = "*.csv", run = "duckdb", multi = false },
-  { name = "*.tsv", run = "duckdb", multi = false },
-  { name = "*.json", run = "duckdb", multi = false },
-  { name = "*.parquet", run = "duckdb", multi = false },
-  { name = "*.txt", run = "duckdb", multi = false },
-  { name = "*.xlsx", run = "duckdb", multi = false }
+  { url = "*.csv", run = "duckdb" },
+  { url = "*.tsv", run = "duckdb" },
+  { url = "*.parquet", run = "duckdb" },
+  { url = "*.xlsx", run = "duckdb" },
 ]
 
-[manager]
-ratio = [1, 2, 5]
+[[plugin.prepend_fetchers]]
+url = "*"
+run = "git"
+group = "git"
+
+[[plugin.prepend_fetchers]]
+url = "*/"
+run = "git"
+group = "git"

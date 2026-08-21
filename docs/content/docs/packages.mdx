@@ -20,14 +20,14 @@ Comment group headers in `rig/brew/Brewfile`:
 | Header | Section |
 | --- | --- |
 | `taps` | Homebrew taps required by promoted packages |
-| `core-cli` | Core CLI formulae |
-| `shell-plugins` | Zsh plugin formulae |
+| `core-cli` | Core CLI formulae (`atuin`, `ast-grep`, `mq` (harehare Markdown jq — not IBM MQ), `bats-core`, `shellcheck`, `shfmt`, `just`, `mise` (versions only), `s5cmd`, `lnav`, `jc`, `visidata`, `duckdb`, `mtr`, `neovim`, `yq` (mikefarah), `hyperfine`, `xh`, …). GNU `gnu-sed` / `findutils` / `grep` sit next to `coreutils`; `zshrc` prepends their `gnubin`. |
+| `shell-plugins` | Zsh plugin formulae (includes `zsh-you-should-use`) |
 | `shell-aliases` | CLIs used from shell aliases |
 | `dev-languages / containers` | Languages, build tools, optional colima |
 | `ai-tools` | AI CLI tooling |
 | `media-cli` | Media conversion CLI |
-| `data / db` | Database servers |
-| `security / RE` | Security and reverse-engineering CLI |
+| `data / db` | Database servers plus `xo/xo/usql` (source-built; needs current Xcode; GitHub release fallback). Track highlight in `~/.usqlrc` only — DSNs stay local. |
+| `security / RE` | Security and reverse-engineering CLI (includes `gitleaks`) |
 | `cloud CLIs` | Cloud vendor CLIs |
 | `other CLI leaves` | Remaining CLI formulae (tap-qualified stripe/supabase) |
 | `browsers / editors / AI desktop` | Browser, editor, and AI desktop casks |
@@ -40,6 +40,7 @@ Comment group headers in `rig/brew/Brewfile`:
 | `fonts` | Font casks |
 | `quicklook` | Quick Look plugins |
 | `other casks` | Remaining casks |
+| `trial-agent-deck` | `agent-deck` plus `tmux`; tmux is Agent Deck's backend only (`tmux -L agent-deck`). Ghostty owns everyday splits. Linux `setup.sh` skips this trial. Formula is a prebuilt `darwin_arm64` tarball, but Homebrew still refuses to pour it when Xcode is older than the macOS SDK. Fallback: GitHub release `agent-deck_*_darwin_arm64.tar.gz` until `brew install asheshgoplani/tap/agent-deck` succeeds. |
 | `mas — selected App Store apps (requires Apple ID on target Mac)` | Selected Mac App Store apps |
 
 ## Policy
@@ -47,7 +48,11 @@ Comment group headers in `rig/brew/Brewfile`:
 | Topic | Rule |
 | --- | --- |
 | Docker | Primary is `cask "docker-desktop"`. `brew "colima"` is optional secondary — do not run both engines together. Formula `docker` stays in `exclude.txt`. |
-| Kopia | CLI is `kopia/test-builds/kopia` (nightly job). Keep the `kopia/test-builds` tap. `kopiaui` cask is manual restore only. |
+| Kopia | CLI is `kopia/test-builds/kopia` (nightly job). Keep the `kopia/test-builds` tap. `kopiaui` cask is manual restore only. rclone stays the Google Drive backend; `s5cmd` is high-throughput S3/local — do not retarget Kopia. |
 | VS Code | Extension lines are inventory only under `local/` — not tracked in the Brewfile. |
+| Runners | `just` is the only task runner (Brew binary; do not install via mise). `mise` is toolchain shims only — no repo-root `mise.toml` and no mise `[tasks]`. `go-task` stays inventory leftover. direnv is env + `layout_uv`, not versions. |
+| HTTP | `curl` stays for scripts; `xh` is interactive HTTP. Do not `apt install yq` on Debian — that is a different binary. |
+| Atuin | Local-only. Atuin Cloud / `atuin login` is out of scope. |
+| Deferred | **Gita** — wait until this repo tracks global `uv tool` installs. |
 
-Promote curated names only. See [Promote](/docs/ssot-workflow), [Backup](/docs/backup).
+Promote curated names only. See [Promote](/docs/ssot-workflow), [Shell](/docs/shell), [Backup](/docs/backup), [Terminal](/docs/terminal).

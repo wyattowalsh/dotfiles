@@ -1,0 +1,29 @@
+[[mgr.prepend_keymap]]
+on = "<A-h>"
+run = "plugin duckdb -1"
+desc = "Scroll DuckDB preview one column left"
+
+[[mgr.prepend_keymap]]
+on = "<A-l>"
+run = "plugin duckdb +1"
+desc = "Scroll DuckDB preview one column right"
+
+[[mgr.prepend_keymap]]
+on = ["g", "o"]
+run = "plugin duckdb -open"
+desc = "Open with DuckDB"
+
+[[mgr.prepend_keymap]]
+on = ["g", "u"]
+run = "plugin duckdb -ui"
+desc = "Open with DuckDB UI"
+
+[[mgr.prepend_keymap]]
+on = "T"
+run = "plugin toggle-pane max-preview"
+desc = "Maximize or restore the preview pane"
+
+[[mgr.prepend_keymap]]
+on = ["g", "v"]
+run = "shell --block --confirm 'vd \"$@\"'"
+desc = "Open with VisiData"

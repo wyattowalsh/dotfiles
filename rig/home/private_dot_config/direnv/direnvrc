@@ -1,0 +1,3 @@
+# Loaded before every .envrc (direnv-stdlib(1)).
+# Extra helpers live in ~/.config/direnv/lib/*.sh
+# Do not call `use mise` here: mise is already activated from ~/.zshrc / ~/.zprofile.

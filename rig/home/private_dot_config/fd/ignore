@@ -1,0 +1,16 @@
+.git/
+node_modules/
+__pycache__/
+.venv/
+venv/
+*.pyc
+.DS_Store
+dist/
+build/
+target/
+.direnv/
+.next/
+.turbo/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/

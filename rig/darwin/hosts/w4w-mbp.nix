@@ -7,7 +7,17 @@
   ];
 
   system.stateVersion = 6;
+  system.primaryUser = "ww";
   nixpkgs.hostPlatform = "aarch64-darwin";
+
+  # Determinate Nix owns nix.conf; do not let nix-darwin manage it.
+  nix.enable = false;
+
+  networking.hostName = "w4w-mbp";
+  networking.computerName = "w4w-mbp";
+  networking.localHostName = "w4w-mbp";
+
+  security.pam.services.sudo_local.touchIdAuth = true;
 
   users.users.ww = {
     home = "/Users/ww";

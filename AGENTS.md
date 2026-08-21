@@ -11,10 +11,11 @@ This repository is a **personal public** dotfiles SSOT for the `w4w-mbp` rig (us
 - Optional repo tooling under `.github/` (e.g. Copilot path instructions) may point here; they are not a second contract SSOT.
 
 ## Tooling conventions
-- **Workflows:** `just` (`justfile`) — `just check`, `just ci`, `just docs-ci`, `just bootstrap --dry-run`.
+- **Workflows:** `just` (`justfile`) — `just check`, `just ci`, `just docs-ci`, `just bootstrap --dry-run`. Brew owns the `just` binary (`terror/tap/just-lsp` is editor support only). Do **not** install `just` via mise. `go-task` is inventory-only — not a runner for this repo.
+- **Toolchains:** `mise` is the version manager (Node/Python/pnpm/uv shims). Activate once from zshrc. Do not add a repo-root `mise.toml` / `.mise.toml`, and do not add mise `[tasks]` that duplicate just recipes. direnv owns env + `layout_uv` and must not call `use mise`.
 - **Python:** use **uv** for any Python ops if/when scripts or tools require it (no repo `pyproject.toml` today).
 - **Docs site:** `pnpm` inside `docs/` (see `just docs-*`).
-- **Shell scripts:** `bash` with `set -euo pipefail` under `checks/` and `rig/bootstrap/`.
+- **Shell scripts:** `bash` with `set -euo pipefail` under `checks/` and `rig/bootstrap/`. Lint with ShellCheck; format with `shfmt -i 2 -ci -bn`; bash tests with Bats (`just check-bats`).
 
 ## SSOT workflow
 1. Run `just inventory-redacted` to refresh ignored `local/Brewfile.raw` and config-dir inventory.
@@ -56,10 +57,10 @@ This repository is a **personal public** dotfiles SSOT for the `w4w-mbp` rig (us
 - Use safer apt privilege handling: explicit privilege checks + `run_privileged` + noninteractive apt options.
 
 ## Linux AI bootstrap notes (CLIs only — configs in agents repo)
-- `setup.sh` installs `@anthropic-ai/claude-code`, `@google/gemini-cli`, `@github/copilot`, and `@openai/codex` via npm when missing, and installs `github/gh-copilot` for `gh` when available.
-- `setup.sh` maintains startup shim links for `claude`, `gemini`, `copilot`, and `codex` in `~/.local/bin`.
+- `setup.sh` installs `@anthropic-ai/claude-code`, `@github/copilot`, and `@openai/codex` via npm when missing, and installs `github/gh-copilot` for `gh` when available. It does not install Gemini CLI.
+- `setup.sh` maintains startup shim links for `claude`, `copilot`, and `codex` in `~/.local/bin`.
 - `setup.sh` delegates the agent stack to `rig/bootstrap/dev-env.sh` → wyattowalsh/agents `scripts/bootstrap-dev-env.sh` with `--skip-mcphub`. Apply fails if the wrapper or installer fails. It does not run a hardcoded `npx skills add` skill list.
-- Universal skills from `~/.agents/skills` are mirrored into per-agent skill dirs for installed CLIs when that store exists.
+- Universal skills from `~/.agents/skills` are mirrored into per-agent skill dirs for installed CLIs (`copilot`, `codex`, `grok`, `opencode`) when that store exists.
 - Do **not** add MCP JSON, client manifests, or harness configs to this repo — change `wyattowalsh/agents` instead.
 - `setup.sh` skips `chsh` default-shell updates in Codespaces or non-interactive sessions.
 
@@ -70,9 +71,10 @@ This repository is a **personal public** dotfiles SSOT for the `w4w-mbp` rig (us
 - Quote variable/path expansions.
 
 ## Justfile conventions
-- Use `justfile` as the command runner; do not add a `Taskfile.yml` or Makefile.
+- Use `justfile` as the command runner; do not add a `Taskfile.yml`, Makefile, or mise `[tasks]` block.
 - Keep just recipes thin and delegate complex shell logic to scripts under `checks/` or `rig/bootstrap/`.
 - Recipes that may mutate state must provide a dry-run or preview path (e.g. `just bootstrap --dry-run`).
+- Format the justfile with `just --unstable --fmt --check` (`just check-just-fmt`).
 
 ## macOS full-rig conventions
 - Treat the live Mac as inventory, not as a blob to commit.

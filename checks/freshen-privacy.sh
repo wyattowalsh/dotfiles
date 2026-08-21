@@ -55,7 +55,7 @@ while IFS= read -r f; do
   [[ -n "$f" ]] && secret_targets+=("$f")
 done < <(collect_files "$TEST_DIR" -name '*.golden')
 
-if (( ${#secret_targets[@]} > 0 )); then
+if ((${#secret_targets[@]} > 0)); then
   secret_patterns=(
     'password='
     'PASSWORD='
@@ -86,7 +86,7 @@ if ! grep -Fq 'XDG_STATE_HOME' "$FRESHEN_FILE"; then
   failures=$((failures + 1))
 fi
 
-if (( failures > 0 )); then
+if ((failures > 0)); then
   printf 'freshen-privacy: %d privacy check(s) failed\n' "$failures" >&2
   exit 1
 fi

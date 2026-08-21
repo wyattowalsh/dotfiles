@@ -30,8 +30,8 @@ rg_opts=(
 
 skip_file() {
   case "$1" in
-    LICENSE|checks/secrets-scan.sh|checks/docs-sensitive.sh) return 0 ;;
-    docs/node_modules/*|local/*|*.lock|.env.example) return 0 ;;
+    LICENSE | checks/secrets-scan.sh | checks/docs-sensitive.sh) return 0 ;;
+    docs/node_modules/* | local/* | *.lock | .env.example) return 0 ;;
     */tests/fixtures/*) return 0 ;;
   esac
   return 1

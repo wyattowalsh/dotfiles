@@ -31,6 +31,11 @@ You do not need `just` if you can run `rig/bootstrap/dev-env.sh`. You do not nee
 - Start the Cloudflare MCPHub tunnel
 - Attach the public `tunnel` MCP group
 - Vendor MCP JSON into `rig/`
+- Treat `atuin hook install` as SSOT (wagents home sync owns Claude/Codex Atuin rows)
+
+## Atuin agent history
+
+Claude Code and Codex Bash commands are recorded in local Atuin via [wyattowalsh/agents](https://github.com/wyattowalsh/agents) (`hooks/atuin-agent-hook.sh`, context-mode registry rows). Project with `just bootstrap-dev --apply`. Missing Atuin must not block Bash. Do not vendor hook JSON into `rig/`. Cloud / `atuin login` is out of scope.
 
 ## Fleet
 
@@ -45,6 +50,17 @@ You do not need `just` if you can run `rig/bootstrap/dev-env.sh`. You do not nee
 | OpenCode | `opencode` |
 
 Auto with those five installed plans `--platforms repo-core,cursor,claude-code,codex,grok,opencode`. Other CLIs may be detected for skills; they are not remapped into fake stack ids.
+
+Shell launch aliases (full catalog: [Shell](/docs/shell), `als`). Never alias `oc`.
+
+| Tool | CLI | App / IDE |
+| --- | --- | --- |
+| OpenCode | `opc` `ocr` `occ` | `opa` |
+| Codex | `cdx` | `cda` (`ChatGPT.app`) |
+| Grok Build | `grk` | — |
+| Cursor | `agt` (`agent`) | `cur` `curp` |
+
+Gemini CLI is not in this fleet (no `gm` aliases; Linux `setup.sh` does not install it).
 
 ## Flags
 

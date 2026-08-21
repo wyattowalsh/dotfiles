@@ -10,4 +10,7 @@ fpath=(
 plugins=(git uv)
 source "$ZSH/oh-my-zsh.sh"
 eval "$(mise activate zsh)"
+if command -v atuin &>/dev/null; then
+  eval "$(atuin init zsh --disable-up-arrow --disable-ai)"
+fi
 source ${HOMEBREW_PREFIX:-/opt/homebrew}/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
