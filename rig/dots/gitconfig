@@ -31,6 +31,7 @@
 [delta]
 	navigate = true
 	line-numbers = true
+	hyperlinks = true
 [merge]
 	conflictStyle = zdiff3
 [diff "jupyternotebook"]
@@ -46,3 +47,35 @@
 	cmd = git-nbmergetool merge \"$BASE\" \"$LOCAL\" \"$REMOTE\" \"$MERGED\"
 [mergetool]
 	prompt = false
+[fetch]
+	prune = true
+[pull]
+	rebase = true
+	autoStash = true
+[push]
+	autoSetupRemote = true
+[rerere]
+	enabled = true
+	autoUpdate = true
+[rebase]
+	autoStash = true
+	updateRefs = true
+	autoSquash = true
+[diff]
+	algorithm = histogram
+	colorMoved = default
+[branch]
+	sort = -committerdate
+[tag]
+	sort = version:refname
+[column]
+	ui = auto
+[help]
+	autoCorrect = prompt
+[commit]
+	verbose = true
+[filter "lfs"]
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+	process = git-lfs filter-process
+	required = true

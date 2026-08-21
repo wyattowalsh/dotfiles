@@ -1,0 +1,5 @@
+# ~/.duckdbrc — CLI convenience only. Do not auto-install extensions (network).
+.timer on
+.prompt 'duckdb> '
+.header on
+.mode duckbox

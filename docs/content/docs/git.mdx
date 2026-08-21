@@ -1,13 +1,33 @@
 ---
 icon: git
 title: Git
-description: gitconfig + delta.
+description: gitconfig + delta + lazygit.
 ---
 
 SSOT: `rig/dots/gitconfig` → `~/.gitconfig` (bootstrap link).
 
+| Surface | Path |
+| --- | --- |
+| Config | `rig/dots/gitconfig` |
+| XDG ignore + attributes | `rig/home/private_dot_config/git/` → `~/.config/git/` (Chezmoi) |
+| lazygit | `rig/home/private_dot_config/lazygit/config.yml` |
+
+| Tracked knobs | |
+| --- | --- |
+| fetch / pull / push | prune, rebase + autoStash, autoSetupRemote |
+| rerere | enabled + autoUpdate |
+| LFS | `filter.lfs` clean / smudge / process |
+| delta | pager; `hyperlinks` |
+| notebooks | XDG `*.ipynb` attributes select the tracked nbdime diff/merge drivers; Brew Bundle provides `uv "nbdime"` |
+| difftools | Generic difftool remains non-interactive; no `dft` alias or difftastic tool wiring |
+| lazygit pager | `delta --paging=never` (no `--dark`) |
+
 ```bash
 git config --global --list
+just home-diff
+gh extension install dlvhdr/gh-dash
 ```
 
-Credentials / OAuth stay local. Identity overrides via local config / `includeIf`.
+`gh-dash` is a live `gh extension`, not Brew. Credentials / OAuth stay local.
+
+The `difftastic` formula remains available as a standalone CLI; it is not registered as this gitconfig's difftool.

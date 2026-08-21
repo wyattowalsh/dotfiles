@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+printf 'gtimeout|%s\n' "$*" >>"${KOPIA_NIGHTLY_TEST_STATE:?}/calls"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --verbose | --signal=* | --kill-after=*) shift ;;
+    *) break ;;
+  esac
+done
+
+duration="${1:?missing duration}"
+shift
+if [[ "$duration" == "30s" && "${KOPIA_NIGHTLY_TEST_SCENARIO:-}" == "status_timeout" ]]; then
+  exit 124
+fi
+
+"$@"

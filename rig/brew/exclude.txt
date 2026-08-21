@@ -13,3 +13,6 @@ icu4c@76
 
 # Docker CLI formula — Desktop cask provides the CLI (see Brewfile docker-desktop)
 docker
+
+# Discontinued Codex desktop cask; replacement is cask "chatgpt"
+codex-app

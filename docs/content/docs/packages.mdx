@@ -11,4 +11,22 @@ just inventory-redacted
 just brew-check
 ```
 
-Promote curated names only. Docker Desktop cask is primary — not formula `docker`. Kopia CLI is `kopia/test-builds/kopia` (nightly job); `kopiaui` cask is manual restore only. See [Promote](/docs/ssot-workflow), [Backup](/docs/backup).
+Promote curated names only. Docker Desktop cask is primary — not formula `docker`. Kopia CLI is `kopia/test-builds/kopia` (nightly job); `kopiaui` cask is manual restore only.
+
+| Group | Intent |
+| --- | --- |
+| `# core-cli` | `atuin`, `ast-grep`, `mq` (harehare Markdown jq — not IBM MQ), `bats-core`, `shellcheck`, `shfmt`, `just`, `mise` (versions only), `s5cmd`, `lnav`, `jc`, `visidata`, `duckdb`, `mtr`, `neovim`, `yq` (mikefarah), `hyperfine`, `xh`, `sd`, `git-absorb`, `pre-commit`, `mkcert`. GNU `gnu-sed` / `findutils` / `grep` sit next to `coreutils`; `zshrc` prepends their `gnubin` so `sed`/`find`/`grep` are GNU. |
+| `# uv-managed Python tools` | `uv "nbdime"` provides the notebook diff/merge drivers configured by the tracked Git attributes and gitconfig. |
+| `# data / db` | `xo/xo/usql` (tap `xo/xo`). Source-built (no bottle); `brew bundle` needs a current Xcode. GitHub release fallback: `https://github.com/xo/usql/releases`. Track highlight in `~/.usqlrc` only — DSNs stay local. |
+| `# security / RE` | Includes `gitleaks` with the reverse-engineering and security toolset. |
+| `# shell-plugins` | Includes `zsh-you-should-use`. |
+| `# trial-agent-deck` | `agent-deck` plus `tmux`; tmux is the Agent Deck backend only (`tmux -L agent-deck`), while Ghostty owns everyday terminal splits. Linux `setup.sh` skips this trial. |
+| Deferred | **Gita** — wait until this repo tracks global `uv tool` installs. |
+
+`just` is the only task runner (Brew binary; do not install via mise). `mise` is toolchain shims only — no repo-root `mise.toml` and no mise `[tasks]`. `go-task` stays inventory leftover; do not teach it as a runner. direnv is env + `layout_uv`, not versions.
+
+rclone stays the Kopia Google Drive backend. `s5cmd` is high-throughput S3/local; do not retarget Kopia to s5cmd. Atuin Cloud / `atuin login` is out of scope.
+
+`curl` stays for scripts; `xh` is interactive HTTP. Do not `apt install yq` on Debian — that is a different binary.
+
+See [Promote](/docs/ssot-workflow), [Shell](/docs/shell), [Backup](/docs/backup), [Terminal](/docs/terminal).

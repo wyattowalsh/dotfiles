@@ -252,8 +252,8 @@ detect_platform() {
   fi
 
   case "$ARCH_RAW" in
-    x86_64|amd64) ARCH_NAME="amd64" ;;
-    aarch64|arm64) ARCH_NAME="arm64" ;;
+    x86_64 | amd64) ARCH_NAME="amd64" ;;
+    aarch64 | arm64) ARCH_NAME="arm64" ;;
     *)
       ARCH_NAME="unknown"
       warn "Unsupported architecture for some installs: ${ARCH_RAW}."
@@ -279,7 +279,7 @@ acquire_setup_lock() {
   fi
 
   if mkdir "$LOCK_FALLBACK_DIR" 2>/dev/null; then
-    printf '%s\n' "$$" > "$LOCK_FALLBACK_DIR/pid"
+    printf '%s\n' "$$" >"$LOCK_FALLBACK_DIR/pid"
     LOCK_METHOD="mkdir"
     debug "Acquired mkdir lock: $LOCK_FALLBACK_DIR"
     return 0
@@ -294,7 +294,7 @@ acquire_setup_lock() {
         warn "Removing stale setup lock from PID $lock_pid."
         rm -rf "$claim_dir"
         if mkdir "$LOCK_FALLBACK_DIR" 2>/dev/null; then
-          printf '%s\n' "$$" > "$LOCK_FALLBACK_DIR/pid"
+          printf '%s\n' "$$" >"$LOCK_FALLBACK_DIR/pid"
           LOCK_METHOD="mkdir"
           debug "Recovered stale mkdir lock: $LOCK_FALLBACK_DIR"
           return 0
@@ -380,7 +380,7 @@ parse_args() {
       --smoke-check)
         SMOKE_CHECK=1
         ;;
-      -h|--help)
+      -h | --help)
         usage
         exit 0
         ;;
@@ -459,6 +459,7 @@ run_preflight_checks() {
     "$DOTS_DIR/gitconfig"
     "$DOTS_DIR/ripgreprc"
     "$DOTS_DIR/editorconfig"
+    "$RIG_DIR/home/dot_zsh/aliases.zsh"
   )
 
   if ! command -v git >/dev/null 2>&1; then
@@ -524,6 +525,7 @@ run_smoke_checks() {
     "$DOTS_DIR/gitconfig:$HOME/.gitconfig"
     "$DOTS_DIR/ripgreprc:$HOME/.ripgreprc"
     "$DOTS_DIR/editorconfig:$HOME/.editorconfig"
+    "$RIG_DIR/home/dot_zsh/aliases.zsh:$HOME/.zsh/aliases.zsh"
   )
 
   local mapping source target
@@ -646,6 +648,9 @@ install_apt_tools() {
   have_cmd delta || missing+=(git-delta)
   have_cmd direnv || missing+=(direnv)
   have_cmd jq || missing+=(jq)
+  have_cmd shellcheck || missing+=(shellcheck)
+  have_cmd shfmt || missing+=(shfmt)
+  have_cmd bats || missing+=(bats)
 
   if [ "${#missing[@]}" -eq 0 ]; then
     skip_action "APT packages already installed"
@@ -1067,7 +1072,7 @@ ensure_ai_cli_startup_shims() {
   fi
 
   local binary
-  for binary in claude gemini copilot codex; do
+  for binary in claude copilot codex; do
     link_ai_cli_shim "$binary"
   done
 }
@@ -1080,7 +1085,6 @@ install_ai_clis() {
   fi
 
   install_npm_package_if_missing "claude" "@anthropic-ai/claude-code"
-  install_npm_package_if_missing "gemini" "@google/gemini-cli"
   install_npm_package_if_missing "copilot" "@github/copilot"
   install_npm_package_if_missing "codex" "@openai/codex"
 
@@ -1198,7 +1202,8 @@ sync_universal_skill_links() {
   local -a target_dirs=()
   command -v copilot >/dev/null 2>&1 && target_dirs+=("$HOME/.copilot/skills")
   command -v codex >/dev/null 2>&1 && target_dirs+=("$HOME/.codex/skills")
-  command -v gemini >/dev/null 2>&1 && target_dirs+=("$HOME/.gemini/skills")
+  command -v grok >/dev/null 2>&1 && target_dirs+=("$HOME/.grok/skills")
+  command -v opencode >/dev/null 2>&1 && target_dirs+=("$HOME/.config/opencode/skills")
 
   if [ "${#target_dirs[@]}" -eq 0 ]; then
     skip_action "No supported CLI skills directories found"
@@ -1240,6 +1245,7 @@ create_symlinks() {
   link_file "$DOTS_DIR/gitconfig" "$HOME/.gitconfig"
   link_file "$DOTS_DIR/ripgreprc" "$HOME/.ripgreprc"
   link_file "$DOTS_DIR/editorconfig" "$HOME/.editorconfig"
+  link_file "$RIG_DIR/home/dot_zsh/aliases.zsh" "$HOME/.zsh/aliases.zsh"
 }
 
 set_zsh_default_shell() {

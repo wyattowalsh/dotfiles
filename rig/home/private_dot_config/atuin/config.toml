@@ -1,0 +1,30 @@
+# Local-only Atuin. Do not commit ~/.local/share/atuin/{history.db,key,session}.
+# Ctrl-R cycles directory → workspace → session → global. Up-arrow stays zsh HISTFILE.
+
+auto_sync = false
+update_check = false
+secrets_filter = true
+store_failed = true
+workspaces = true
+filter_mode = "directory"
+search_mode = "fuzzy"
+style = "compact"
+inline_height = 20
+enter_accept = true
+show_preview = true
+keymap_mode = "emacs"
+
+# Extra exclusions beyond the built-in secrets_filter (command prefixes only).
+history_filter = [
+  "^op login",
+  "^op item ",
+  "security find-password",
+  "security find-generic-password",
+  "security find-internet-password",
+]
+
+[ai]
+enabled = false
+
+[search]
+filters = ["directory", "workspace", "session", "global"]

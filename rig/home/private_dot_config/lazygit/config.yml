@@ -3,7 +3,7 @@ gui:
   showCommandLog: false
 git:
   paging:
-    pager: delta --dark --paging=never
+    pager: delta --paging=never
 customCommands:
   - key: '<c-o>'
     context: 'commits'

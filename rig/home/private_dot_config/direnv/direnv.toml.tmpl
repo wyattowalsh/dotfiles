@@ -1,0 +1,21 @@
+# direnv configuration — https://direnv.net/man/direnv.toml.1.html
+# No whitelist: every .envrc / .env still requires `direnv allow`.
+
+[global]
+# Homebrew bash, so .envrc evaluation survives PATH mutations.
+bash_path = "{{ if eq .chezmoi.os "darwin" }}/opt/homebrew/opt/bash/bin/bash{{ else }}/bin/bash{{ end }}"
+
+# Prevent .envrc from blocking on accidental stdin reads.
+disable_stdin = true
+
+# Load a directory's `.env` when no `.envrc` is present (dotenv KEY=VALUE, not shell).
+# If both exist, `.envrc` wins; call `dotenv` / `dotenv_if_exists` from `.envrc` to also load `.env`.
+load_dotenv = true
+
+# Future direnv default: fail on unset vars, failed commands, and pipe errors.
+strict_env = true
+
+# Leave headroom for composed local `.envrc` evaluation; `layout uv` itself is activation-only.
+warn_timeout = "10s"
+
+hide_env_diff = false

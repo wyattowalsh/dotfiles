@@ -4,11 +4,17 @@ title: Nix
 description: darwin flake.
 ---
 
+System settings + thin CLI. Brew stays package SSOT. Rectangle stays tiling SSOT.
+
 | Path | Role |
 | --- | --- |
 | `rig/darwin/flake.nix` + `flake.lock` | Flake; lock required for `--apply` |
 | `rig/darwin/hosts/` | Host values |
 | `rig/darwin/modules/` | Packages, defaults |
+
+Host `w4w-mbp` sets `primaryUser`, `nix.enable = false` (Determinate owns `nix.conf`), Touch ID sudo, and hostname.
+
+`macos-defaults` manages keyboard repeat and press-and-hold, smart quote/dash/autocorrect behavior, Dock recents/space ordering, tap-to-click and three-finger drag, plus Finder list/search/path/status preferences. It does not manage guest-login or WindowManager/Stage Manager/desktop-click keys.
 
 ```bash
 nix flake lock ./rig/darwin

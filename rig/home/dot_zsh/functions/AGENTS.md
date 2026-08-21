@@ -5,6 +5,7 @@
 Zsh autoloadable `freshen` and tests under `rig/home/dot_zsh/functions/`.
 
 Deployed to `~/.zsh/functions/` via Chezmoi (`rig/home/dot_zsh/functions/`).
+Also autoloadable here: `bak`, `tmpd`, `fkill`.
 
 ## Development rules
 

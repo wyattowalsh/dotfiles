@@ -16,8 +16,8 @@ scan_file() {
   while IFS= read -r line || [ -n "$line" ]; do
     line_no=$((line_no + 1))
     case "$line" in
-      *'do not reintroduce'*|*'Do not reintroduce'*|*'must not reintroduce'*) continue ;;
-      *'rig/brew'*|*'rig/bootstrap'*|*'rig/dots'*|*'rig/home'*|*'rig/darwin'*) continue ;;
+      *'do not reintroduce'* | *'Do not reintroduce'* | *'must not reintroduce'*) continue ;;
+      *'rig/brew'* | *'rig/bootstrap'* | *'rig/dots'* | *'rig/home'* | *'rig/darwin'*) continue ;;
     esac
 
     if printf '%s\n' "$line" | rg -q \
@@ -30,8 +30,7 @@ scan_file() {
       -e '\$REPO_DIR/dots/' \
       -e '\$REPO_DIR/home/' \
       -e '\$REPO_DIR/brew/' \
-      -e '\./darwin#'
-    then
+      -e '\./darwin#'; then
       printf 'stale-path-freeze: %s:%s: %s\n' "$file" "$line_no" "$line" >&2
       hits=$((hits + 1))
     fi
@@ -47,7 +46,7 @@ scan_file docs/AGENTS.md
 while IFS= read -r -d '' f; do
   # Skip this detector (patterns are intentional string literals).
   case "$f" in
-    */stale-path-freeze.sh|stale-path-freeze.sh) continue ;;
+    */stale-path-freeze.sh | stale-path-freeze.sh) continue ;;
   esac
   scan_file "$f"
 done < <(find checks -maxdepth 1 -type f -name '*.sh' -print0 2>/dev/null)

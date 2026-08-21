@@ -2,7 +2,16 @@
 # Nightly Kopia CLI snapshot runner (04:00 LaunchAgent). No GUI.
 set -euo pipefail
 
-export PATH="/opt/homebrew/bin:/usr/bin:/bin${PATH:+:$PATH}"
+if [[ -n "${KOPIA_NIGHTLY_TEST_BIN:-}" ]]; then
+  export PATH="${KOPIA_NIGHTLY_TEST_BIN}:/opt/homebrew/bin:/usr/bin:/bin"
+  GTIMEOUT="${KOPIA_NIGHTLY_TEST_BIN}/gtimeout"
+else
+  export PATH="/opt/homebrew/bin:/usr/bin:/bin${PATH:+:$PATH}"
+  GTIMEOUT="/opt/homebrew/bin/gtimeout"
+fi
+
+RUN_TIMEOUT_SECONDS=43140
+RUN_KILL_GRACE_SECONDS=60
 
 LABEL_NIGHTLY="com.wyattowalsh.kopia-nightly"
 LABEL_LOGIN="com.kopia.kopiaui.login"
@@ -13,11 +22,22 @@ LOG_DIR="${HOME}/Library/Logs/kopia"
 TMP_DIR="${HOME}/Library/Logs/kopia/tmp"
 REPO_RUNNER_REL="rig/home/dot_local/bin/executable_kopia-nightly"
 
+RUN_ACTIVE=0
+RUN_FINALIZED=0
+RUN_OPERATIONAL_FAILED=0
+RUN_MAINTENANCE_WARNING=0
+RUN_NOTIFICATION_SENT=0
+RUN_SIGNAL_STATUS=0
+RUN_TEMP_FILE=""
+
 log() {
   printf '[kopia-nightly] %s\n' "$*"
 }
 
 die() {
+  if [[ "$RUN_ACTIVE" -eq 1 ]]; then
+    RUN_OPERATIONAL_FAILED=1
+  fi
   log "error: $*" >&2
   exit 1
 }
@@ -78,15 +98,23 @@ ensure_kopiaui_quit() {
 
 disable_label() {
   local label="$1"
+  local status=0
   if agent_loaded "$label"; then
-    launchctl bootout "$(label_path "$label")" >/dev/null 2>&1 || true
+    if ! launchctl bootout "$(label_path "$label")" >/dev/null 2>&1; then
+      status=1
+    fi
   fi
-  launchctl disable "$(label_path "$label")" >/dev/null 2>&1 || true
+  if ! launchctl disable "$(label_path "$label")" >/dev/null 2>&1; then
+    status=1
+  fi
+  return "$status"
 }
 
 ensure_login_disabled() {
-  disable_label "$LABEL_LOGIN"
-  disable_label "$LABEL_UI"
+  local status=0
+  disable_label "$LABEL_LOGIN" || status=1
+  disable_label "$LABEL_UI" || status=1
+  return "$status"
 }
 
 print_login_item_hint() {
@@ -127,12 +155,50 @@ file_sha256() {
   shasum -a 256 "$1" | awk '{print $1}'
 }
 
+wait_repo_ready() {
+  local attempt=1
+  local max_attempts=8
+  local -a delays=(5 10 20 30 30 30 30)
+  local rc=0
+
+  while [[ "$attempt" -le "$max_attempts" ]]; do
+    log "repository status attempt ${attempt}/${max_attempts}"
+    set +e
+    "$GTIMEOUT" --signal=TERM --kill-after=5s 30s kopia repository status >/dev/null 2>&1
+    rc=$?
+    set -e
+    if [[ "$rc" -eq 0 ]]; then
+      log "repository status: ok"
+      return 0
+    fi
+    log "repository status failed rc=${rc}"
+    if [[ "$attempt" -eq "$max_attempts" ]]; then
+      break
+    fi
+    local delay="${delays[$((attempt - 1))]}"
+    log "retrying repository status in ${delay}s"
+    sleep "$delay"
+    attempt=$((attempt + 1))
+  done
+
+  die "repository unreachable after ${max_attempts} attempts; check rclone remote and network"
+}
+
 run_snapshot_loop() {
   local ok=0
   local skip=0
   local fail=0
   local src
   local rc=0
+  local attempt
+  local snap_log
+  local -a create_opts
+
+  # launchd/non-tty: --progress floods logs; XPC_SERVICE_NAME marks LaunchAgent.
+  create_opts=(--no-fail-fast)
+  if [[ -t 1 && -z "${XPC_SERVICE_NAME:-}" ]]; then
+    create_opts=(--progress --no-fail-fast)
+  fi
 
   while IFS= read -r src; do
     if [[ ! -e "$src" ]]; then
@@ -140,17 +206,35 @@ run_snapshot_loop() {
       skip=$((skip + 1))
       continue
     fi
-    log "snapshot: $src"
-    set +e
-    kopia snapshot create --progress --no-fail-fast "$src"
-    rc=$?
-    set -e
-    if [[ "$rc" -eq 0 ]]; then
-      ok=$((ok + 1))
-    else
+
+    snap_log="$(mktemp "${TMP_DIR}/kopia-nightly.XXXXXX")"
+    RUN_TEMP_FILE="$snap_log"
+    attempt=1
+    while true; do
+      if [[ "$attempt" -eq 1 ]]; then
+        log "snapshot: $src"
+      else
+        log "snapshot retry ${attempt}/3: $src"
+      fi
+      set +e
+      kopia snapshot create "${create_opts[@]}" "$src" 2>&1 | tee "${snap_log}"
+      rc=${PIPESTATUS[0]}
+      set -e
+      if [[ "$rc" -eq 0 ]]; then
+        ok=$((ok + 1))
+        break
+      fi
+      if [[ "$attempt" -lt 3 ]] && grep -qi rclone "${snap_log}" && grep -qi timeout "${snap_log}"; then
+        log "rclone start timeout rc=${rc}; retrying $src"
+        attempt=$((attempt + 1))
+        continue
+      fi
       log "snapshot failed rc=${rc}: $src"
       fail=$((fail + 1))
-    fi
+      break
+    done
+    rm -f "${snap_log}"
+    RUN_TEMP_FILE=""
   done < <(source_list)
 
   log "summary ok=${ok} skip=${skip} fail=${fail}"
@@ -160,8 +244,107 @@ run_snapshot_loop() {
   return 0
 }
 
-cmd_run() {
-  local dry_run="$1"
+initialize_run_state() {
+  RUN_ACTIVE=1
+  RUN_FINALIZED=0
+  RUN_OPERATIONAL_FAILED=0
+  RUN_MAINTENANCE_WARNING=0
+  RUN_NOTIFICATION_SENT=0
+  RUN_SIGNAL_STATUS=0
+  RUN_TEMP_FILE=""
+}
+
+emit_outcome_notification() {
+  local outcome="$1"
+  local script=""
+
+  if [[ "$RUN_NOTIFICATION_SENT" -eq 1 ]]; then
+    return 0
+  fi
+  RUN_NOTIFICATION_SENT=1
+
+  case "$outcome" in
+    warning)
+      script='display notification "Kopia nightly maintenance needs attention" with title "kopia-nightly"'
+      ;;
+    failure)
+      script='display notification "Kopia nightly failed; check the local log" with title "kopia-nightly"'
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+
+  if [[ ! -x "$GTIMEOUT" ]] || ! command -v osascript >/dev/null 2>&1; then
+    return 0
+  fi
+  "$GTIMEOUT" --signal=TERM --kill-after=2s 10s osascript -e "$script" >/dev/null 2>&1 || true
+}
+
+handle_signal() {
+  local status="$1"
+  RUN_SIGNAL_STATUS="$status"
+  RUN_OPERATIONAL_FAILED=1
+  log "caught signal; exiting ${status}" >&2
+  exit "$status"
+}
+
+finalize_run() {
+  local entry_status="$1"
+  local final_status="$entry_status"
+  local cleanup_failed=0
+
+  trap - EXIT TERM INT
+  if [[ "$RUN_FINALIZED" -eq 1 ]]; then
+    exit "$final_status"
+  fi
+  RUN_FINALIZED=1
+
+  # Re-disable GUI login agents before any other cleanup.
+  if ! ensure_login_disabled; then
+    cleanup_failed=1
+    log "error: failed to disable one or more KopiaUI login agents during finalization" >&2
+  fi
+
+  if [[ -n "$RUN_TEMP_FILE" && "$RUN_TEMP_FILE" == "${TMP_DIR}/kopia-nightly."* ]]; then
+    if ! rm -f "$RUN_TEMP_FILE"; then
+      cleanup_failed=1
+      log "error: failed to remove temporary snapshot log" >&2
+    fi
+    RUN_TEMP_FILE=""
+  fi
+
+  if [[ "$RUN_SIGNAL_STATUS" -ne 0 ]]; then
+    final_status="$RUN_SIGNAL_STATUS"
+  elif [[ "$entry_status" -ne 0 || "$RUN_OPERATIONAL_FAILED" -ne 0 || "$cleanup_failed" -ne 0 ]]; then
+    if [[ "$entry_status" -eq 0 ]]; then
+      final_status=1
+    fi
+  else
+    final_status=0
+  fi
+
+  if [[ "$final_status" -ne 0 ]]; then
+    emit_outcome_notification failure
+  elif [[ "$RUN_MAINTENANCE_WARNING" -ne 0 ]]; then
+    emit_outcome_notification warning
+  fi
+
+  exit "$final_status"
+}
+
+test_signal_barrier() {
+  if [[ "${KOPIA_NIGHTLY_TEST_SIGNAL_WAIT:-0}" -ne 1 ]]; then
+    return 0
+  fi
+  : "${KOPIA_NIGHTLY_TEST_STATE:?test signal state is unset}"
+  : >"${KOPIA_NIGHTLY_TEST_STATE}/signal-ready"
+  while [[ ! -f "${KOPIA_NIGHTLY_TEST_STATE}/signal-release" ]]; do
+    /bin/sleep 1
+  done
+}
+
+cmd_run_dry() {
   require_cmd kopia
   require_cmd rclone
 
@@ -169,48 +352,89 @@ cmd_run() {
   local skip=0
   local src
 
-  if [[ "$dry_run" -eq 1 ]]; then
-    log "dry-run: would require kopia and rclone (present)"
-    while IFS= read -r src; do
-      if [[ -e "$src" ]]; then
-        log "would snapshot: $src"
-        ok=$((ok + 1))
-      else
-        log "would skip missing: $src"
-        skip=$((skip + 1))
-      fi
-    done < <(source_list)
-    log "summary ok=${ok} skip=${skip} fail=0 (dry-run)"
-    return 0
+  log "dry-run: would require kopia and rclone (present)"
+  while IFS= read -r src; do
+    if [[ -e "$src" ]]; then
+      log "would snapshot: $src"
+      ok=$((ok + 1))
+    else
+      log "would skip missing: $src"
+      skip=$((skip + 1))
+    fi
+  done < <(source_list)
+  log "summary ok=${ok} skip=${skip} fail=0 (dry-run)"
+}
+
+cmd_bounded_run() {
+  initialize_run_state
+  trap 'finalize_run "$?"' EXIT
+  trap 'handle_signal 143' TERM
+  trap 'handle_signal 130' INT
+
+  require_cmd kopia
+  require_cmd rclone
+  require_cmd launchctl
+  require_cmd flock
+  if [[ ! -x "$GTIMEOUT" ]]; then
+    die "missing executable: $GTIMEOUT"
   fi
 
-  require_cmd flock
   mkdir -p "${TMP_DIR}"
   exec 9>"${LOG_DIR}/nightly.lock"
   if ! flock -n 9; then
     die "another nightly run holds ${LOG_DIR}/nightly.lock"
   fi
 
-  local caffeine_pid=""
-  cleanup_run() {
-    if [[ -n "${caffeine_pid}" ]]; then
-      kill "${caffeine_pid}" >/dev/null 2>&1 || true
-    fi
-    ensure_login_disabled
-  }
-  trap cleanup_run EXIT TERM INT
+  if ! ensure_login_disabled; then
+    die "failed to disable one or more KopiaUI login agents"
+  fi
 
   ensure_kopiaui_quit
 
   if command -v caffeinate >/dev/null 2>&1; then
-    caffeinate -i -w "$$" &
-    caffeine_pid=$!
+    caffeinate -i -w "$$" >/dev/null 2>&1 &
     log "holding idle sleep (caffeinate -i -w $$)"
   else
     log "caffeinate missing; snapshots may sleep mid-upload"
   fi
 
+  test_signal_barrier
+  wait_repo_ready
+
+  local snap_rc=0
+  local maint_rc=0
+  set +e
   run_snapshot_loop
+  snap_rc=$?
+  set -e
+
+  set +e
+  kopia maintenance run --full
+  maint_rc=$?
+  set -e
+  log "maintenance run --full rc=${maint_rc}"
+  if [[ "$maint_rc" -ne 0 ]]; then
+    log "warning: maintenance failed (not failing job)"
+    RUN_MAINTENANCE_WARNING=1
+  fi
+
+  if [[ "$snap_rc" -ne 0 ]]; then
+    RUN_OPERATIONAL_FAILED=1
+  fi
+
+  return "$snap_rc"
+}
+
+cmd_run() {
+  local dry_run="$1"
+  if [[ "$dry_run" -eq 1 ]]; then
+    cmd_run_dry
+    return
+  fi
+  if [[ ! -x "$GTIMEOUT" ]]; then
+    die "missing executable: $GTIMEOUT"
+  fi
+  exec "$GTIMEOUT" --verbose --signal=TERM --kill-after="${RUN_KILL_GRACE_SECONDS}s" "${RUN_TIMEOUT_SECONDS}s" "$0" __bounded-run
 }
 
 cmd_install() {
@@ -241,7 +465,9 @@ cmd_install() {
   fi
 
   require_cmd launchctl
-  ensure_login_disabled
+  if ! ensure_login_disabled; then
+    die "failed to disable one or more KopiaUI login agents"
+  fi
 
   if [[ ! -f "$dest" ]]; then
     die "dest plist missing (${dest}); apply Chezmoi from rig/home first"
@@ -457,6 +683,10 @@ main() {
         mode="doctor"
         shift
         ;;
+      __bounded-run)
+        mode="bounded-run"
+        shift
+        ;;
       -h | --help)
         usage
         return 0
@@ -476,6 +706,12 @@ main() {
       ;;
     doctor)
       cmd_doctor "$policies"
+      ;;
+    bounded-run)
+      if [[ "$dry_run" -ne 0 || "$policies" -ne 0 ]]; then
+        die "private bounded mode does not accept public options"
+      fi
+      cmd_bounded_run
       ;;
     *)
       die "unknown mode: $mode"

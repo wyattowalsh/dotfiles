@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+printf 'pgrep|%s\n' "$*" >>"${KOPIA_NIGHTLY_TEST_STATE:?}/calls"
+exit 1

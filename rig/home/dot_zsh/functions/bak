@@ -1,0 +1,21 @@
+#compdef bak
+# bak — timestamped copy as NAME.YYYYMMDD-HHMMSS.bak
+
+bak() {
+    emulate -L zsh
+
+    if (( $# < 1 )); then
+        print -u2 "usage: bak <path>..."
+        return 1
+    fi
+
+    local src dest rc=0
+    for src in "$@"; do
+        [[ -e "$src" ]] || continue
+        dest="${src}.$(date +%Y%m%d-%H%M%S).bak"
+        command cp -a -- "$src" "$dest" || rc=$?
+    done
+    return rc
+}
+
+bak "$@"

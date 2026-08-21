@@ -23,7 +23,7 @@ Machine paths: `$RIG_DIR/{brew,darwin,home,dots}`.
 - **Default:** dry-run preview when neither `--dry-run` nor `--apply` is passed
 - **Apply:** requires `rig/darwin/flake.lock`; creates missing parent directories for nested symlink targets; refuses to replace non-symlink home targets
 - **Flags:** `--verbose`, `--no-upgrade` (brew bundle first-restore safety), `--with-dev-env`, `--require-dev-env`. `--with-dev-env` always passes `--skip-mcphub`.
-- **Phases:** preflight → sudo keepalive (apply) → Xcode CLT wait → brew/just/nix/chezmoi → OMZ + p10k → Brewfile → **symlinks from `rig/dots/`** → Chezmoi → nix-darwin → optional `dev-env.sh`
+- **Phases:** preflight → sudo keepalive (apply) → Xcode CLT wait → brew/just/nix/chezmoi → OMZ + p10k → Brewfile → **symlinks from `rig/dots/`** → Chezmoi → first-run Atuin import if the history db is missing → nix-darwin → optional `dev-env.sh`
 
 Does not vendor AI harness/MCP configs or build docs. Agent stack is `just bootstrap-dev` (or `--with-dev-env`). Does not append to shell RC files.
 

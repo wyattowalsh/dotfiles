@@ -37,7 +37,7 @@ jobs:
       - name: Set up system validation tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y zsh ripgrep
+          sudo apt-get install -y zsh ripgrep shellcheck shfmt bats
 
       - name: Run CI validation
         run: just ci

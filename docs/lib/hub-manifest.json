@@ -59,7 +59,7 @@
     {
       "slug": "git",
       "title": "Git",
-      "description": "gitconfig + delta.",
+      "description": "gitconfig + delta + lazygit.",
       "group": "operate"
     },
     {

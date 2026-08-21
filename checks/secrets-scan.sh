@@ -17,7 +17,7 @@ trap cleanup EXIT
 
 while IFS= read -r -d '' tracked_file; do
   case "$tracked_file" in
-    LICENSE|checks/secrets-scan.sh|docs/node_modules/*|local/*|*.lock|.env.example)
+    LICENSE | checks/secrets-scan.sh | docs/node_modules/* | local/* | *.lock | .env.example)
       continue
       ;;
   esac

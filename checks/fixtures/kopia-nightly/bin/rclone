@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+printf 'rclone|%s\n' "$*" >>"${KOPIA_NIGHTLY_TEST_STATE:?}/calls"

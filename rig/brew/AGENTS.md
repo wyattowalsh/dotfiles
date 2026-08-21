@@ -11,6 +11,8 @@
 - **Inventory is private** — `just inventory-redacted` writes gitignored `local/` only; never commit dumps
 - **Promote with intent** — full-transfer is allowed for this personal rig, but still skip junk (see exclude)
 - Group entries with comment headers; **no duplicate** brew/cask/mas names
+- `# trial-agent-deck` is the only tmux exception (Agent Deck backend). Ghostty owns daily splits.
+- `just` is the Brew-owned task runner; do not also install it via mise. `mise` is toolchain-only (no `[tasks]`).
 - Docker primary is `cask "docker-desktop"`; do not re-add formula `docker` (excluded)
 - Only declare taps required by promoted packages; no test-build taps
 - Document `restart_service` explicitly; keep DBs/cloud daemons stopped unless intentional

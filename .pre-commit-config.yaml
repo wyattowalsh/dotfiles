@@ -45,14 +45,14 @@ repos:
         entry: just check-shell
         language: system
         pass_filenames: false
-        files: ^(setup\.sh|rig/bootstrap/macos\.sh|rig/bootstrap/linux\.sh|checks/.*\.sh|justfile)$
+        files: ^(setup\.sh|rig/bootstrap/macos\.sh|rig/bootstrap/linux\.sh|checks/.*\.(sh|bats)|justfile)$
 
       - id: dotfiles-zsh-parity
         name: dotfiles zsh syntax and parity
         entry: just check-zsh
         language: system
         pass_filenames: false
-        files: ^(rig/dots/zshrc|rig/home/dot_zshrc\.tmpl|rig/dots/p10k\.zsh|rig/home/dot_p10k\.zsh|checks/zsh-structure.*|checks/fixtures/zshrc/.*)$
+        files: ^(rig/dots/zshrc|rig/home/dot_zshrc\.tmpl|rig/dots/p10k\.zsh|rig/home/dot_p10k\.zsh|rig/home/dot_zsh/aliases\.zsh|checks/zsh-structure.*|checks/fixtures/zshrc/.*)$
 
       - id: dotfiles-freshen-smoke
         name: dotfiles freshen smoke tests

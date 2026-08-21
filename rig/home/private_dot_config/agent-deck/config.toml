@@ -1,0 +1,7 @@
+# Trial: Ghostty remains the daily multiplexer.
+# tmux is only Agent Deck's backend, on an isolated socket.
+# Do not enable conductor, Telegram, or a web UI here (secrets + extra daemons).
+# MCP SSOT stays in wyattowalsh/agents — do not duplicate servers here.
+
+[tmux]
+socket_name = "agent-deck"
