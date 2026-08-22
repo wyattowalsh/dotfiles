@@ -26,4 +26,4 @@ just bootstrap --dry-run
 
 ## Docs sync
 
-Update `docs/content/docs/home-config.mdx` (and `backup.mdx` / `terminal.mdx` / `shell.mdx` when relevant) when layout or deploy paths change.
+Update `docs/content/docs/home-config.mdx` (and `apple-text.mdx` / `backup.mdx` / `terminal.mdx` / `shell.mdx` when relevant) when layout or deploy paths change.

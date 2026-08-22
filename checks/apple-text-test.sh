@@ -60,10 +60,17 @@ cleanup="$(
 from pathlib import Path
 import sys
 
-matches = sorted(Path(sys.argv[1]).glob("staged-imports/*/CLEANUP.md"))
-if not matches:
+state = Path(sys.argv[1])
+cleanup_matches = sorted(state.glob("staged-imports/*/CLEANUP.md"))
+apple_named = sorted(state.glob("staged-imports/*/Text Substitutions.plist"))
+legacy_named = sorted(state.glob("staged-imports/*/property list.plist"))
+if not cleanup_matches:
     raise SystemExit("missing CLEANUP.md")
-print(matches[0])
+if not apple_named:
+    raise SystemExit("missing Text Substitutions.plist")
+if not legacy_named:
+    raise SystemExit("missing property list.plist")
+print(cleanup_matches[0])
 PY
 )"
 python3 - "$cleanup" <<'PY' || fail "cleanup notes missing migrate leftover"
