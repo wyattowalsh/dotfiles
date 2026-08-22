@@ -49,6 +49,19 @@
       "org.p0deje.Maccy" = {
         clipboardCheckInterval = 0.1;
       };
+      "com.colliderli.iina" = {
+        currentInputConfigName = "IINA-QoL";
+        horizontalScrollAction = 1;
+        verticalScrollAction = 4;
+        playbackSpeedScrollAmount = 3;
+        screenshotSaveToFile = true;
+        screenshotCopyToClipboard = true;
+        screenShotIncludeSubtitle = true;
+        screenshotShowPreview = true;
+        screenShotFormat = 0;
+        useMediaKeys = true;
+        enableAdvancedSettings = true;
+      };
     };
   };
 }

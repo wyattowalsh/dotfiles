@@ -6,3 +6,13 @@
 AGENTS.md
 # Private myaddr overlay — live file only, never Chezmoi-apply from git
 .config/apple-text/expansions.local.json
+
+# IINA runtime (destination paths). Code/UI is tracked; data is not.
+Library/Application Support/com.colliderli.iina/plugins/.data
+Library/Application Support/com.colliderli.iina/plugins/.preferences
+Library/Application Support/com.colliderli.iina/plugins/**/.data
+Library/Application Support/com.colliderli.iina/plugins/**/.preferences
+Library/Application Support/com.colliderli.iina/history.plist
+Library/Application Support/com.colliderli.iina/watch_later
+Library/Application Support/com.colliderli.iina/**/*.log
+Library/Application Support/com.colliderli.iina/screenshots

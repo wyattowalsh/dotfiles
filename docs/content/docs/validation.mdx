@@ -13,6 +13,8 @@ just check-rig-ecosystem-assurance
 just check-yazi-config
 just check-kopia-nightly
 just check-apple-text
+just check-iina-config
+just iina-qol
 just check-bats
 just fmt-shell      # shfmt -w (preview: just check-shell)
 just smoke          # non-destructive runtime
@@ -29,6 +31,8 @@ just docs-ci
 | `just check-yazi-config` | Current fields, resolved plugin/flavor locks, dark/light theme mapping, Option DuckDB keys, and isolated native parsing when Yazi is available |
 | `just check-kopia-nightly` | Static runner/plist contract (cap in the runner, no launchd `TimeOut`; no live `kopia` / launchd) |
 | `just check-apple-text` | Canonical Text Replacement / Shortcuts registries plus offline merge harness (no Apple DB writes) |
+| `just check-iina-config` | IINA-QoL input profile, plugin schema, Hammerspoon syntax, chezmoiignore (no live IINA writes) |
+| `just iina-qol` | Preview / apply / doctor for the IINA QoL stack (dry-run unless `--apply`) |
 | `just check-bats` | File-only Bats coverage when Bats is present; required in CI |
 
 ```mermaid
@@ -66,6 +70,7 @@ Runs in this order:
 | `check-stale-paths` | freeze on pre-`rig/` machine path contracts |
 | `check-kopia-nightly` | headless Kopia runner contract (no live `kopia` / launchd) |
 | `check-apple-text` | Text Replacement registries + offline merge (no `TextReplacements.db`) |
+| `check-iina-config` | IINA-QoL profile, plugin schema, Hammerspoon syntax (no live IINA / Hammerspoon mutation) |
 | `check-bats` | `checks/*.bats` when Bats is present; required in CI |
 | `check-chezmoi-ignore` | `.chezmoiignore` uses destination/target names |
 | `check-darwin-lock` | `flake.lock` JSON + recoverable nix-darwin pin |

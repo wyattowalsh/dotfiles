@@ -20,7 +20,17 @@ if rg -q -- '^[[:space:]]*dot_zshrc(\.tmpl)?[[:space:]]*$' "$IGNORE" \
   fail=1
 fi
 
-for target in '.zshrc' '.p10k.zsh' 'AGENTS.md'; do
+required_targets=(
+  '.zshrc'
+  '.p10k.zsh'
+  'AGENTS.md'
+  'Library/Application Support/com.colliderli.iina/plugins/.data'
+  'Library/Application Support/com.colliderli.iina/plugins/.preferences'
+  'Library/Application Support/com.colliderli.iina/history.plist'
+  'Library/Application Support/com.colliderli.iina/watch_later'
+  'Library/Application Support/com.colliderli.iina/screenshots'
+)
+for target in "${required_targets[@]}"; do
   if ! rg -qxF -- "$target" "$IGNORE"; then
     printf 'chezmoi-ignore: missing required target ignore: %s\n' "$target" >&2
     fail=1

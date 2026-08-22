@@ -6,6 +6,7 @@ import {
   House,
   Keyboard,
   MapTrifold,
+  MonitorPlay,
   Robot,
   RocketLaunch,
   ShieldCheck,
@@ -66,6 +67,7 @@ const sectionBrands: Record<string, BrandMark> = {
 
 const sectionFallback: Record<string, Icon> = {
   "home-config": House,
+  iina: MonitorPlay,
   "apple-text": Keyboard,
   keyboard: Keyboard,
   backup: Database,

@@ -36,6 +36,13 @@
       "group": "operate"
     },
     {
+      "slug": "iina",
+      "title": "IINA",
+      "description": "Curated player profile + cursor zoom.",
+      "firstCommand": "just check-iina-config",
+      "group": "operate"
+    },
+    {
       "slug": "backup",
       "title": "Backup",
       "description": "Kopia CLI at 04:00, not at login.",

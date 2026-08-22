@@ -1,0 +1,32 @@
+{
+  "name": "IINA QoL",
+  "identifier": "com.wyattowalsh.iina-qol",
+  "version": "4.0.1",
+  "description": "Cursor-centric zoom at the pointer, keyboard zoom/pan, and an opt-in MKV subtitle preroll toggle.",
+  "author": {
+    "name": "Wyatt Walsh"
+  },
+  "entry": "main.js",
+  "preferencesPage": "preferences.html",
+  "helpPage": "help.html",
+  "permissions": [
+    "show-osd"
+  ],
+  "preferenceDefaults": {
+    "schemaVersion": 4,
+    "cursorCentric": true,
+    "showOSD": true,
+    "resetOnFile": true,
+    "invertScroll": false,
+    "scrollSensitivity": 1.0,
+    "discreteStep": 0.125,
+    "continuousStep": 0.02,
+    "keyboardStep": 0.125,
+    "minZoomPercent": 100,
+    "maxZoomPercent": 1000,
+    "detentPercent": 105,
+    "panStep": 0.1,
+    "mkvSubtitleCompat": false,
+    "hintVersion": 0
+  }
+}

@@ -20,6 +20,7 @@ description: Chezmoi + rig/dots links.
 | visidata | `rig/home/private_dot_config/visidata/config.py` | chezmoi |
 | Agent Deck trial | `rig/home/private_dot_config/agent-deck/config.toml` | chezmoi; isolated `tmux -L agent-deck`; no conductor |
 | Apple text | `rig/home/private_dot_config/apple-text/` | chezmoi JSON + `just apple-text`; local overlay ignored; [Apple text](/docs/apple-text) |
+| IINA / Hammerspoon | `rig/home/dot_hammerspoon/` · `rig/home/Library/Application Support/com.colliderli.iina/` | chezmoi loader + plugin + `input_conf`; overlay/history/plugin prefs untracked; [IINA](/docs/iina) |
 | usql | `rig/home/dot_usqlrc` | chezmoi; no DSNs |
 | yazi | `rig/home/private_dot_config/yazi/` (`yazi.toml`, `init.lua`, `keymap.toml`, `package.toml`, `theme.toml`) | chezmoi; locked plugins/flavors; `gv` opens VisiData |
 | git XDG | `rig/home/private_dot_config/git/` | chezmoi |
@@ -56,4 +57,4 @@ just check-zsh          # dots ↔ home parity
 just check-yazi-config  # fields, locks, flavors, keys, isolated parse
 ```
 
-Parity mirrors (`dot_zshrc.tmpl`, `dot_p10k.zsh`) stay in the Chezmoi source tree for `cmp` only. [`.chezmoiignore`](https://www.chezmoi.io/reference/special-files/chezmoiignore/) must list **target** paths (`.zshrc`, `.p10k.zsh`, `AGENTS.md`) — source names match nothing. Gate: `just check-chezmoi-ignore`. Ghostty defaults live in `rig/home/.chezmoidata.toml`. Aliases: `dot_zsh/aliases.zsh` → `~/.zsh/aliases.zsh`. Overrides: `~/.zshrc.local`, untracked includes, optional `~/.config/ghostty/config.local`. Nightly backup: `dot_local/bin/executable_kopia-nightly` + LaunchAgent template — [Backup](/docs/backup). See [Shell](/docs/shell), [Terminal](/docs/terminal).
+Parity mirrors (`dot_zshrc.tmpl`, `dot_p10k.zsh`) stay in the Chezmoi source tree for `cmp` only. [`.chezmoiignore`](https://www.chezmoi.io/reference/special-files/chezmoiignore/) must list **target** paths (`.zshrc`, `.p10k.zsh`, `AGENTS.md`, IINA plugin `.data`/`.preferences`/`history.plist`/`watch_later`/`screenshots`) — source names match nothing. Gate: `just check-chezmoi-ignore`. Ghostty defaults live in `rig/home/.chezmoidata.toml`. Aliases: `dot_zsh/aliases.zsh` → `~/.zsh/aliases.zsh`. Overrides: `~/.zshrc.local`, untracked includes, optional `~/.config/ghostty/config.local`. Nightly backup: `dot_local/bin/executable_kopia-nightly` + LaunchAgent template — [Backup](/docs/backup). See [Shell](/docs/shell), [Terminal](/docs/terminal).

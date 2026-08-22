@@ -298,6 +298,7 @@ cask "meetingbar"
 # media
 cask "spotify"
 cask "iina"
+cask "hammerspoon"
 cask "vlc"
 cask "obs"
 cask "cap"

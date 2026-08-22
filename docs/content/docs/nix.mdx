@@ -21,6 +21,8 @@ Host `w4w-mbp` sets `primaryUser`, `nix.enable = false` (Determinate owns `nix.c
 
 `macos-defaults` manages keyboard repeat and press-and-hold, smart quote/dash/autocorrect behavior, Dock recents/space ordering, tap-to-click and three-finger drag, plus Finder list/search/path/status preferences. It does not manage guest-login or WindowManager/Stage Manager/desktop-click keys.
 
+`CustomUserPreferences."com.colliderli.iina"` pins IINA scalars by name only: `currentInputConfigName`, `horizontalScrollAction`, `verticalScrollAction`, `playbackSpeedScrollAmount`, screenshot save/copy/subs/preview/format, `useMediaKeys`, `enableAdvancedSettings`. Values stay in the nix module. See [IINA](/docs/iina).
+
 ```bash
 nix flake lock ./rig/darwin
 just darwin-check

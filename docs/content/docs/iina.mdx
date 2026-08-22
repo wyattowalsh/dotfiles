@@ -1,0 +1,46 @@
+---
+icon: iina
+title: IINA
+description: Curated player profile + cursor zoom.
+---
+
+**SSOT:** `rig/home/dot_hammerspoon/` and `rig/home/Library/Application Support/com.colliderli.iina/` (Chezmoi). Overlay, history, and plugin prefs stay untracked.
+
+```bash
+just check-iina-config
+just iina-qol preview
+just iina-qol apply --apply
+just iina-qol doctor
+```
+
+`just iina-qol` is dry-run unless `--apply`. Checks never write live IINA or Hammerspoon state.
+
+| Path | Role |
+| --- | --- |
+| `rig/home/dot_hammerspoon/` | Thin `init.lua` loader + `iina_qol` modules |
+| `…/input_conf/IINA-QoL.conf` | Curated input profile |
+| `…/plugins/IINA-QoL.iinaplugin/` | Plugin code/UI (`show-osd` only) |
+
+Enable in IINA → Plugins: `com.wyattowalsh.iina-qol`.
+
+## Gestures
+
+| Input | Action |
+| --- | --- |
+| Cmd+Shift+scroll | Zoom **at the pointer**. First gesture focuses that player |
+| Unmodified vertical scroll | Speed |
+| Horizontal scroll | Seek |
+| `a` / Left · `d` / Right | Seek ±10s |
+| Shift + those keys | Seek ±5s exact |
+| Cmd+Shift + those keys | Seek ±1s exact |
+| `s` | Screenshot (save, copy, subs, preview) |
+| `l` | A-B loop |
+
+## Rules
+
+| Rule | Detail |
+| --- | --- |
+| Tap | Hammerspoon scroll tap defaults **on**; consumes only Command+Shift+scroll |
+| Cursor zoom | Player-space pointer (IINA `input` `{x,y}` or mpv `mouse-pos` with `hover === true`). Missing/uninitialized origin is fail-closed. Never call center-zoom “cursor zoom” |
+| Apply | Exact-target `just iina-qol apply --apply` — not a full home/bootstrap apply |
+| Untracked | Overlay, history, plugin prefs, sibling plugins, logs, screenshots — dest paths in `.chezmoiignore` |

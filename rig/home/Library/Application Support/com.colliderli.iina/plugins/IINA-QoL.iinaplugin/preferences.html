@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { padding: 14px 16px; }
+    .grid { display: grid; grid-template-columns: minmax(180px, 1fr) 96px; gap: 8px 14px; align-items: center; }
+    input[type="number"] { width: 88px; }
+    .warning { padding: 8px 10px; border-radius: 7px; background: rgba(255, 149, 0, 0.12); }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  </style>
+</head>
+<body>
+  <div class="pref-section">
+    <strong>Zoom behavior</strong>
+    <p><label><input type="checkbox" data-type="bool" data-pref-key="showOSD" /> Show zoom and pan OSD feedback</label></p>
+    <p><label><input type="checkbox" data-type="bool" data-pref-key="resetOnFile" /> Reset zoom and pan when the file changes</label></p>
+    <p><label><input type="checkbox" data-type="bool" data-pref-key="invertScroll" /> Invert Command+Shift+scroll zoom direction</label></p>
+  </div>
+
+  <div class="pref-section">
+    <strong>Sensitivity and limits</strong>
+    <div class="grid">
+      <label>Scroll sensitivity</label>
+      <input type="number" min="0.25" max="4" step="0.05" data-type="float" data-pref-key="scrollSensitivity" />
+      <label>Mouse-wheel zoom step</label>
+      <input type="number" min="0.025" max="0.5" step="0.025" data-type="float" data-pref-key="discreteStep" />
+      <label>Trackpad zoom step</label>
+      <input type="number" min="0.005" max="0.2" step="0.005" data-type="float" data-pref-key="continuousStep" />
+      <label>Keyboard zoom step</label>
+      <input type="number" min="0.025" max="0.5" step="0.025" data-type="float" data-pref-key="keyboardStep" />
+      <label>Minimum zoom percent</label>
+      <input type="number" min="100" max="1000" step="1" data-type="int" data-pref-key="minZoomPercent" />
+      <label>Maximum zoom percent</label>
+      <input type="number" min="100" max="1000" step="1" data-type="int" data-pref-key="maxZoomPercent" />
+      <label>Soft detent percent</label>
+      <input type="number" min="100" max="1000" step="1" data-type="int" data-pref-key="detentPercent" />
+      <label>Keyboard pan step</label>
+      <input type="number" min="0.025" max="0.5" step="0.025" data-type="float" data-pref-key="panStep" />
+    </div>
+    <p class="small secondary pref-help">mpv zoom is logarithmic: 100% = 0, 200% = 1, 1000% = log2(10). Zoom-out never goes below the fitted view.</p>
+  </div>
+
+  <div class="pref-section warning">
+    <strong>MKV subtitle preroll</strong>
+    <p><label><input type="checkbox" data-type="bool" data-pref-key="mkvSubtitleCompat" /> Enable broader MKV subtitle preroll</label></p>
+    <p class="small secondary pref-help">Off by default. Enable only when subtitles disappear after seeking in some MKV files. This changes seek and subtitle behavior and can make seeks slower.</p>
+  </div>
+
+  <div class="pref-section">
+    <strong>Controls</strong>
+    <p class="small"><code>⌘⇧ scroll</code> zoom at pointer · <code>⌘⇧=</code> in · <code>⌘⇧-</code> out · <code>⌘⇧0</code> reset · <code>⌥⌘ arrows</code> pan</p>
+  </div>
+</body>
+</html>
