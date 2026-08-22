@@ -2,7 +2,7 @@
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
-shell_files := "setup.sh rig/bootstrap/macos.sh rig/bootstrap/linux.sh rig/bootstrap/dev-env.sh checks/apps-manual-inventory.sh checks/brew-exclude-check.sh checks/chezmoi-ignore.sh checks/config-dirs-inventory.sh checks/darwin-lock.sh checks/docs-css-health.sh checks/docs-hub-parity.sh checks/docs-sensitive.sh checks/freshen-smoke.sh checks/freshen-version.sh checks/freshen-privacy.sh checks/kopia-nightly.sh checks/linux-dev-env-rc.sh checks/mise-boundary.sh checks/rig-ecosystem-assurance.sh checks/secrets-scan.sh checks/shell-files-sync.sh checks/smoke.sh checks/stale-path-freeze.sh checks/validate-json.sh checks/yazi-config.sh checks/zsh-alias-docs.sh checks/zsh-alias-usage.sh checks/zsh-home-behavior-test.sh checks/zsh-inventory.sh checks/zsh-structure.sh checks/zsh-structure-test.sh checks/zsh-smoke-interactive.sh checks/zsh-rollback-live.sh rig/home/dot_local/bin/executable_kopia-nightly rig/home/private_dot_config/direnv/lib/layout_uv.sh"
+shell_files := "setup.sh rig/bootstrap/macos.sh rig/bootstrap/linux.sh rig/bootstrap/dev-env.sh checks/apple-text-test.sh checks/apple-text.sh checks/apps-manual-inventory.sh checks/brew-exclude-check.sh checks/chezmoi-ignore.sh checks/config-dirs-inventory.sh checks/darwin-lock.sh checks/docs-css-health.sh checks/docs-hub-parity.sh checks/docs-sensitive.sh checks/freshen-smoke.sh checks/freshen-version.sh checks/freshen-privacy.sh checks/kopia-nightly.sh checks/linux-dev-env-rc.sh checks/mise-boundary.sh checks/rig-ecosystem-assurance.sh checks/secrets-scan.sh checks/shell-files-sync.sh checks/smoke.sh checks/stale-path-freeze.sh checks/validate-json.sh checks/yazi-config.sh checks/zsh-alias-docs.sh checks/zsh-alias-usage.sh checks/zsh-home-behavior-test.sh checks/zsh-inventory.sh checks/zsh-structure.sh checks/zsh-structure-test.sh checks/zsh-smoke-interactive.sh checks/zsh-rollback-live.sh rig/home/dot_local/bin/executable_kopia-nightly rig/home/private_dot_config/direnv/lib/layout_uv.sh"
 
 # List available recipes (default).
 default:
@@ -32,7 +32,7 @@ bootstrap-dev *ARGS:
     exec ./rig/bootstrap/dev-env.sh "${extra[@]}"
 
 # Run static validation.
-check: check-hooks check-shell check-just-fmt check-mise-boundary check-zsh check-freshen check-json secrets-scan brew-exclude check-rig-ecosystem-assurance check-yazi-config check-stale-paths check-kopia-nightly check-bats check-chezmoi-ignore check-darwin-lock check-linux-dev-env-rc check-shell-files
+check: check-hooks check-shell check-just-fmt check-mise-boundary check-zsh check-freshen check-json secrets-scan brew-exclude check-rig-ecosystem-assurance check-yazi-config check-stale-paths check-kopia-nightly check-apple-text check-bats check-chezmoi-ignore check-darwin-lock check-linux-dev-env-rc check-shell-files
 
 # Run the validation suite used by CI.
 ci: check smoke docs-ci
@@ -162,6 +162,15 @@ check-stale-paths:
 # Static contract for the headless Kopia nightly runner (no live kopia/launchctl).
 check-kopia-nightly:
     ./checks/kopia-nightly.sh
+
+# Canonical Apple Text Replacement / Shortcuts registries plus offline merge.
+check-apple-text:
+    ./checks/apple-text.sh validate
+    ./checks/apple-text-test.sh
+
+# Preview or stage Apple Text Replacement imports. Default is dry-run.
+apple-text *ARGS:
+    ./checks/apple-text.sh {{ ARGS }}
 
 # Chezmoi ignore file must use destination/target path names.
 check-chezmoi-ignore:

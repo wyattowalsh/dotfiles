@@ -29,6 +29,13 @@
       "group": "operate"
     },
     {
+      "slug": "apple-text",
+      "title": "Apple text",
+      "description": "Text Replacement + Shortcuts from the rig.",
+      "firstCommand": "just apple-text validate",
+      "group": "operate"
+    },
+    {
       "slug": "backup",
       "title": "Backup",
       "description": "Kopia CLI at 04:00, not at login.",

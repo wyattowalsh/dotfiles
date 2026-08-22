@@ -4,6 +4,7 @@ import {
   BookOpen,
   Database,
   House,
+  Keyboard,
   MapTrifold,
   Robot,
   RocketLaunch,
@@ -58,12 +59,15 @@ const sectionBrands: Record<string, BrandMark> = {
   packages: brand(siHomebrew),
   nix: brand(siNixos),
   "ai-harness": brand(siGithub, true),
+  "apple-text": brand(siApple, true),
   security: brand(siGnuprivacyguard),
   "docs-maintenance": brand(siNextdotjs, true)
 };
 
 const sectionFallback: Record<string, Icon> = {
   "home-config": House,
+  "apple-text": Keyboard,
+  keyboard: Keyboard,
   backup: Database,
   database: Database,
   "ai-harness": Robot,

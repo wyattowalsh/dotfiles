@@ -1,0 +1,55 @@
+---
+icon: keyboard
+title: Apple text
+description: Text Replacement and Shortcuts desired-state in this repo.
+---
+
+**SSOT:** `rig/home/private_dot_config/apple-text/` (Chezmoi → `~/.config/apple-text/`). Merge, stage, and Shortcut recipes are **this repo**, not [wyattowalsh/agents](https://github.com/wyattowalsh/agents). Agents may document trigger *names*; they must not own replacement phrases.
+
+Runtime expanders are only Apple Text Replacement (static / frequent) and Apple Shortcuts (menus, dates, clipboard, browse). No Snippety, Espanso, Raycast Snippets, or unofficial Shortcut compilers.
+
+```bash
+just apple-text validate
+just apple-text doctor
+just apple-text plan --existing-export ./export.plist
+just apple-text stage --existing-export ./export.plist          # dry-run
+just apple-text stage --existing-export ./export.plist --apply  # write staging only
+just apple-text open-ui
+just check-apple-text
+```
+
+| Path | Role |
+| --- | --- |
+| `expansions.json` | Public Text Replacement registry |
+| `shortcuts.json` | Describe-a-Shortcut recipes + compositions |
+| `~/.config/apple-text/expansions.local.json` | Private overlay (`myaddr`), mode `0600`, chezmoi-ignored |
+| `~/.local/state/dotfiles/apple-text/` | Backups, staged import plists, prompt exports |
+| iCloud `Shortcuts/AppleText/registry.json` | Public Shortcut-readable dictionary |
+
+Env **names** only: `DOTFILES_APPLE_TEXT_OVERLAY`, `DOTFILES_APPLE_TEXT_STATE`, `DOTFILES_APPLE_ICLOUD`.
+
+## Install on this Mac
+
+1. System Settings → Keyboard → Text Replacements → select all → drag to a folder (Apple plist export).
+2. `just apple-text plan --existing-export PATH` — redacted. Unrelated live entries (for example `myphone`, `mysite`) stay.
+3. Confirm as a group before retire-delete, Shortcut overwrite, Accessibility, live plist import, or synthetic paste.
+4. `just apple-text stage --existing-export PATH --apply` writes a backup plus `Text Substitutions.plist`. **Drag that plist onto the Text Replacements list** (Apple’s documented import). The CLI never writes `TextReplacements.db`. `just apple-text open-ui` opens the staged folder and Keyboard settings.
+5. `just apple-text doctor` reports live trigger coverage and whether the nine Shortcuts exist. Incomplete live state is a warning, not a registry failure.
+6. Build Shortcuts from `just apple-text shortcuts-plan` / `shortcuts-export --apply` inside Apple Shortcuts. Do not compile unofficial Shortcut binaries.
+7. `just apple-text shortcuts-sync --apply` publishes the non-private dictionary to iCloud Drive.
+
+Do not claim the live library is known until the export exists. Do not claim iPhone/iPad verification from this repo.
+
+## Rules
+
+| Rule | Detail |
+| --- | --- |
+| Namespaces | `my…` `msg…` `ai…` `dev…` `md…` `sym…`. Exceptions: `==+`, `mdash`, `ndash`, `w4w` |
+| Placeholders | Only `⟦FIELD⟧` in Text Replacements |
+| Shell | Never append Return. Auto-paste only one-line `shell_safe` entries. Ghostty: Expand Anywhere (`⌃⌥Space`) + a one-line trigger, no multiline AI |
+| Private | Never commit or print `myaddr`, phone, tokens, recovery codes |
+| Triggers vs Shortcuts | Typing a Text Replacement does not run a Shortcut. Expand Anywhere is an explicit Mac hotkey |
+
+Suggested Mac hotkeys after a conflict check: Text Hub `⌃⌥T`, Copy Date `⌃⌥D`, Expand Anywhere `⌃⌥Space`.
+
+Rollback restages the pre-apply export: `just apple-text rollback --backup PATH`. Drag it in. It does not write Apple internals.
