@@ -4,3 +4,5 @@
 .p10k.zsh
 # Repo agent contract; do not deploy to ~/AGENTS.md
 AGENTS.md
+# Private myaddr overlay — live file only, never Chezmoi-apply from git
+.config/apple-text/expansions.local.json

@@ -14,8 +14,8 @@ Runtime files under `rig/dots/` (`zshrc`, `p10k.zsh`, `gitconfig`, …) are **sy
 - Template machine-specific paths (`{{ .chezmoi.homeDir }}` in Ghostty, etc.)
 - Keep identities, tokens, auth files, histories, caches, and app DBs out of Git (including Atuin `history.db`/`key`/`session` and usql DSNs)
 - Preserve `~/.zshrc.local` and Chezmoi `.local` override patterns
-- XDG tools: `private_dot_config/{atuin,ast-grep,agent-deck,xh,lnav,visidata,yazi,direnv,fd,bat,git}/` plus `sgconfig.yml`, `dot_duckdbrc`, `dot_usqlrc` (highlight only). Claude/Codex Atuin hooks live in wyattowalsh/agents.
-- Nightly backup: source `dot_local/bin/executable_kopia-nightly`. Dest `~/.local/bin/kopia-nightly` is written by Chezmoi apply **and** copied by `just kopia-nightly-install` (`/bin/cp -f` when `KOPIA_NIGHTLY_REPO` is set). Plist: `Library/LaunchAgents/com.wyattowalsh.kopia-nightly.plist.tmpl` (`RunAtLoad=false`, 04:00 calendar). Wall-clock cap is in the **runner** (`KOPIA_NIGHTLY_TIMEOUT_SEC`, default 43200). Do **not** set launchd `TimeOut` (unimplemented) or claim launchd SIGTERM after 12h. Keep offline stubs under `checks/fixtures/kopia-nightly/`; never point them at live Kopia, launchctl, or Notification Center. Do not track `repository.config` or `rclone.conf`. Operator runbook: `docs/content/docs/backup.mdx`.
+- XDG tools: `private_dot_config/{atuin,ast-grep,agent-deck,apple-text,xh,lnav,visidata,yazi,direnv,fd,bat,git}/` plus `sgconfig.yml`, `dot_duckdbrc`, `dot_usqlrc` (highlight only). Claude/Codex Atuin hooks live in wyattowalsh/agents. Apple text expansion SSOT is `private_dot_config/apple-text/` plus `just apple-text`; overlay `expansions.local.json` is local-only. Runbook: `docs/content/docs/apple-text.mdx`.
+- Nightly backup: source `dot_local/bin/executable_kopia-nightly`. Dest `~/.local/bin/kopia-nightly` is written by Chezmoi apply **and** copied by `just kopia-nightly-install` (`/bin/cp -f` when `KOPIA_NIGHTLY_REPO` is set). Plist: `Library/LaunchAgents/com.wyattowalsh.kopia-nightly.plist.tmpl` (`RunAtLoad=false`, 04:00 calendar). Wall-clock cap is in the **runner** (`KOPIA_NIGHTLY_TIMEOUT_SEC`, default 43200). Do **not** set launchd `TimeOut` (unimplemented) or claim launchd SIGTERM after 12h. Never point checks at live Kopia, launchctl, or Notification Center. Do not track `repository.config` or `rclone.conf`. Operator runbook: `docs/content/docs/backup.mdx`.
 
 ## Preview
 
@@ -26,4 +26,4 @@ just bootstrap --dry-run
 
 ## Docs sync
 
-Update `docs/content/docs/home-config.mdx` (and `backup.mdx` / `terminal.mdx` / `shell.mdx` when relevant) when layout or deploy paths change.
+Update `docs/content/docs/home-config.mdx` (and `apple-text.mdx` / `backup.mdx` / `terminal.mdx` / `shell.mdx` when relevant) when layout or deploy paths change.

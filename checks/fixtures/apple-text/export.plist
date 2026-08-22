@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array>
+	<dict>
+		<key>phrase</key>
+		<string>stale-github</string>
+		<key>shortcut</key>
+		<string>mygh</string>
+	</dict>
+	<dict>
+		<key>phrase</key>
+		<string>555-0100</string>
+		<key>shortcut</key>
+		<string>myphone</string>
+	</dict>
+	<dict>
+		<key>phrase</key>
+		<string>old-dash</string>
+		<key>shortcut</key>
+		<string>em-</string>
+	</dict>
+	<dict>
+		<key>phrase</key>
+		<string>old-ensemble</string>
+		<key>shortcut</key>
+		<string>myEn</string>
+	</dict>
+</array>
+</plist>

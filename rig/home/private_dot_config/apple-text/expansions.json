@@ -1,0 +1,755 @@
+{
+  "$schema": "./expansions.schema.json",
+  "version": 1,
+  "retired_triggers": [
+    {
+      "trigger": "em-",
+      "reason": "Replaced by mdash",
+      "replaced_by": "mdash"
+    },
+    {
+      "trigger": "emdash",
+      "reason": "Replaced by mdash",
+      "replaced_by": "mdash"
+    },
+    {
+      "trigger": "m-",
+      "reason": "Replaced by mdash",
+      "replaced_by": "mdash"
+    },
+    {
+      "trigger": "myEn",
+      "reason": "Replaced by aifull",
+      "replaced_by": "aifull"
+    },
+    {
+      "trigger": "myin",
+      "reason": "Replaced by myli",
+      "replaced_by": "myli"
+    }
+  ],
+  "expansions": [
+    {
+      "id": "identity.plus-equals",
+      "trigger": "==+",
+      "category": "symbol",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "===== ===== ===== ===== ====="
+    },
+    {
+      "id": "identity.name",
+      "trigger": "myname",
+      "category": "identity",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "Wyatt Walsh"
+    },
+    {
+      "id": "identity.email",
+      "trigger": "myemail",
+      "category": "identity",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": true,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "wyattowalsh@gmail.com"
+    },
+    {
+      "id": "identity.address",
+      "trigger": "myaddr",
+      "category": "identity",
+      "enabled": true,
+      "multiline": true,
+      "sensitivity": "private",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement"
+      ],
+      "replaces": [],
+      "local_value_key": "home_address"
+    },
+    {
+      "id": "identity.github",
+      "trigger": "mygh",
+      "category": "identity",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": true,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "https://github.com/wyattowalsh"
+    },
+    {
+      "id": "identity.linkedin",
+      "trigger": "myli",
+      "category": "identity",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": true,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [
+        "myin"
+      ],
+      "phrase": "https://linkedin.com/in/wyattowalsh"
+    },
+    {
+      "id": "identity.x",
+      "trigger": "myx",
+      "category": "identity",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": true,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "https://x.com/wyattowalsh"
+    },
+    {
+      "id": "identity.site",
+      "trigger": "w4w",
+      "category": "identity",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": true,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "https://w4w.dev"
+    },
+    {
+      "id": "identity.agents",
+      "trigger": "myagents",
+      "category": "identity",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": true,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "https://github.com/wyattowalsh/agents"
+    },
+    {
+      "id": "identity.timezone",
+      "trigger": "mytz",
+      "category": "identity",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": true,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "America/New_York (Eastern Time)"
+    },
+    {
+      "id": "identity.intro",
+      "trigger": "myintro",
+      "category": "identity",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "I’m Wyatt Walsh, a software engineer and entrepreneur focused on AI/ML systems, data engineering, MLOps/DevOps, analytics, optimization, developer tooling, and full-stack product development."
+    },
+    {
+      "id": "identity.signature",
+      "trigger": "mysig",
+      "category": "identity",
+      "enabled": true,
+      "multiline": true,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "Wyatt Walsh\nSoftware Engineer and Entrepreneur\nwyattowalsh@gmail.com\nhttps://w4w.dev\nGitHub: https://github.com/wyattowalsh\nLinkedIn: https://linkedin.com/in/wyattowalsh"
+    },
+    {
+      "id": "message.thanks",
+      "trigger": "msgthanks",
+      "category": "message",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "Thanks, I appreciate it."
+    },
+    {
+      "id": "message.follow",
+      "trigger": "msgfollow",
+      "category": "message",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "Following up in case this got buried."
+    },
+    {
+      "id": "message.review",
+      "trigger": "msgreview",
+      "category": "message",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "Thanks for sending this. I’ll review it carefully and follow up."
+    },
+    {
+      "id": "message.clarify",
+      "trigger": "msgclarify",
+      "category": "message",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "Could you share the desired outcome, material constraints, and deadline?"
+    },
+    {
+      "id": "message.availability",
+      "trigger": "msgavail",
+      "category": "message",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "I’m available ⟦DAYS/TIMES⟧ Eastern Time. Let me know which window works best."
+    },
+    {
+      "id": "message.confirm",
+      "trigger": "msgconfirm",
+      "category": "message",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "Confirmed for ⟦DATE/TIME⟧ Eastern Time."
+    },
+    {
+      "id": "message.async",
+      "trigger": "msgasync",
+      "category": "message",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "Async works well for me. A concise description of the context, desired outcome, constraints, and relevant artifacts is perfect."
+    },
+    {
+      "id": "message.scope",
+      "trigger": "msgscope",
+      "category": "message",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "Could you share the scope, expected deliverables, timeline, budget range, and decision process?"
+    },
+    {
+      "id": "ai.audit",
+      "trigger": "aiaudit",
+      "category": "ai",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "Carefully research, review, analyze, consider, audit, critique, and stress-test this end to end. Identify omissions, contradictions, unsupported assumptions, fragile decisions, unnecessary complexity, edge cases, and material risks."
+    },
+    {
+      "id": "ai.improve",
+      "trigger": "aiimprove",
+      "category": "ai",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "Then refine, simplify, clarify, extend, enrich, enhance, improve, optimize, and better it wherever materially justified. Preserve strong existing decisions and explain consequential changes."
+    },
+    {
+      "id": "ai.full",
+      "trigger": "aifull",
+      "category": "ai",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [
+        "myEn"
+      ],
+      "phrase": "Carefully research, review, analyze, consider, audit, critique, and stress-test this end to end. Identify omissions, contradictions, unsupported assumptions, fragile decisions, unnecessary complexity, edge cases, and material risks. Then refine, simplify, clarify, extend, enrich, enhance, improve, optimize, and better it wherever materially justified. Preserve strong existing decisions, explain consequential changes, verify the result against the request, and return the complete revised artifact."
+    },
+    {
+      "id": "ai.continue",
+      "trigger": "aicontinue",
+      "category": "ai",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "Continue from the current state without restarting, repeating completed work, or discarding prior decisions. Resolve the remaining gaps, finish every incomplete section, verify the result against the original request, and return the complete final artifact."
+    },
+    {
+      "id": "ai.research",
+      "trigger": "airesearch",
+      "category": "ai",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "Conduct deep, well-targeted web research using current authoritative sources. Prefer primary documentation, specifications, source repositories, research papers, and llms.txt or llms-full.txt when available. Verify fast-changing facts with exact dates, surface disagreements and evidence gaps, and cite material claims next to the claims they support."
+    },
+    {
+      "id": "ai.current",
+      "trigger": "aicurrent",
+      "category": "ai",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "Treat every potentially time-sensitive fact as untrusted until verified as of today. Use exact dates, distinguish publication dates from event dates, and state any remaining uncertainty."
+    },
+    {
+      "id": "ai.source",
+      "trigger": "aisource",
+      "category": "ai",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "Before proposing a new build, search for and evaluate existing tools, libraries, applications, plugins, skills, MCP servers, repositories, and prior art. Source rather than recreate whenever a strong existing option satisfies the requirements."
+    },
+    {
+      "id": "ai.plan",
+      "trigger": "aiplan",
+      "category": "ai",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "Produce a production-ready implementation plan covering goals, non-goals, assumptions, user experience, architecture, interfaces, data models, workflows, dependencies, risks, milestones, validation, testing, acceptance criteria, rollout, rollback, and documentation."
+    },
+    {
+      "id": "ai.tasks",
+      "trigger": "aitasks",
+      "category": "ai",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "Include a hyperfine-granularity dependency graph with parallelizable workstreams, critical-path tasks, blockers, owners, handoff artifacts, integration checkpoints, and explicit completion checks."
+    },
+    {
+      "id": "ai.team",
+      "trigger": "aiteam",
+      "category": "ai",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "Optimize the work for massively parallel subagent teams while preserving clear ownership, deterministic dependencies, shared source-of-truth artifacts, integration gates, conflict avoidance, and continuous validation."
+    },
+    {
+      "id": "ai.verify",
+      "trigger": "aiverify",
+      "category": "ai",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "Verify the final result against every stated requirement. Explicitly report any unmet requirement, unsupported assumption, unresolved ambiguity, missing test, unverified behavior, or residual risk."
+    },
+    {
+      "id": "ai.final",
+      "trigger": "aifinal",
+      "category": "ai",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "Return the complete final artifact, not an outline, abbreviated excerpt, placeholder, partial patch, or description of what should be produced."
+    },
+    {
+      "id": "engineering.base",
+      "trigger": "devbase",
+      "category": "engineering",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "Prioritize correctness, maintainability, explicit assumptions, clean interfaces, and production-quality structure. Inspect existing conventions and nearby implementations before proposing new code or structure. Prefer strong typing, boundary validation, useful errors, focused tests, and the smallest sufficient abstraction."
+    },
+    {
+      "id": "engineering.python",
+      "trigger": "devpy",
+      "category": "engineering",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "For Python, default to Python 3.13, uv, pyproject.toml, Pydantic v2, Pydantic Settings, SQLModel, FastAPI, Alembic, Typer, Loguru, Tenacity, NumPy docstrings, Ruff, ty, and pytest when appropriate."
+    },
+    {
+      "id": "engineering.web",
+      "trigger": "devweb",
+      "category": "engineering",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "For React and TypeScript, prefer composable strongly typed components, accessible semantics, Tailwind CSS v4, shadcn/ui, pnpm, clean state management, reusable primitives, pragmatic UX, and maintainable architecture."
+    },
+    {
+      "id": "engineering.tests",
+      "trigger": "devtests",
+      "category": "engineering",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "Add or update focused unit, integration, regression, failure-path, and relevant edge-case tests. Run the applicable checks and report precisely what was and was not verified."
+    },
+    {
+      "id": "engineering.repo",
+      "trigger": "devrepo",
+      "category": "engineering",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "Inspect existing repository conventions, neighboring implementations, configuration, tests, and interfaces before introducing a new pattern."
+    },
+    {
+      "id": "engineering.minimal",
+      "trigger": "devminimal",
+      "category": "engineering",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "Prefer the smallest production-quality change that fully solves the problem. Avoid unnecessary dependencies, indirection, and abstraction."
+    },
+    {
+      "id": "markdown.task",
+      "trigger": "mdtask",
+      "category": "markdown",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "- [ ] "
+    },
+    {
+      "id": "markdown.done",
+      "trigger": "mddone",
+      "category": "markdown",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "- [x] "
+    },
+    {
+      "id": "markdown.link",
+      "trigger": "mdlink",
+      "category": "markdown",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": false,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "[⟦TEXT⟧](⟦URL⟧)"
+    },
+    {
+      "id": "symbol.arrow",
+      "trigger": "symarrow",
+      "category": "symbol",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": true,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "→"
+    },
+    {
+      "id": "symbol.check",
+      "trigger": "symcheck",
+      "category": "symbol",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": true,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "✓"
+    },
+    {
+      "id": "symbol.emdash",
+      "trigger": "mdash",
+      "category": "symbol",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": true,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "—"
+    },
+    {
+      "id": "symbol.endash",
+      "trigger": "ndash",
+      "category": "symbol",
+      "enabled": true,
+      "multiline": false,
+      "sensitivity": "public",
+      "shell_safe": true,
+      "surfaces": [
+        "text-replacement",
+        "shortcut-library",
+        "expand-anywhere"
+      ],
+      "replaces": [],
+      "phrase": "–"
+    }
+  ]
+}

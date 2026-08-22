@@ -22,7 +22,7 @@ Fumadocs documentation site (`docs/`). Serves operator runbooks for macOS bootst
 | New justfile recipe | `validation.mdx` |
 | Bootstrap behavior | `fresh-mac.mdx` / `linux-setup.mdx` |
 | Brewfile group changes | `packages.mdx` |
-| Chezmoi/home layout | `home-config.mdx` |
+| Chezmoi/home layout | `home-config.mdx` / `apple-text.mdx` |
 | Shell structure / tools | `shell.mdx` |
 | freshen operator modes | `freshen.mdx` |
 | AI harness pointer | `ai-harness.mdx` (SSOT: wyattowalsh/agents) |

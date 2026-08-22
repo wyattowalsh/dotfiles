@@ -22,3 +22,7 @@ docs/node_modules/
 docs/.fumadocs/
 docs/.source/
 docs/*.tsbuildinfo
+
+# Local agent / browser automation scratch (never commit)
+.grok/
+.playwright-mcp/

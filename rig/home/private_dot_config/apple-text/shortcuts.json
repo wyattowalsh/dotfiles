@@ -1,0 +1,251 @@
+{
+  "$schema": "./shortcuts.schema.json",
+  "version": 1,
+  "compositions": [
+    {
+      "id": "compose.ai-deep-research",
+      "label": "AI • Deep research",
+      "triggers": ["airesearch", "aicurrent", "aisource"]
+    },
+    {
+      "id": "compose.ai-audit-improve",
+      "label": "AI • Audit and improve",
+      "triggers": ["aifull"]
+    },
+    {
+      "id": "compose.ai-continue-finish",
+      "label": "AI • Continue and finish",
+      "triggers": ["aicontinue", "aifinal"]
+    },
+    {
+      "id": "compose.ai-planning-tasks",
+      "label": "AI • Planning and task graph",
+      "triggers": ["aiplan", "aitasks"]
+    },
+    {
+      "id": "compose.build-codex-kickoff",
+      "label": "Build • Codex kickoff",
+      "triggers": ["aiteam", "aitasks", "devbase", "aiverify", "aifinal"]
+    },
+    {
+      "id": "compose.eng-python",
+      "label": "Engineering • Python defaults",
+      "triggers": ["devbase", "devpy"]
+    },
+    {
+      "id": "compose.eng-frontend",
+      "label": "Engineering • Frontend defaults",
+      "triggers": ["devbase", "devweb"]
+    }
+  ],
+  "recipes": [
+    {
+      "id": "text-hub",
+      "name": "Text Hub",
+      "platforms": ["macOS", "iOS", "iPadOS"],
+      "inputs": ["Shortcut Input"],
+      "actions": [
+        "Show a menu: Build Prompt, Transform Text, Text Library, Build Reply, Copy Date, Make Link, Expand Anywhere",
+        "Run the selected child Shortcut",
+        "Pass Shortcut Input through when available"
+      ],
+      "outputs": ["Child Shortcut output"],
+      "permissions": [],
+      "siri_phrase": "Text Hub",
+      "mac_hotkey": "ctrl+option+T",
+      "children": [
+        "Build Prompt",
+        "Transform Text",
+        "Text Library",
+        "Build Reply",
+        "Copy Date",
+        "Make Link",
+        "Expand Anywhere"
+      ],
+      "terminal_safety": "Delegates to the selected child. Does not paste.",
+      "validation_steps": [
+        "Run Text Hub",
+        "Each menu item opens the matching child Shortcut"
+      ],
+      "describe_prompt": "Create a Shortcut named Text Hub for iPhone, iPad, and Mac. Show a menu with Build Prompt, Transform Text, Text Library, Build Reply, Copy Date, Make Link, and Expand Anywhere. Run the selected Shortcut and pass Shortcut Input into it when available. Do not paste into other apps. Do not include private addresses or secrets."
+    },
+    {
+      "id": "build-prompt",
+      "name": "Build Prompt",
+      "platforms": ["macOS", "iOS", "iPadOS"],
+      "inputs": ["Shortcut Input", "Selected text", "Clipboard", "Ask for Input"],
+      "actions": [
+        "Resolve input from Shortcut Input, then selected text, then clipboard, then Ask for Input",
+        "Ask for Objective, Rigor, Execution model, Deliverable, and optional requirements",
+        "Render delimited plain text",
+        "Copy to clipboard and return as output"
+      ],
+      "outputs": ["Rendered prompt text"],
+      "permissions": [],
+      "siri_phrase": "Build Prompt",
+      "mac_hotkey": null,
+      "terminal_safety": "Copies text only. Never pastes into a terminal.",
+      "validation_steps": [
+        "Provide sample input",
+        "Confirm the rendered prompt contains the source material in a delimited block",
+        "Confirm the clipboard matches the output"
+      ],
+      "describe_prompt": "Create a Shortcut named Build Prompt. Resolve text input in this order: Shortcut Input, selected text if available, clipboard, then Ask for Input. Ask the user to choose an Objective from Research, Audit and improve, Continue and finish, Plan and specify, Implement, Debug, Compare alternatives, Analyze a business model, Map competitors, Generate names. Ask for Rigor from Focused, Thorough, Deep, Maximum depth. Ask for Execution model from Single agent, Parallel subagents, Massively parallel agent team. Ask for Deliverable from Direct answer, Markdown guide, Implementation plan, Specification bundle, Task graph, Production code and tests, HTML guide, Research report. Offer optional requirements: Use current web research, Prefer primary sources, Source existing solutions first, Include citations, Verify every requirement, Return the complete artifact. Render structured plain text with clearly delimited input material. Copy the result to the clipboard and return it as Shortcut output. Do not call an external AI API."
+    },
+    {
+      "id": "transform-text",
+      "name": "Transform Text",
+      "platforms": ["macOS", "iOS", "iPadOS"],
+      "inputs": ["Shortcut Input", "Selected text", "Clipboard", "Ask for Input"],
+      "actions": [
+        "Resolve input",
+        "Ask for a transform",
+        "For list transforms, split by newlines and repeat",
+        "Copy and return the result"
+      ],
+      "outputs": ["Transformed text"],
+      "permissions": [],
+      "siri_phrase": "Transform Text",
+      "mac_hotkey": null,
+      "terminal_safety": "Copies text only. Never pastes into a terminal.",
+      "validation_steps": [
+        "Transform a multiline list into bullets",
+        "Confirm source lines are preserved except for the chosen prefix"
+      ],
+      "describe_prompt": "Create a Shortcut named Transform Text. Resolve input from Shortcut Input, selected text if available, clipboard, then Ask for Input. Ask the user to choose one transform: Markdown quote, Bullet list, Checklist, Numbered list, Six-backtick code block, Normalize whitespace, Trim surrounding whitespace, Lowercase, Uppercase, Title case, URL-safe slug, Wrap as AI review material, Wrap as source material. For list transforms, split the text by newlines and repeat the transform on each item. Preserve source text exactly unless the selected transform explicitly changes it. Copy the result to the clipboard and return it. Expose this Shortcut to the Share Sheet when possible."
+    },
+    {
+      "id": "text-library",
+      "name": "Text Library",
+      "platforms": ["macOS", "iOS", "iPadOS"],
+      "inputs": ["Search query"],
+      "actions": [
+        "Read the generated non-private registry JSON from iCloud Drive Shortcuts/AppleText/registry.json",
+        "Allow search by key or label and browse by category",
+        "Copy the selected text and return it"
+      ],
+      "outputs": ["Selected registry text"],
+      "permissions": ["iCloud Drive"],
+      "siri_phrase": "Text Library",
+      "mac_hotkey": null,
+      "terminal_safety": "Copies non-private registry text only. Never pastes into a terminal.",
+      "validation_steps": [
+        "Open Text Library",
+        "Select AI • Deep research",
+        "Confirm the clipboard contains composed public fragments only"
+      ],
+      "describe_prompt": "Create a Shortcut named Text Library. Get the File from iCloud Drive at Shortcuts/AppleText/registry.json and parse it as JSON. Let the user search by key or label or browse by category. Include composed entries from the JSON such as AI • Deep research, AI • Audit and improve, AI • Continue and finish, AI • Planning and task graph, Build • Codex kickoff, Engineering • Python defaults, and Engineering • Frontend defaults. Copy the selected text to the clipboard and return it as output. Do not read Apple Text Replacement internals. Do not include private address values."
+    },
+    {
+      "id": "build-reply",
+      "name": "Build Reply",
+      "platforms": ["macOS", "iOS", "iPadOS"],
+      "inputs": ["Recipient", "Medium", "Tone", "Topic", "Main message", "Requested next step", "Deadline", "Sign-off"],
+      "actions": [
+        "Ask for recipient, medium, tone, topic, main message, next step, optional deadline, and sign-off",
+        "Render deterministic reply text",
+        "Copy and return the result"
+      ],
+      "outputs": ["Reply text"],
+      "permissions": [],
+      "siri_phrase": "Build Reply",
+      "mac_hotkey": null,
+      "terminal_safety": "Copies text only. Never pastes into a terminal.",
+      "validation_steps": [
+        "Choose Email and Professional",
+        "Confirm the result is deterministic and contains the provided topic"
+      ],
+      "describe_prompt": "Create a Shortcut named Build Reply. Ask for Recipient, Medium, Tone, Topic, Main message, Requested next step, Deadline if any, and Sign-off. Medium choices: Email, Text message, Slack or Teams, GitHub, LinkedIn. Tone choices: Brief, Friendly, Professional, Formal, Direct. Render deterministic reply text from those answers. Do not call an external AI service. Copy the result to the clipboard and return it."
+    },
+    {
+      "id": "copy-date",
+      "name": "Copy Date",
+      "platforms": ["macOS", "iOS", "iPadOS"],
+      "inputs": [],
+      "actions": [
+        "Ask for a date format",
+        "Format the current date",
+        "Copy and return the value"
+      ],
+      "outputs": ["Formatted date"],
+      "permissions": [],
+      "siri_phrase": "Copy Date",
+      "mac_hotkey": "ctrl+option+D",
+      "terminal_safety": "Copies a one-line date string. Does not paste.",
+      "validation_steps": [
+        "Choose ISO date",
+        "Confirm yyyy-MM-dd output"
+      ],
+      "describe_prompt": "Create a Shortcut named Copy Date. Ask the user to choose one format: ISO date as yyyy-MM-dd, ISO local timestamp as yyyy-MM-dd'T'HH:mm:ssZZZZZ, Filename timestamp as yyyyMMdd-HHmmss, Human date as MMMM d, yyyy, Human date and time as MMMM d, yyyy 'at' h:mm a, Markdown date heading as ## yyyy-MM-dd. Format the current date with that format. Copy the result to the clipboard and return it."
+    },
+    {
+      "id": "make-link",
+      "name": "Make Link",
+      "platforms": ["macOS", "iOS", "iPadOS"],
+      "inputs": ["Shortcut Input", "Share Sheet", "Clipboard", "Ask for Input", "Title"],
+      "actions": [
+        "Resolve a URL from Shortcut Input, Share Sheet, clipboard, or Ask for Input",
+        "Ask for a title",
+        "Ask for Markdown, HTML, or plain labeled URL",
+        "Copy and return the formatted link"
+      ],
+      "outputs": ["Formatted link"],
+      "permissions": [],
+      "siri_phrase": "Make Link",
+      "mac_hotkey": null,
+      "terminal_safety": "Copies a one-line link. Does not paste into a terminal.",
+      "validation_steps": [
+        "Share a URL from Safari",
+        "Confirm Markdown output uses the provided title"
+      ],
+      "describe_prompt": "Create a Shortcut named Make Link. Resolve the URL from Shortcut Input, the Share Sheet, the clipboard, or Ask for Input. Ask for a title. Ask the user to choose Markdown, HTML, or Plain labeled URL. Output exactly [title](url), or an HTML anchor, or title: url. Copy the result and return it. Show this Shortcut in Safari and browser Share Sheets when possible."
+    },
+    {
+      "id": "expand-anywhere",
+      "name": "Expand Anywhere",
+      "platforms": ["macOS"],
+      "inputs": ["Trigger or registry choice"],
+      "actions": [
+        "Capture the frontmost application",
+        "Ask for a trigger or choose from the non-private registry",
+        "Copy using Local Only when available",
+        "Auto-paste only after Accessibility approval and only when shell-safe in terminals",
+        "Never send Return",
+        "Restore the previous clipboard after a short delay when practical"
+      ],
+      "outputs": ["Expansion text"],
+      "permissions": ["Accessibility", "Automation"],
+      "siri_phrase": "Expand Anywhere",
+      "mac_hotkey": "ctrl+option+space",
+      "terminal_safety": "Auto-paste only one-line shell_safe entries into Ghostty or Terminal. Copy-only for multiline, AI, and message bodies. Never send Return.",
+      "validation_steps": [
+        "In TextEdit, expand mygh",
+        "In Ghostty, expand mygh without pressing Return",
+        "In Ghostty, choose aiplan and confirm copy-only"
+      ],
+      "describe_prompt": "Create a Mac-only Shortcut named Expand Anywhere. This is an explicit hotkey fallback, not typed automatic expansion. Capture the frontmost application before showing UI. Ask for a trigger or let the user choose from the non-private iCloud registry at Shortcuts/AppleText/registry.json. Resolve the matching enabled non-private entry. If the destination is Ghostty or Terminal, auto-paste only when the entry is one line and marked shell safe in the registry. Otherwise copy the text, show a notification, and do not paste. Never append Return or a newline. Copy using Local Only if available. Restore the original application. Restore the previous clipboard after a short delay when practical. Never execute pasted text. Do not include private address values."
+    },
+    {
+      "id": "agents-text-bridge",
+      "name": "Agents Text Bridge",
+      "platforms": ["macOS", "iOS", "iPadOS"],
+      "inputs": ["JSON dictionary with schema, action, and key"],
+      "actions": [
+        "Parse Shortcut Input as JSON",
+        "Validate schema and action",
+        "Dispatch lookup, compose, transform, date, or link without prompts when the payload is complete",
+        "Return rendered text and copy when requested"
+      ],
+      "outputs": ["Rendered text or an actionable error"],
+      "permissions": [],
+      "siri_phrase": "Agents Text Bridge",
+      "mac_hotkey": null,
+      "terminal_safety": "Noninteractive. Returns text only. Never pastes into a terminal.",
+      "validation_steps": [
+        "Run shortcuts run 'Agents Text Bridge' with a lookup JSON payload",
+        "Confirm invalid JSON returns an actionable error"
+      ],
+      "describe_prompt": "Create a noninteractive Shortcut named Agents Text Bridge suitable for shortcuts run. Receive Shortcut Input as text containing JSON. Parse it as a dictionary. Require schema equal to 1 and an action of lookup, compose, transform, date, or link. For lookup, resolve key against the non-private iCloud registry. Avoid Ask for Input when the payload is complete. Return the rendered text. Copy it only when the payload requests copying. Produce an actionable error for invalid input. Do not include private values. Do not fabricate unofficial Shortcut binaries."
+    }
+  ]
+}
