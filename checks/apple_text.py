@@ -424,6 +424,14 @@ def merge_export(
             alias_to_canonical[alias] = item
     retired_triggers = {item.trigger: item for item in retired}
 
+    seen_triggers: dict[str, int] = {}
+    for entry in existing:
+        trigger = str(entry["shortcut"])
+        seen_triggers[trigger] = seen_triggers.get(trigger, 0) + 1
+    duplicates = sorted(trigger for trigger, count in seen_triggers.items() if count > 1)
+    if duplicates:
+        raise AppleTextError("duplicate triggers in export: " + ", ".join(duplicates))
+
     existing_by_trigger = {str(entry["shortcut"]): dict(entry) for entry in existing}
     used: set[str] = set()
     merged: list[dict[str, Any]] = []
@@ -662,6 +670,8 @@ def rollback_stage(
 ) -> dict[str, Any]:
     state = state_dir or default_state_path()
     source = backup_dir or _latest_backup(state)
+    if not source.is_dir():
+        raise AppleTextError(f"backup {source} is not a directory")
     exports = sorted(path for path in source.iterdir() if path.is_file())
     if not exports:
         raise AppleTextError(f"backup {source} has no export file")

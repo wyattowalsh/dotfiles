@@ -98,6 +98,44 @@ print("registry-ok")
 PY
 
 "$CLI" shortcuts-plan --format json >/dev/null || fail "shortcuts-plan failed"
+python3 - "$ROOT/rig/home/private_dot_config/apple-text/shortcuts.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text())
+blob = json.dumps(payload)
+assert "AgentsText" not in blob
+assert "Shortcuts/AppleText/registry.json" in blob
+print("icloud-path-ok")
+PY
+dup="$TMP/dup.plist"
+python3 - "$dup" <<'PY'
+import plistlib
+import sys
+from pathlib import Path
+
+Path(sys.argv[1]).write_bytes(
+    plistlib.dumps(
+        [
+            {"shortcut": "mygh", "phrase": "one"},
+            {"shortcut": "mygh", "phrase": "two"},
+        ],
+        fmt=plistlib.FMT_XML,
+    )
+)
+PY
+if "$CLI" plan --existing-export "$dup" --format json >/dev/null 2>"$TMP/dup.err"; then
+  fail "duplicate export triggers should fail"
+fi
+python3 - "$TMP/dup.err" <<'PY'
+from pathlib import Path
+import sys
+
+text = Path(sys.argv[1]).read_text()
+assert "duplicate triggers" in text, text
+print("dup-ok")
+PY
 doctor_json="$("$CLI" doctor --format json)"
 python3 - "$doctor_json" <<'PY'
 import json

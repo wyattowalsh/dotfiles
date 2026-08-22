@@ -75,37 +75,47 @@ def load_shortcuts_registry(
     path: Path | None = None, *, root: Path | None = None
 ) -> tuple[list[Composition], list[Recipe]]:
     target = path or shortcuts_registry_path(root)
-    data = json.loads(target.read_text(encoding="utf-8"))
+    try:
+        data = json.loads(target.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise AppleTextError(f"invalid JSON in {target}: {exc}") from exc
+    except OSError as exc:
+        raise AppleTextError(f"cannot read {target}: {exc}") from exc
     if not isinstance(data, dict):
         raise AppleTextError(f"{target} must contain a JSON object")
-    compositions = [
-        Composition(
-            ident=str(item["id"]),
-            label=str(item["label"]),
-            triggers=tuple(str(trigger) for trigger in item["triggers"]),
-        )
-        for item in data.get("compositions", [])
-        if isinstance(item, dict)
-    ]
-    recipes = [
-        Recipe(
-            ident=str(item["id"]),
-            name=str(item["name"]),
-            platforms=tuple(str(platform) for platform in item["platforms"]),
-            inputs=tuple(str(value) for value in item.get("inputs", [])),
-            actions=tuple(str(value) for value in item["actions"]),
-            outputs=tuple(str(value) for value in item["outputs"]),
-            permissions=tuple(str(value) for value in item.get("permissions", [])),
-            siri_phrase=str(item["siri_phrase"]),
-            terminal_safety=str(item["terminal_safety"]),
-            validation_steps=tuple(str(value) for value in item["validation_steps"]),
-            describe_prompt=str(item["describe_prompt"]),
-            mac_hotkey=str(item["mac_hotkey"]) if item.get("mac_hotkey") else None,
-            children=tuple(str(value) for value in item.get("children", [])),
-        )
-        for item in data.get("recipes", [])
-        if isinstance(item, dict)
-    ]
+    try:
+        compositions = [
+            Composition(
+                ident=str(item["id"]),
+                label=str(item["label"]),
+                triggers=tuple(str(trigger) for trigger in item["triggers"]),
+            )
+            for item in data.get("compositions", [])
+            if isinstance(item, dict)
+        ]
+        recipes = [
+            Recipe(
+                ident=str(item["id"]),
+                name=str(item["name"]),
+                platforms=tuple(str(platform) for platform in item["platforms"]),
+                inputs=tuple(str(value) for value in item.get("inputs", [])),
+                actions=tuple(str(value) for value in item["actions"]),
+                outputs=tuple(str(value) for value in item["outputs"]),
+                permissions=tuple(str(value) for value in item.get("permissions", [])),
+                siri_phrase=str(item["siri_phrase"]),
+                terminal_safety=str(item["terminal_safety"]),
+                validation_steps=tuple(str(value) for value in item["validation_steps"]),
+                describe_prompt=str(item["describe_prompt"]),
+                mac_hotkey=str(item["mac_hotkey"]) if item.get("mac_hotkey") else None,
+                children=tuple(str(value) for value in item.get("children", [])),
+            )
+            for item in data.get("recipes", [])
+            if isinstance(item, dict)
+        ]
+    except KeyError as exc:
+        raise AppleTextError(f"{target}: missing required field {exc}") from exc
+    except TypeError as exc:
+        raise AppleTextError(f"{target}: invalid recipe or composition: {exc}") from exc
     return compositions, recipes
 
 
@@ -142,6 +152,9 @@ def validate_shortcuts(
             errors.append("expand-anywhere must be macOS-only")
         if ".shortcut" in prompt and not any(token in prompt for token in ("do not", "don't", "never")):
             errors.append(f"{recipe.ident}: recipes must not claim to emit .shortcut files")
+        blob = " ".join((*recipe.actions, recipe.describe_prompt))
+        if "AgentsText" in blob:
+            errors.append(f"{recipe.ident}: iCloud path must be Shortcuts/AppleText/registry.json")
     for composition in compositions:
         for trigger in composition.triggers:
             if trigger not in triggers:
@@ -336,15 +349,31 @@ def collect_shortcuts_doctor_checks(
     darwin = sys.platform == "darwin"
     binary = shutil.which("shortcuts")
     if binary:
-        help_run = subprocess.run([binary, "help"], capture_output=True, text=True, check=False)
-        checks.append(
-            _check(
-                "shortcuts-cli",
-                "ok" if help_run.returncode == 0 else "warn",
-                binary,
-                None if help_run.returncode == 0 else "Install Apple Shortcuts.",
+        try:
+            help_run = subprocess.run(
+                [binary, "help"],
+                capture_output=True,
+                text=True,
+                check=False,
             )
-        )
+        except (OSError, subprocess.SubprocessError) as exc:
+            checks.append(
+                _check(
+                    "shortcuts-cli",
+                    "warn",
+                    str(exc),
+                    "Install Apple Shortcuts.",
+                )
+            )
+        else:
+            checks.append(
+                _check(
+                    "shortcuts-cli",
+                    "ok" if help_run.returncode == 0 else "warn",
+                    binary,
+                    None if help_run.returncode == 0 else "Install Apple Shortcuts.",
+                )
+            )
     else:
         checks.append(
             _check(

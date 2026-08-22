@@ -120,7 +120,7 @@
       "platforms": ["macOS", "iOS", "iPadOS"],
       "inputs": ["Search query"],
       "actions": [
-        "Read the generated non-private registry JSON from iCloud Drive Shortcuts/AgentsText/registry.json",
+        "Read the generated non-private registry JSON from iCloud Drive Shortcuts/AppleText/registry.json",
         "Allow search by key or label and browse by category",
         "Copy the selected text and return it"
       ],
@@ -134,7 +134,7 @@
         "Select AI • Deep research",
         "Confirm the clipboard contains composed public fragments only"
       ],
-      "describe_prompt": "Create a Shortcut named Text Library. Get the File from iCloud Drive at Shortcuts/AgentsText/registry.json and parse it as JSON. Let the user search by key or label or browse by category. Include composed entries from the JSON such as AI • Deep research, AI • Audit and improve, AI • Continue and finish, AI • Planning and task graph, Build • Codex kickoff, Engineering • Python defaults, and Engineering • Frontend defaults. Copy the selected text to the clipboard and return it as output. Do not read Apple Text Replacement internals. Do not include private address values."
+      "describe_prompt": "Create a Shortcut named Text Library. Get the File from iCloud Drive at Shortcuts/AppleText/registry.json and parse it as JSON. Let the user search by key or label or browse by category. Include composed entries from the JSON such as AI • Deep research, AI • Audit and improve, AI • Continue and finish, AI • Planning and task graph, Build • Codex kickoff, Engineering • Python defaults, and Engineering • Frontend defaults. Copy the selected text to the clipboard and return it as output. Do not read Apple Text Replacement internals. Do not include private address values."
     },
     {
       "id": "build-reply",
@@ -223,7 +223,7 @@
         "In Ghostty, expand mygh without pressing Return",
         "In Ghostty, choose aiplan and confirm copy-only"
       ],
-      "describe_prompt": "Create a Mac-only Shortcut named Expand Anywhere. This is an explicit hotkey fallback, not typed automatic expansion. Capture the frontmost application before showing UI. Ask for a trigger or let the user choose from the non-private iCloud registry at Shortcuts/AgentsText/registry.json. Resolve the matching enabled non-private entry. If the destination is Ghostty or Terminal, auto-paste only when the entry is one line and marked shell safe in the registry. Otherwise copy the text, show a notification, and do not paste. Never append Return or a newline. Copy using Local Only if available. Restore the original application. Restore the previous clipboard after a short delay when practical. Never execute pasted text. Do not include private address values."
+      "describe_prompt": "Create a Mac-only Shortcut named Expand Anywhere. This is an explicit hotkey fallback, not typed automatic expansion. Capture the frontmost application before showing UI. Ask for a trigger or let the user choose from the non-private iCloud registry at Shortcuts/AppleText/registry.json. Resolve the matching enabled non-private entry. If the destination is Ghostty or Terminal, auto-paste only when the entry is one line and marked shell safe in the registry. Otherwise copy the text, show a notification, and do not paste. Never append Return or a newline. Copy using Local Only if available. Restore the original application. Restore the previous clipboard after a short delay when practical. Never execute pasted text. Do not include private address values."
     },
     {
       "id": "agents-text-bridge",
