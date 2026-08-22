@@ -41,6 +41,6 @@ Enable in IINA → Plugins: `com.wyattowalsh.iina-qol`.
 | Rule | Detail |
 | --- | --- |
 | Tap | Hammerspoon scroll tap defaults **on**; consumes only Command+Shift+scroll |
-| Cursor zoom | Player-space pointer (IINA `input` `{x,y}` or mpv `mouse-pos` with `hover === true`). Missing/uninitialized origin is fail-closed. Never call center-zoom “cursor zoom” |
+| Cursor zoom | Player-space pointer from IINA mouse callbacks (Hammerspoon middle-mouse poke before F17–F20) or mpv `mouse-pos` with `hover === true`. Synthetic F-key origin is ignored. Missing pointer is fail-closed. Never call center-zoom “cursor zoom” |
 | Apply | Exact-target `just iina-qol apply --apply` — not a full home/bootstrap apply |
 | Untracked | Overlay, history, plugin prefs, sibling plugins, logs, screenshots — dest paths in `.chezmoiignore` |

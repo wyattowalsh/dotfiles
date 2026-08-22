@@ -63,25 +63,45 @@ local function zoomKey(direction, continuous)
   return direction > 0 and KEY_DISCRETE_IN or KEY_DISCRETE_OUT
 end
 
+-- IINA 1.4.4 never forwards mouseMoved to plugins, and synthetic F-keys
+-- arrive with locationInWindow at CG origin. Middle-mouse up does reach
+-- PluginInputManager with a real window point; default middleClickAction
+-- is none. The plugin treats F17–F20 as direction-only and uses that poke.
+local function pokePointer(app, loc)
+  local down = hs.eventtap.event.newMouseEvent(types.otherMouseDown, loc)
+  local up   = hs.eventtap.event.newMouseEvent(types.otherMouseUp, loc)
+  down:setProperty(props.mouseEventButtonNumber, 2)
+  up:setProperty(props.mouseEventButtonNumber, 2)
+  local function postBoth(target)
+    if target then
+      down:post(target)
+      up:post(target)
+    else
+      down:post()
+      up:post()
+    end
+  end
+  postBoth(app)
+  if app then
+    postBoth(nil)
+  end
+end
+
 local function sendKey(app, key)
   if not key then
     return
   end
   local loc = hs.mouse.absolutePosition()
-  -- Posted-to-app key events often arrive in IINA with locationInWindow (0,0).
-  -- A system-wide key after focus keeps NSEvent.locationInWindow at the cursor.
-  -- mouseMoved wakes mpv mouse-pos/hover in the VO.
-  local moved = hs.eventtap.event.newMouseEvent(types.mouseMoved, loc)
-  moved:post()
-  if app then
-    moved:post(app)
-  end
+  pokePointer(app, loc)
   local down = hs.eventtap.event.newKeyEvent({}, key, true)
   local up   = hs.eventtap.event.newKeyEvent({}, key, false)
-  down:location(loc)
-  up:location(loc)
-  down:post()
-  up:post()
+  if app then
+    down:post(app)
+    up:post(app)
+  else
+    down:post()
+    up:post()
+  end
 end
 
 local function flushKeys()
@@ -244,6 +264,11 @@ end
 function M.disableSession()
   state.sessionOn = false
   stopTap()
+end
+
+function M.sendPrivateKey(key)
+  local app = hs.application.get(M.BUNDLE_ID)
+  sendKey(app, key)
 end
 
 function M.doctor()

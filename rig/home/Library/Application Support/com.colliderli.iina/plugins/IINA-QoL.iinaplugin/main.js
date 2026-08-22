@@ -2,7 +2,7 @@
 
 const { core, event, input, menu, mpv, preferences } = iina;
 
-const PLUGIN_VERSION = "4.0.0";
+const PLUGIN_VERSION = "4.0.2";
 const SCHEMA_VERSION = 4;
 const EPSILON        = 1e-9;
 const MIN_PERCENT    = 100;
@@ -398,7 +398,9 @@ function showZoomOSD() {
 }
 
 let lastPointer = null;
+let lastPointerAt = 0;
 let lastMpvPointer = null;
+const POINTER_FRESH_MS = 500;
 
 function readOsdDimensions() {
   const dim = safeGetNative("osd-dimensions");
@@ -421,7 +423,28 @@ function rememberPointer(data) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) {
     return;
   }
+  // Synthetic origin is not a pointer.
+  if (x === 0 && y === 0) {
+    return;
+  }
   lastPointer = { x: x, y: y };
+  lastPointerAt = Date.now();
+}
+
+function eventPointLooksSynthetic(data, dim) {
+  const x = Number(data && data.x);
+  const y = Number(data && data.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return true;
+  }
+  if (x === 0 && y === 0) {
+    return true;
+  }
+  // Posted key events often arrive as AppKit (0, windowHeight) — CG (0,0).
+  if (dim && x === 0 && Math.abs(y - dim.h) < 1.5) {
+    return true;
+  }
+  return false;
 }
 
 // IINA key/mouse callbacks use AppKit window coords (origin bottom-left).
@@ -446,30 +469,30 @@ function pointerFromWindow(data, dim) {
   };
 }
 
-function resolveAnchor(eventData) {
+function resolveAnchor(eventData, opts) {
   const dim = readOsdDimensions();
   if (!dim) {
     return null;
   }
-  // IINA documents key/mouse callback x,y as the current cursor in the
-  // player window (AppKit, origin bottom-left). That is player-space
-  // pointer, not a Hammerspoon-encoded payload. Synthetic F-keys with
-  // location (0,0) are treated as missing.
-  const ex = Number(eventData && eventData.x);
-  const ey = Number(eventData && eventData.y);
-  const hasEvent = Number.isFinite(ex) && Number.isFinite(ey)
-    && !(ex === 0 && ey === 0);
-  if (hasEvent) {
+  const directionOnly = opts && opts.keysCarryDirectionOnly === true;
+  // Hardware Cmd+Shift+/- can carry a real window point. Direction-only
+  // F-keys must not: IINA 1.4.4 posts synthetic keys at CG origin
+  // (AppKit 0, windowHeight), which is a corner, not the pointer.
+  if (!directionOnly && eventData && !eventPointLooksSynthetic(eventData, dim)) {
     const mouse = pointerFromWindow(eventData, dim);
     if (cursorIsUsable(mouse, dim)) {
       return { mouse: mouse, dim: dim };
     }
+    // Real point outside the video rect: fail closed (do not use last click).
+    return null;
   }
-  if (lastPointer) {
+  const now = Date.now();
+  if (lastPointer && (now - lastPointerAt) <= POINTER_FRESH_MS) {
     const cached = pointerFromWindow(lastPointer, dim);
     if (cursorIsUsable(cached, dim)) {
       return { mouse: cached, dim: dim };
     }
+    return null;
   }
   const mpvMouse = safeGetNative("mouse-pos");
   if (cursorIsUsable(mpvMouse, dim)) {
@@ -523,9 +546,9 @@ function restoreView(snap) {
   safeSet("panscan", snap.panscan);
 }
 
-function zoomBy(deltaLog2, eventData) {
+function zoomBy(deltaLog2, eventData, opts) {
   const settings = currentSettings();
-  const anchor   = resolveAnchor(eventData);
+  const anchor   = resolveAnchor(eventData, opts);
   if (!anchor) {
     showUnavailable();
     return false;
@@ -707,18 +730,22 @@ function start() {
     });
   } catch (_) {}
 
-  input.onMouseDown(input.MOUSE, (data) => {
-    rememberPointer(data);
-    return false;
-  }, input.PRIORITY_LOW);
-  input.onMouseDrag(input.MOUSE, (data) => {
-    rememberPointer(data);
-    return false;
-  }, input.PRIORITY_LOW);
-  input.onMouseUp(input.MOUSE, (data) => {
-    rememberPointer(data);
-    return false;
-  }, input.PRIORITY_LOW);
+  function bindPointerButton(button) {
+    input.onMouseDown(button, (data) => {
+      rememberPointer(data);
+      return false;
+    }, input.PRIORITY_LOW);
+    input.onMouseDrag(button, (data) => {
+      rememberPointer(data);
+      return false;
+    }, input.PRIORITY_LOW);
+    input.onMouseUp(button, (data) => {
+      rememberPointer(data);
+      return false;
+    }, input.PRIORITY_LOW);
+  }
+  bindPointerButton(input.MOUSE);
+  bindPointerButton(input.OTHER_MOUSE);
 
   bindHigh(privateKeys("F15"), (data) => {
     runSelfTest(data);
@@ -727,16 +754,16 @@ function start() {
     resetView(true);
   });
   bindHigh(privateKeys("F17"), (data) => {
-    zoomBy(scrollDelta("discrete", 1), data);
+    zoomBy(scrollDelta("discrete", 1), data, { keysCarryDirectionOnly: true });
   });
   bindHigh(privateKeys("F18"), (data) => {
-    zoomBy(scrollDelta("discrete", -1), data);
+    zoomBy(scrollDelta("discrete", -1), data, { keysCarryDirectionOnly: true });
   });
   bindHigh(privateKeys("F19"), (data) => {
-    zoomBy(scrollDelta("continuous", 1), data);
+    zoomBy(scrollDelta("continuous", 1), data, { keysCarryDirectionOnly: true });
   });
   bindHigh(privateKeys("F20"), (data) => {
-    zoomBy(scrollDelta("continuous", -1), data);
+    zoomBy(scrollDelta("continuous", -1), data, { keysCarryDirectionOnly: true });
   });
 
   bindHigh(["Shift+Meta+=", "Shift+Meta+PLUS"], (data) => {

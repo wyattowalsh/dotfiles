@@ -170,6 +170,25 @@ require_hs_contracts() {
   if ! rg -q -i -e 'cmd[+[:space:]_-]*shift' -e 'shift[+[:space:]_-]*cmd' -e 'command[+[:space:]_-]*shift' "${hs_lua_files[@]}"; then
     fail_msg 'Hammerspoon sources must require cmd+shift (must not consume unmodified scroll)'
   fi
+
+  if ! rg -q 'pokePointer' "${hs_lua_files[@]}"; then
+    fail_msg 'Hammerspoon sources must pokePointer before direction-only zoom keys'
+  fi
+  if ! rg -q 'otherMouseDown' "${hs_lua_files[@]}"; then
+    fail_msg 'Hammerspoon sources must post otherMouseDown as the pointer poke'
+  fi
+}
+
+require_plugin_pointer_contract() {
+  if [[ ! -f "$PLUGIN/main.js" ]]; then
+    return 0
+  fi
+  if ! rg -q 'OTHER_MOUSE' "$PLUGIN/main.js"; then
+    fail_msg 'plugin main.js must listen for OTHER_MOUSE pointer pokes'
+  fi
+  if ! rg -q 'keysCarryDirectionOnly' "$PLUGIN/main.js"; then
+    fail_msg 'plugin main.js must treat F17–F20 as keysCarryDirectionOnly'
+  fi
 }
 
 run_node_checks() {
@@ -251,6 +270,7 @@ if [[ -d "$HS_DIR" ]]; then
   require_hs_contracts
   run_luac_checks
 fi
+require_plugin_pointer_contract
 
 run_node_checks
 run_zoom_self_test

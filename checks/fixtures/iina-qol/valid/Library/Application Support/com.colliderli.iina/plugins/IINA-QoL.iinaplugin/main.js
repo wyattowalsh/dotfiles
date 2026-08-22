@@ -3,6 +3,8 @@
 const { core, event, input, menu, mpv, preferences } = iina;
 
 const PLUGIN_VERSION = "4.0.0";
+// OTHER_MOUSE keysCarryDirectionOnly — fixture contract strings for iina-config.sh
+
 const SCHEMA_VERSION = 4;
 const EPSILON        = 1e-9;
 const MIN_PERCENT    = 100;
