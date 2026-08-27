@@ -36,4 +36,14 @@ if ! grep -Fq "freshen ${EXPECTED_VERSION}" "$TEST_FILE"; then
   exit 1
 fi
 
+if ! grep -Fq "_FRESHEN_VERSION=\"${EXPECTED_VERSION}\"" "$FRESHEN_FILE"; then
+  printf 'freshen fallback _FRESHEN_VERSION missing %s\n' "$EXPECTED_VERSION" >&2
+  exit 1
+fi
+
+if [[ -n "$EXPECTED_DATE" ]] && ! grep -Fq "_FRESHEN_RELEASE_DATE=\"${EXPECTED_DATE}\"" "$FRESHEN_FILE"; then
+  printf 'freshen fallback _FRESHEN_RELEASE_DATE missing %s\n' "$EXPECTED_DATE" >&2
+  exit 1
+fi
+
 printf 'freshen version SSOT OK: %s (%s)\n' "$EXPECTED_VERSION" "$EXPECTED_DATE"

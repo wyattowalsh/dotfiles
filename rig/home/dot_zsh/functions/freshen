@@ -1,6 +1,6 @@
 # ~/.zsh/functions/freshen
 #compdef freshen
-# freshen v1.9.3 — System maintenance: brew + caches + App Store + storage planning
+# freshen v1.10.0 — System maintenance: brew + caches + App Store + storage planning
 
 typeset -g _FRESHEN_VERSION _FRESHEN_RELEASE_DATE
 if [[ -z "$_FRESHEN_VERSION" ]]; then
@@ -12,14 +12,24 @@ if [[ -z "$_FRESHEN_VERSION" ]]; then
         fi
         break
     done
-    [[ -n "$_FRESHEN_VERSION" ]] || _FRESHEN_VERSION="1.9.3"
-    [[ -n "$_FRESHEN_RELEASE_DATE" ]] || _FRESHEN_RELEASE_DATE="2026-08-18"
+    [[ -n "$_FRESHEN_VERSION" ]] || _FRESHEN_VERSION="1.10.0"
+    [[ -n "$_FRESHEN_RELEASE_DATE" ]] || _FRESHEN_RELEASE_DATE="2026-08-26"
 fi
 
 # ── Helper: help text ──────────────────────────────────────────────────────
 __freshen_help() {
     cat <<'EOF'
 freshen — fast, safe system maintenance for Homebrew, App Store, caches, and storage
+
+START HERE
+    Preview:     freshen -N --progress=plain --no-color
+    Apply:       freshen -Y
+    Storage:     freshen -S
+    Automation:  freshen --yes --progress=plain --no-color
+    Aliases (if loaded): fr / frn / frc / frs
+    Degraded apply runs print Attention and Next actions before the phase Summary.
+    Live uses the terminal alt-screen; sudo and confirm pause it.
+    Full flags, environment, and troubleshooting follow.
 
 USAGE
     freshen [flags]
@@ -66,16 +76,17 @@ FLAGS
     --cask-only, -K   Only upgrade casks
     --no-greedy, -G   Don't pass --greedy for cask upgrades
     --no-cleanup, -B  Skip brew cleanup + autoremove
-    --no-cache, -A    Skip dev tool cache cleaning
+    --no-cache, -A    Skip dev tool cache cleaning (also skips --dev-prune)
     --docker-prune    Opt-in: docker system prune -f (not a default cache step)
     --gem-cleanup     Opt-in: gem cleanup (not a default cache step)
     --storage-plan, -S
-                      Read-only storage savings plan; no updates or deletes
+                      Classified storage plan: no brew/mas/cache/prune mutations
+                      (still writes a private log)
     --storage-root=PATH
                       Root label for --storage-plan (default: home)
     --restore-target-gib=N
                       Target free GiB for restore planning
-    --dev-prune, -P   Trash regenerable project-local dev dirs under the root
+    --dev-prune, -P   Trash stale regenerable project-local dirs (gomi; skip recent/live)
     --dev-prune-root=PATH
                       Root for --dev-prune (default: current directory)
     --no-mas, -M      Skip Mac App Store updates
@@ -96,8 +107,9 @@ FLAGS
     --help, -h, -H    Show this help
 
 PROGRESS MODES
-    auto    Live dashboard on an interactive TTY; lines elsewhere.
-    live    Force the dashboard when possible, otherwise falls back to lines.
+    auto    Live dashboard on a TTY (alt-screen); lines if stdout is not a TTY.
+    live    Same as auto. Tests may set FRESHEN_FORCE_LIVE with FRESHEN_UNDER_TEST.
+            Sudo and confirm pause the alt-screen so prompts stay readable.
     lines   Append-only phase updates with color when available.
     plain   Append-only, no color, no cursor controls; best for logs and screen readers.
 
@@ -122,15 +134,22 @@ AUTOMATION
 
 SAFETY MODEL
     Dry-run never upgrades, cleans, prunes, or updates apps. Clean-only skips upgrade
-    inventory entirely. Dev-prune requires gomi and refuses rm fallback. Cask upgrades
-    preflight sudo once so password prompts do not corrupt progress output.
-    storage-plan is report-only for brew/mas/deletes but may create a private log file
-    under the freshen log directory for diagnostics.
+    inventory entirely. Dev-prune requires gomi and refuses rm fallback. It skips
+    caches newer than FRESHEN_DEV_PRUNE_MIN_AGE_DAYS days (default 14; 0 disables)
+    and live-workspace dirs (cwd, ancestors, descendants except when cwd is the
+    prune root). Default cask inventory skips live apps already newer than the tap
+    when compare succeeds; if python3 or brew info is unavailable the inventory is kept. Cask upgrades preflight sudo once so password prompts do
+    not corrupt progress output. storage-plan labels surfaces cache-prune / review /
+    report-only and may probe docker system df, nix store gc --dry-run, kopia
+    repository status (no password on argv; stdin closed), and Darwin tmutil
+    destinationinfo. It does not upgrade, prune, invoke mo, or run files-buddy.
+    A private log file is still created under the freshen log directory, and logs
+    older than 30 days may be pruned from that directory.
 
 CACHES CLEANED
     npm, pnpm, yarn, bun, uv, pip, cargo, go
     optional: node_modules, .venv, venv, .tox, tool caches under a chosen root
-    storage-plan: read-only size scan of common local reclaim surfaces
+    storage-plan: classified report of common local reclaim surfaces
     (only installed tools are detected and cleaned)
 
 OPTIONAL RECLAIM
@@ -152,6 +171,9 @@ ENVIRONMENT
     FRESHEN_GEM_CLEANUP=1              Enable gem cleanup during caches
     FRESHEN_RENDER_INTERVAL_MS         Live dashboard throttle, default 500ms
     FRESHEN_LOW_POWER=1                Plain progress, no bell/notification noise
+    FRESHEN_FORCE_LIVE=1               Test harness only (needs FRESHEN_UNDER_TEST): live without a TTY
+    FRESHEN_FORCE_INTERACTIVE=1        Test harness only (needs FRESHEN_UNDER_TEST): treat stdin as interactive
+    FRESHEN_CONFIRM_REPLY              Test harness only (needs FRESHEN_UNDER_TEST): confirm reply (y/n/q)
     FRESHEN_NO_EMOJI=1                 ASCII brand (no emoji) even when color is on
     FRESHEN_RESIDUAL_MAX               Cap sequential residual retries (0=unlimited)
     FRESHEN_RESIDUAL_INVENTORY_TIMEOUT_SEC  Residual outdated inventory timeout (default: FRESHEN_UPDATE_TIMEOUT_SEC / 300)
@@ -162,6 +184,8 @@ ENVIRONMENT
     FRESHEN_DEV_PRUNE_MAX_SCAN         Dev-prune max candidates scanned, default 400
     FRESHEN_DEV_PRUNE_MAX_ITEMS        Dev-prune max candidates kept, default 50
     FRESHEN_DEV_PRUNE_DU_TIMEOUT_SEC   Per-candidate du timeout, default 10s
+    FRESHEN_DEV_PRUNE_MIN_AGE_DAYS     Skip --dev-prune caches newer than N days, default 14 (0=disable)
+    FRESHEN_BACKUP_STATUS_TIMEOUT_SEC  kopia/tmutil/docker/nix report probes, default 20s (0=unlimited)
     NO_COLOR                           Disable color
     XDG_STATE_HOME                     Preferred log state directory when set
     MAS_NO_AUTO_INDEX                  Passed to mas; defaults to 1 during freshen
@@ -348,14 +372,17 @@ freshen() {
     local -a _freshen_helper_fns=(
         _positive_int_env _timeout_sec_env _fmt_dur _human_kb _percent _progress_bar _progress_meter
         _du_kb _is_safe_dev_prune_root _is_safe_dev_prune_target
+        _mtime_epoch _is_live_workspace_dir _run_report_cmd _storage_surface_catalog _print_backup_status
         _collect_dev_prune_candidates _dev_prune_total_kb _print_dev_prune_plan _print_storage_plan
         _phase_icon _phase_color _phase_status_word _now_ms _terminal_width _truncate
-        _render_dashboard _render_tick _finish_render _sanitize_output _load_mas_outdated
+        _render_dashboard _render_tick _finish_render _live_enter _live_leave _live_begin
+        _live_pause_for_prompt _live_resume _live_abort_dashboard _sanitize_output _load_mas_outdated
         _cache_timeout_for _is_safe_cache_path __freshen_refuse_bun_cache
         _prepare_sudo_for_casks _stop_sudo_keepalive _log_phase _print_prefixed_output
         _emit_phase _phase_attention_detail _set_phase _mark_skipped _warn _err
         _classify_batch_items _run_with_timeout _quit_if_requested _check_quit
-        _note_waiting _add_next_action _brew_outdated_to_file _residual_prepare _run_residual_upgrades
+        _note_waiting _add_next_action _brew_outdated_to_file _cask_info_json_to_file _filter_casks_already_newer
+        _residual_prepare _run_residual_upgrades
         _freshen_acquire_lock _freshen_release_lock _osascript_escape
         __freshen_teardown __freshen_cleanup __freshen_exit
     )
@@ -392,20 +419,25 @@ freshen() {
 
     local _is_tty=0 _is_interactive=0
     local _render_mode="lines" _render_started=0 _last_render_ms=0 _render_interval_ms
+    local _live_ready=0 _live_paused=0 _live_closed=0
+    local -a _live_deferred_msgs=()
     _render_interval_ms="$(_positive_int_env FRESHEN_RENDER_INTERVAL_MS 500)"
     [[ -t 1 ]] && _is_tty=1
     [[ -t 0 && -t 1 ]] && _is_interactive=1
+    if [[ -n "${FRESHEN_UNDER_TEST:-}" && "${FRESHEN_FORCE_INTERACTIVE:-0}" == "1" ]]; then
+        _is_interactive=1
+    fi
 
     case "$progress_mode" in
         auto)
-            if (( _is_tty && ! verbose && ! quiet )); then
+            if (( ! verbose && ! quiet )) && { (( _is_tty )) || [[ "${FRESHEN_FORCE_LIVE:-0}" == "1" && -n "${FRESHEN_UNDER_TEST:-}" ]]; }; then
                 _render_mode="live"
             else
                 _render_mode="lines"
             fi
             ;;
         live)
-            if (( _is_tty && ! verbose && ! quiet )); then
+            if (( ! verbose && ! quiet )) && { (( _is_tty )) || [[ "${FRESHEN_FORCE_LIVE:-0}" == "1" && -n "${FRESHEN_UNDER_TEST:-}" ]]; }; then
                 _render_mode="live"
             else
                 _render_mode="lines"
@@ -428,6 +460,8 @@ freshen() {
     local -a dev_prune_paths=() dev_prune_sizes=()
     local dev_prune_candidate_count=0
     local dev_prune_root_refused=0
+    local dev_prune_skipped_recent=0
+    local dev_prune_skipped_live=0
     local _bun_cache_refusal=""
     local _log_file="" _current_phase="" _current_label="" _last_active_phase="" _last_active_label=""
 
@@ -478,6 +512,7 @@ freshen() {
     _log_file="${log_dir}/${stamp}.$$.log"
     (umask 077; : >| "$_log_file") 2>/dev/null || {
         print -u2 "freshen: could not create log file at ${_log_file}"
+        unfunction _positive_int_env _timeout_sec_env 2>/dev/null || true
         return 1
     }
     chmod 600 "$_log_file" 2>/dev/null || true
@@ -603,11 +638,97 @@ freshen() {
         [[ -n "$target" && -e "$target" ]] || return 1
         [[ -L "$target" ]] && return 1
         target_real="${target:A}"
-        root_real="${root:A}"
+        root_real="$root"
         [[ -n "$target_real" && -n "$root_real" ]] || return 1
         [[ "$target_real" == "$root_real" || "$target_real" == "$root_real"/* ]] || return 1
         [[ -d "$target_real" ]] || return 1
         return 0
+    }
+
+    _mtime_epoch() {
+        local target="$1"
+        local epoch=""
+        local -a st
+        if zmodload -F zsh/stat b:zstat 2>/dev/null && zstat -A st +mtime -- "$target" 2>/dev/null; then
+            epoch="${st[1]}"
+            [[ "$epoch" == <-> ]] && { print -r -- "$epoch"; return 0; }
+        fi
+        epoch="$(command stat -f %m -- "$target" 2>/dev/null)" && [[ "$epoch" == <-> ]] && { print -r -- "$epoch"; return 0; }
+        epoch="$(command stat -c %Y -- "$target" 2>/dev/null)" && [[ "$epoch" == <-> ]] && { print -r -- "$epoch"; return 0; }
+        return 1
+    }
+
+    _is_live_workspace_dir() {
+        local candidate="$1" prune_root="$2"
+        local cwd_real cand_real root_real
+        cwd_real="${PWD:A}"
+        cand_real="${candidate:A}"
+        root_real="${prune_root:A}"
+        [[ -n "$cwd_real" && -n "$cand_real" ]] || return 1
+        [[ "$cwd_real" == "$cand_real" ]] && return 0
+        [[ "$cwd_real" == "$cand_real"/* ]] && return 0
+        if [[ -n "$root_real" && "$cwd_real" == "$root_real" ]]; then
+            return 1
+        fi
+        [[ "$cand_real" == "$cwd_real" || "$cand_real" == "$cwd_real"/* ]] && return 0
+        return 1
+    }
+
+    _run_report_cmd() {
+        local timeout_s
+        timeout_s="$(_timeout_sec_env FRESHEN_BACKUP_STATUS_TIMEOUT_SEC 20)"
+        if (( timeout_s > 0 )) && command -v timeout >/dev/null 2>&1; then
+            command timeout "$timeout_s" "$@" </dev/null
+        elif (( timeout_s > 0 )) && command -v gtimeout >/dev/null 2>&1; then
+            command gtimeout "$timeout_s" "$@" </dev/null
+        else
+            command "$@" </dev/null
+        fi
+    }
+
+    _storage_surface_catalog() {
+        print -r -- "cache-prune	rebuild on demand	${HOME}/Library/Caches"
+        print -r -- "cache-prune	rebuild on demand	${HOME}/.cache"
+        print -r -- "review	user files; copy before delete	${HOME}/Downloads"
+        print -r -- "cache-prune	Xcode rebuilds	${HOME}/Library/Developer/Xcode/DerivedData"
+        print -r -- "review	export archives before delete	${HOME}/Library/Developer/Xcode/Archives"
+        print -r -- "review	simulators re-download	${HOME}/Library/Developer/CoreSimulator"
+        print -r -- "review	device support re-download	${HOME}/Library/Developer/Xcode/iOS DeviceSupport"
+        print -r -- "review	app data mixed with cache	${HOME}/Library/Application Support/Google"
+        print -r -- "report-only	unique-model; do-not-touch	${HOME}/Library/Application Support/LM Studio"
+        print -r -- "report-only	unique-model; do-not-touch	${HOME}/.ollama/models"
+        print -r -- "cache-prune	hub blobs redownload	${HOME}/.cache/huggingface"
+        print -r -- "report-only	docker-volumes; do-not-touch	${HOME}/.docker/volumes"
+        print -r -- "report-only	kopia; do-not-touch	${HOME}/Library/Application Support/kopia"
+        print -r -- "report-only	app-library; do-not-touch	${HOME}/Library/Mail"
+        print -r -- "report-only	app-library; do-not-touch	${HOME}/Library/Messages"
+    }
+
+    _print_backup_status() {
+        local kopia_state="not installed" tm_state="" rc=0
+        print "  ${bold}Backup of record${rst}"
+        if command -v kopia >/dev/null 2>&1; then
+            rc=0
+            _run_report_cmd kopia repository status >/dev/null 2>&1 || rc=$?
+            if (( rc == 0 )); then
+                kopia_state="reachable"
+            else
+                kopia_state="verify-unknown"
+            fi
+        fi
+        print "     ${dim}Kopia:${rst} ${kopia_state}"
+        if [[ "$(uname -s)" == Darwin ]] && command -v tmutil >/dev/null 2>&1; then
+            if _run_report_cmd tmutil destinationinfo >/dev/null 2>&1; then
+                tm_state="reachable"
+            else
+                tm_state="verify-unknown"
+            fi
+            print "     ${dim}Time Machine:${rst} ${tm_state}"
+        fi
+        if [[ "$kopia_state" != "reachable" ]]; then
+            print "     ${dim}Unique-cold reclaim:${rst} not recommended until Kopia verify succeeds"
+        fi
+        print
     }
 
     _collect_dev_prune_candidates() {
@@ -616,12 +737,24 @@ freshen() {
         local max_items="${FRESHEN_DEV_PRUNE_MAX_ITEMS:-50}"
         local max_scan="${FRESHEN_DEV_PRUNE_MAX_SCAN:-400}"
         local candidate size_kb count=0 scanned=0
-        local tmp_candidates
+        local tmp_candidates min_age_days mtime_epoch cutoff_epoch now_epoch
 
         dev_prune_paths=()
         dev_prune_sizes=()
         dev_prune_candidate_count=0
         dev_prune_root_refused=0
+        dev_prune_skipped_recent=0
+        dev_prune_skipped_live=0
+        min_age_days="$(_timeout_sec_env FRESHEN_DEV_PRUNE_MIN_AGE_DAYS 14)"
+        if [[ "$min_age_days" != <-> ]]; then
+            min_age_days=14
+        elif (( ${#min_age_days} > 5 )); then
+            min_age_days=36500
+        else
+            min_age_days=$(( 10#${min_age_days} ))
+            (( min_age_days > 36500 )) && min_age_days=36500
+        fi
+        now_epoch="${EPOCHSECONDS:-$(date +%s)}"
 
         if [[ ! -d "$root" ]]; then
             _warn "--dev-prune root is not a directory: ${root}"
@@ -635,6 +768,8 @@ freshen() {
         fi
 
         _dev_prune_validated_root="${root:A}"
+        local find_root="$root"
+        [[ "$root" == -* ]] && find_root="$_dev_prune_validated_root"
 
         tmp_candidates="$(mktemp "${TMPDIR:-/tmp}/freshen.dev-prune.XXXXXX")" || {
             _warn "Could not create temporary dev-prune inventory"
@@ -645,6 +780,23 @@ freshen() {
         while IFS= read -r -d '' candidate; do
             (( scanned >= max_scan )) && break
             (( scanned++ ))
+            if _is_live_workspace_dir "$candidate" "$_dev_prune_validated_root"; then
+                (( dev_prune_skipped_live++ ))
+                continue
+            fi
+            # Symlinks are kept for the execution-time unsafe-target refusal;
+            # do not age-skip them via the link node's own mtime.
+            if [[ ! -L "$candidate" ]] && (( min_age_days > 0 )); then
+                mtime_epoch="$(_mtime_epoch "$candidate")" || {
+                    (( dev_prune_skipped_recent++ ))
+                    continue
+                }
+                cutoff_epoch=$(( now_epoch - min_age_days * 86400 ))
+                if (( mtime_epoch > cutoff_epoch )); then
+                    (( dev_prune_skipped_recent++ ))
+                    continue
+                fi
+            fi
             if [[ -L "$candidate" ]]; then
                 size_kb=0
             else
@@ -653,7 +805,7 @@ freshen() {
             fi
             printf '%s\t%s\n' "$size_kb" "$candidate" >> "$tmp_candidates"
         done < <(
-            command find "$root" -maxdepth "$max_depth" \
+            command find -P "$find_root" -maxdepth "$max_depth" \
                 \( -name .git -o -name .hg -o -name .svn \) -prune -o \
                 \( -type d -o -type l \) \( \
                     -name node_modules -o \
@@ -699,6 +851,8 @@ freshen() {
         print "  ${bold}Dev Prune${rst}"
         print "     ${dim}Root:${rst} ${dev_prune_root}"
         print "     ${dim}Candidates:${rst} ${dev_count} (${total_human})"
+        print "     ${dim}skipped-recent:${rst} ${dev_prune_skipped_recent}"
+        print "     ${dim}skipped-live:${rst} ${dev_prune_skipped_live}"
         for (( idx = 1; idx <= dev_count && idx <= limit; idx++ )); do
             dev_size="$(_human_kb "${dev_prune_sizes[$idx]}")"
             dev_path="${dev_prune_paths[$idx]}"
@@ -713,8 +867,8 @@ freshen() {
         local root="$1"
         local target_gib="$2"
         local available_kb target_kb gap_kb dev_total_kb restore_pct restore_bar df_root
-        local tmp_sizes storage_path size_kb shown=0 limit=12
-        local -a storage_paths=()
+        local storage_path size_kb shown=0 limit=24
+        local class hint docker_rc=0
 
         df_root="$root"
         [[ -d "$df_root" ]] || df_root="$HOME"
@@ -742,49 +896,52 @@ freshen() {
         fi
         print
 
-        storage_paths=(
-            "$HOME/Library/Caches"
-            "$HOME/.cache"
-            "$HOME/Downloads"
-            "$HOME/Library/Developer"
-            "$HOME/Library/Application Support/Google"
-            "$HOME/Library/Application Support/LM Studio"
-            "$HOME/.docker"
-        )
-        if [[ "$root" != "$HOME" && -d "$root" ]]; then
-            storage_paths=("$root" "${storage_paths[@]}")
-        fi
-
-        tmp_sizes=""
-        if [[ "${FRESHEN_STORAGE_SCAN_SURFACES:-0}" == "1" ]]; then
-            tmp_sizes="$(mktemp "${TMPDIR:-/tmp}/freshen.storage.XXXXXX")" || {
-                _warn "Could not create temporary storage inventory"
-                return 0
-            }
-
-            for storage_path in "${storage_paths[@]}"; do
-                [[ -d "$storage_path" ]] || continue
-                size_kb="$(_du_kb "$storage_path" "${FRESHEN_STORAGE_DU_TIMEOUT_SEC:-30}")" || continue
-                [[ -z "$size_kb" ]] && continue
-                printf '%s\t%s\n' "$size_kb" "$storage_path" >> "$tmp_sizes"
-            done
-        fi
+        _print_backup_status
 
         print "  ${bold}Large Local Surfaces${rst}"
+        print "     ${dim}Classes:${rst} cache-prune · review · report-only"
         if [[ "${FRESHEN_STORAGE_SCAN_SURFACES:-0}" != "1" ]]; then
             print "     ${dim}Skipped broad surface sizing by default; set FRESHEN_STORAGE_SCAN_SURFACES=1 for bounded du probes.${rst}"
-        elif [[ -s "$tmp_sizes" ]]; then
-            while IFS=$'\t' read -r size_kb storage_path; do
-                (( shown >= limit )) && break
-                [[ -z "$storage_path" ]] && continue
-                print "     $(_human_kb "$size_kb")  ${storage_path}"
-                (( shown++ ))
-            done < <(command sort -nr "$tmp_sizes" 2>/dev/null)
-        else
-            print "     ${dim}No configured local surfaces found.${rst}"
         fi
-        [[ -n "$tmp_sizes" ]] && command rm -f "$tmp_sizes" 2>/dev/null
+        while IFS=$'\t' read -r class hint storage_path; do
+            [[ -n "$storage_path" && -d "$storage_path" ]] || continue
+            (( shown >= limit )) && break
+            if [[ "${FRESHEN_STORAGE_SCAN_SURFACES:-0}" == "1" ]]; then
+                size_kb="$(_du_kb "$storage_path" "${FRESHEN_STORAGE_DU_TIMEOUT_SEC:-30}")" || size_kb=""
+                if [[ -n "$size_kb" ]]; then
+                    print "     ${class}  $(_human_kb "$size_kb")  ${storage_path}"
+                else
+                    print "     ${class}  ${storage_path}"
+                fi
+            else
+                print "     ${class}  ${storage_path}"
+            fi
+            print "        ${dim}restore:${rst} ${hint}"
+            (( shown++ ))
+        done < <(_storage_surface_catalog)
+        if [[ "$root" != "$HOME" && -d "$root" ]]; then
+            print "     review  ${root}"
+            print "        ${dim}restore:${rst} inspect before delete"
+        fi
         print
+
+        if command -v docker >/dev/null 2>&1; then
+            docker_rc=0
+            _run_report_cmd docker info >/dev/null 2>&1 || docker_rc=$?
+            if (( docker_rc == 0 )); then
+                print "  ${bold}Docker${rst}"
+                _run_report_cmd docker system df 2>/dev/null | sed 's/^/     /' || true
+                print "     ${dim}Report only; --storage-plan does not run docker system prune.${rst}"
+                print
+            fi
+        fi
+
+        if command -v nix >/dev/null 2>&1; then
+            print "  ${bold}Nix store${rst}"
+            _run_report_cmd nix store gc --dry-run 2>/dev/null | sed 's/^/     /' || true
+            print "     ${dim}Dry-run only; --storage-plan does not garbage-collect.${rst}"
+            print
+        fi
 
         print "  ${bold}Regenerable Dev Dirs${rst}"
         print "     ${dim}Root:${rst} ${dev_prune_root}"
@@ -792,6 +949,8 @@ freshen() {
         local dev_total_human
         dev_total_human="$(_human_kb "$dev_total_kb")"
         print "     ${dim}Candidates:${rst} ${dev_count} (${dev_total_human})"
+        print "     ${dim}skipped-recent:${rst} ${dev_prune_skipped_recent}"
+        print "     ${dim}skipped-live:${rst} ${dev_prune_skipped_live}"
         if (( dev_count > 0 )); then
             local idx dev_limit=12 dev_size_human
             for (( idx = 1; idx <= dev_count && idx <= dev_limit; idx++ )); do
@@ -807,6 +966,10 @@ freshen() {
         print "     ${dim}Safe report:${rst} freshen --storage-plan --restore-target-gib=${target_gib:-0}"
         print "     ${dim}Dev preview:${rst} freshen --dry-run --dev-prune --dev-prune-root=PATH"
         print "     ${dim}Dev cleanup:${rst} freshen --yes --dev-prune --dev-prune-root=PATH"
+        if command -v mo >/dev/null 2>&1; then
+            print "     ${dim}Mole preview:${rst} mo clean -n  (not invoked by freshen)"
+        fi
+        print "     ${dim}Offload/dedupe:${rst} files-buddy (not invoked by freshen)"
         if [[ "$target_gib" == <-> && "$target_gib" -gt 0 && "$gap_kb" -gt 0 ]]; then
             print "     ${ylw}!${rst} Restore is still short by $(_human_kb "$gap_kb"); do not start a large restore yet."
         fi
@@ -816,6 +979,8 @@ freshen() {
         print "     ${dim}Dev max depth:${rst} ${FRESHEN_DEV_PRUNE_MAX_DEPTH:-5}"
         print "     ${dim}Dev max scanned:${rst} ${FRESHEN_DEV_PRUNE_MAX_SCAN:-400}"
         print "     ${dim}Dev max kept:${rst} ${FRESHEN_DEV_PRUNE_MAX_ITEMS:-50}"
+        print "     ${dim}Dev min age days:${rst} ${FRESHEN_DEV_PRUNE_MIN_AGE_DAYS:-14}"
+        print "     ${dim}Backup probe timeout:${rst} ${FRESHEN_BACKUP_STATUS_TIMEOUT_SEC:-20}s"
         print "     ${dim}Surface sizing:${rst} $([[ "${FRESHEN_STORAGE_SCAN_SURFACES:-0}" == "1" ]] && print enabled || print disabled)"
         print
     }
@@ -869,7 +1034,9 @@ freshen() {
         _last_active_phase="$key"
         _last_active_label="$detail"
         _log_phase "$key" "WAITING ${detail}"
-        (( quiet )) || print "  ${ylw}W${rst} ${bold}${_phase_label[$key]}${rst}: waiting — ${detail}"
+        if [[ "$_render_mode" != live || $_live_ready -eq 0 || $_live_closed -eq 1 ]]; then
+            (( quiet )) || print "  ${ylw}W${rst} ${bold}${_phase_label[$key]}${rst}: waiting — ${detail}"
+        fi
         _render_tick 1
     }
 
@@ -909,6 +1076,231 @@ freshen() {
         fi
         "${ocmd[@]}" >| "$outpath" 2>/dev/null
         return $?
+    }
+
+    _cask_info_json_to_file() {
+        local outpath="$1"
+        shift
+        if (( $# == 0 )); then
+            print -r -- '{"casks":[]}' >| "$outpath"
+            return 0
+        fi
+        local timeout_s
+        timeout_s="$(_timeout_sec_env FRESHEN_UPDATE_TIMEOUT_SEC 300)"
+        if (( timeout_s > 0 )) && command -v timeout >/dev/null 2>&1; then
+            command timeout "$timeout_s" brew info --json=v2 --cask -- "$@" >| "$outpath" 2>/dev/null
+            return $?
+        elif (( timeout_s > 0 )) && command -v gtimeout >/dev/null 2>&1; then
+            command gtimeout "$timeout_s" brew info --json=v2 --cask -- "$@" >| "$outpath" 2>/dev/null
+            return $?
+        fi
+        brew info --json=v2 --cask -- "$@" >| "$outpath" 2>/dev/null
+        return $?
+    }
+
+    # Drop casks whose live app (ShortVersion) is already newer than the tap version.
+    # Fail-open: keep the inventory list if info/compare is unavailable.
+    _filter_casks_already_newer() {
+        _casks_skipped_newer=()
+        (( ${#out_casks} > 0 )) || return 0
+        if ! command -v python3 >/dev/null 2>&1; then
+            _warn "SKIP NEWER python3 missing; keeping inventory"
+            _log_phase casks "SKIP NEWER python3 missing; keeping inventory"
+            return 0
+        fi
+
+        local info_json decision_file
+        info_json="$(mktemp "${TMPDIR:-/tmp}/freshen.caskinfo.XXXXXX")" || return 0
+        decision_file="$(mktemp "${TMPDIR:-/tmp}/freshen.caskskip.XXXXXX")" || {
+            rm -f -- "$info_json"
+            return 0
+        }
+        if ! _cask_info_json_to_file "$info_json" "${out_casks[@]}"; then
+            _log_phase casks "SKIP NEWER info failed; keeping inventory"
+            rm -f -- "$info_json" "$decision_file"
+            return 0
+        fi
+
+        if ! python3 - "$info_json" "${out_casks[@]}" >| "$decision_file" <<'PY'
+import json
+import os
+import plistlib
+import re
+import sys
+
+SPECIAL = {"latest", "devel", "head"}
+
+
+def matches(cask, name):
+    if cask.get("token") == name or cask.get("full_token") == name:
+        return True
+    n = cask.get("name")
+    if n == name:
+        return True
+    if isinstance(n, list) and name in n:
+        return True
+    return False
+
+
+def tokens(ver):
+    ver = ver.replace("+", ".").replace(",", ".")
+    parts = [p for p in re.split(r"[^A-Za-z0-9]+", ver) if p]
+    out = []
+    for p in parts:
+        if p.isdigit():
+            out.append((0, int(p), ""))
+        else:
+            out.append((1, 0, p.lower()))
+    return out
+
+
+def cmp_ver(a, b):
+    if not a or not b:
+        return None
+    a, b = str(a).strip(), str(b).strip()
+    if not a or not b:
+        return None
+    la, lb = a.lower(), b.lower()
+    if la in SPECIAL or lb in SPECIAL:
+        return 0 if la == lb else None
+    ta, tb = tokens(a), tokens(b)
+    if not ta or not tb:
+        return None
+    n = max(len(ta), len(tb))
+    ta = ta + [(0, 0, "")] * (n - len(ta))
+    tb = tb + [(0, 0, "")] * (n - len(tb))
+    for x, y in zip(ta, tb):
+        if x < y:
+            return -1
+        if x > y:
+            return 1
+    return 0
+
+
+def app_paths(cask):
+    paths = []
+    home = os.environ.get("HOME") or ""
+    for art in cask.get("artifacts") or []:
+        if not isinstance(art, dict) or "app" not in art:
+            continue
+        target = art.get("target")
+        if isinstance(target, str) and target.endswith(".app"):
+            paths.append(target)
+        apps = art.get("app")
+        if not isinstance(apps, list):
+            apps = [apps]
+        for app in apps:
+            names = []
+            if isinstance(app, str):
+                names.append(app)
+            elif isinstance(app, dict):
+                for key in ("target", "source"):
+                    if isinstance(app.get(key), str):
+                        names.append(app[key])
+            for name in names:
+                if not name.endswith(".app"):
+                    continue
+                if os.path.isabs(name):
+                    paths.append(name)
+                else:
+                    paths.append("/Applications/" + name)
+                    if home:
+                        paths.append(os.path.join(home, "Applications", name))
+    seen = set()
+    out = []
+    for path in paths:
+        if path not in seen:
+            seen.add(path)
+            out.append(path)
+    return out
+
+
+def short_version(path):
+    plist = os.path.join(path, "Contents", "Info.plist")
+    if not os.path.isfile(plist):
+        return None
+    try:
+        with open(plist, "rb") as fh:
+            data = plistlib.load(fh)
+    except Exception:
+        return None
+    v = data.get("CFBundleShortVersionString")
+    if v is None:
+        return None
+    s = str(v).strip()
+    return s or None
+
+
+def caskroom_installed(cask):
+    inst = cask.get("installed")
+    if isinstance(inst, list):
+        inst = inst[0] if inst else None
+    if inst is None:
+        return None
+    s = str(inst).strip()
+    return s or None
+
+
+path = sys.argv[1]
+names = sys.argv[2:]
+try:
+    with open(path, "r", encoding="utf-8") as fh:
+        raw = json.load(fh)
+except Exception:
+    sys.exit(1)
+if isinstance(raw, dict):
+    casks = raw.get("casks") or []
+elif isinstance(raw, list):
+    casks = raw
+else:
+    casks = []
+
+for name in names:
+    cask = next((c for c in casks if isinstance(c, dict) and matches(c, name)), None)
+    if cask is None:
+        print("keep\t" + name)
+        continue
+    proposed = cask.get("version")
+    proposed = str(proposed).strip() if proposed is not None else ""
+    live = None
+    for app_path in app_paths(cask):
+        live = short_version(app_path)
+        if live:
+            break
+    if not live:
+        live = caskroom_installed(cask)
+    result = cmp_ver(live, proposed) if live and proposed else None
+    if result == 1:
+        print("skip\t%s\t%s\t%s" % (name, live, proposed))
+    else:
+        print("keep\t" + name)
+PY
+        then
+            _log_phase casks "SKIP NEWER compare failed; keeping inventory"
+            rm -f -- "$info_json" "$decision_file"
+            return 0
+        fi
+        local -a kept=()
+        local kind name live proposed
+        local saw=0
+        while IFS=$'\t' read -r kind name live proposed; do
+            [[ "$kind" == "keep" || "$kind" == "skip" ]] || continue
+            (( saw++ ))
+            if [[ "$kind" == "skip" ]]; then
+                _casks_skipped_newer+=("${name} (${live} > ${proposed})")
+                _log_phase casks "SKIP NEWER pkg=${name} live=${live} proposed=${proposed}"
+            else
+                kept+=("$name")
+            fi
+        done < "$decision_file"
+        if (( saw != ${#out_casks} )); then
+            _log_phase casks "SKIP NEWER compare incomplete; keeping inventory"
+            rm -f -- "$info_json" "$decision_file"
+            return 0
+        fi
+        rm -f -- "$info_json" "$decision_file"
+        out_casks=("${kept[@]}")
+        return 0
     }
 
     # Mutates the named residual candidate array in-place (retry list).
@@ -1128,18 +1520,63 @@ freshen() {
         fi
     }
 
+    _live_enter() {
+        [[ "$_render_mode" == live ]] || return 0
+        (( _live_closed || _live_paused )) && return 0
+        (( _render_started )) && return 0
+        printf '\e[?1049h\e[?25l'
+        _render_started=1
+    }
+
+    _live_leave() {
+        (( _render_started )) || return 0
+        printf '\e[?25h\e[?1049l'
+        _render_started=0
+    }
+
+    _live_begin() {
+        [[ "$_render_mode" == live ]] || return 0
+        (( _live_closed )) && return 0
+        _live_ready=1
+        _render_tick 1
+    }
+
+    _live_pause_for_prompt() {
+        [[ "$_render_mode" == live ]] || return 0
+        (( _live_closed )) && return 0
+        _live_paused=1
+        _live_leave
+    }
+
+    _live_resume() {
+        [[ "$_render_mode" == live ]] || return 0
+        (( _live_closed )) && return 0
+        _live_paused=0
+        _live_enter
+        _render_tick 1
+    }
+
+    _live_abort_dashboard() {
+        [[ "$_render_mode" == live ]] || return 0
+        _live_paused=0
+        _live_closed=1
+        _live_leave
+    }
+
     _render_dashboard() {
         [[ "$_render_mode" == live ]] || return 0
+        (( _live_ready && ! _live_paused && ! _live_closed )) || return 0
 
         local cols="$(_terminal_width)"
         local key state icon detail elapsed row
-        if (( ! _render_started )); then
-            printf '\e[?25l'
-            _render_started=1
-        fi
+        _live_enter
 
-        printf '\e[H\e[2J'
-        print "${cyn}🍃 freshen${rst}  ${dim}${_current_label:-system maintenance}${rst}"
+        printf '\e[H\e[J'
+        local live_brand="freshen"
+        if [[ "${FRESHEN_NO_EMOJI:-0}" != "1" && "$_render_mode" != plain ]] && (( use_color )); then
+            live_brand="🍃 freshen"
+        fi
+        print "${cyn}${live_brand}${rst}  ${dim}${_current_label:-system maintenance}${rst}"
         print "${dim}Log:${rst} ${_log_file}"
         print "${dim}$(_progress_meter)${rst}"
         print
@@ -1159,6 +1596,7 @@ freshen() {
     _render_tick() {
         local force="${1:-0}"
         [[ "$_render_mode" == live ]] || return 0
+        (( _live_ready && ! _live_paused && ! _live_closed )) || return 0
         local now="$(_now_ms)"
         if (( ! force && now - _last_render_ms < _render_interval_ms )); then
             return 0
@@ -1168,10 +1606,14 @@ freshen() {
     }
 
     _finish_render() {
-        if (( _render_started )); then
-            printf '\e[?25h\e[H\e[2J'
-            _render_started=0
-        fi
+        _live_paused=0
+        _live_closed=1
+        _live_leave
+        local _dm
+        for _dm in "${_live_deferred_msgs[@]}"; do
+            print -u2 "  ${red}✗${rst} ${_dm#E:}"
+        done
+        _live_deferred_msgs=()
     }
 
     _sanitize_output() {
@@ -1245,15 +1687,18 @@ freshen() {
             return 1
         }
         _note_waiting casks "validating sudo for cask installers"
+        _live_pause_for_prompt
         (( quiet )) || print "  ${dim}Cask installers may need admin privileges; validating sudo once before upgrades.${rst}"
         if ! sudo -v; then
             _err "sudo preflight failed; cask upgrades skipped before starting installers"
+            _live_abort_dashboard
             return 1
         fi
         _phase_state[casks]="running"
         _phase_detail[casks]="sudo ready"
         _log_phase casks "sudo preflight ok"
         _sudo_ready=1
+        _live_resume
         (
             while true; do
                 sleep 60
@@ -1325,7 +1770,7 @@ freshen() {
         [[ -n "$elapsed" && "$elapsed" != "0" ]] && detail="${detail:+${detail} · }$(_fmt_dur "$elapsed")"
         [[ "$_render_mode" != live && "${_total_planned:-0}" -gt 0 ]] && detail="${detail:+${detail} · }$(_progress_meter)"
 
-        if [[ "$_render_mode" == live ]]; then
+        if [[ "$_render_mode" == live && $_live_closed -eq 0 && $_live_ready -eq 1 ]]; then
             _render_tick 1
             return 0
         fi
@@ -1379,6 +1824,10 @@ freshen() {
 
     _err() {
         _errors+=("$1")
+        if [[ "$_render_mode" == live && "$_live_ready" == 1 && "$_live_paused" != 1 && "$_live_closed" != 1 ]]; then
+            _live_deferred_msgs+=("E:$1")
+            return 0
+        fi
         print -u2 "  ${red}✗${rst} $1"
     }
 
@@ -1742,7 +2191,7 @@ freshen() {
         print
     }
 
-    local -a out_formulae=() out_casks=() out_mas=()
+    local -a out_formulae=() out_casks=() out_mas=() _casks_skipped_newer=()
     local nf=0 nc=0 nm=0
 
     local inventory_degraded=0
@@ -1854,6 +2303,8 @@ freshen() {
     rm -rf "$tmp" 2>/dev/null
     _inventory_tmp=""
 
+    (( do_casks )) && _filter_casks_already_newer
+
     (( formulae_rc != 0 )) && inventory_degraded=1
     (( casks_rc != 0 )) && inventory_degraded=1
     (( run_mas && mas_outdated_rc != 0 )) && inventory_degraded=1
@@ -1864,12 +2315,13 @@ freshen() {
     _total_planned=$(( nf + nc + nm ))
     _phase_attempted[inventory]=$_total_planned
     _phase_detail[inventory]="formulae ${nf}, casks ${nc}, apps ${nm}"
+    (( ${#_casks_skipped_newer} > 0 )) && _phase_detail[inventory]="${_phase_detail[inventory]}, skipped ${#_casks_skipped_newer} newer"
     _phase_elapsed[inventory]=$t_update
 
     if (( inventory_degraded )); then
-        _set_phase inventory degraded "formulae ${nf}, casks ${nc}, apps ${nm}" "$t_update"
+        _set_phase inventory degraded "${_phase_detail[inventory]}" "$t_update"
     else
-        _set_phase inventory done "formulae ${nf}, casks ${nc}, apps ${nm}" "$t_update"
+        _set_phase inventory done "${_phase_detail[inventory]}" "$t_update"
     fi
 
     _phase_attempted[formulae]=$nf
@@ -1896,6 +2348,7 @@ freshen() {
         (( nf > 0 )) && print "        ${(j:, :)out_formulae}"
         print "     ${dim}Casks:${rst} ${nc}"
         (( nc > 0 )) && print "        ${(j:, :)out_casks}"
+        (( ${#_casks_skipped_newer} > 0 )) && print "     ${dim}Skipped (already newer):${rst} ${(j:, :)_casks_skipped_newer}"
         print "     ${dim}App Store:${rst} ${nm}"
         (( nm > 0 )) && print "        ${(j:, :)out_mas}"
         print
@@ -1903,7 +2356,10 @@ freshen() {
 
     (( run_cache && run_dev_prune && ! quiet )) && _print_dev_prune_plan
 
+    _live_begin
+
     if (( dry_run )); then
+        _finish_render
         if (( quiet == 0 )); then
             if (( clean_only )); then
                 print "  ${blu}-${rst} Clean-only dry run: no changes made"
@@ -1912,7 +2368,6 @@ freshen() {
             fi
             print
         fi
-        _finish_render
         return $(( (inventory_degraded || dev_prune_root_refused) ? 1 : 0 ))
     fi
 
@@ -1921,17 +2376,26 @@ freshen() {
             _err "Non-interactive — use --yes to proceed"
             return 1
         fi
+        local _inv_state_saved="${_phase_state[inventory]}"
+        local _inv_detail_saved="${_phase_detail[inventory]}"
         _note_waiting inventory "confirmation prompt"
+        _live_pause_for_prompt
         printf "  ${bold}Proceed?${rst} [Y/n/q] "
         local reply=""
-        read -k 1 reply
+        if [[ -n "${FRESHEN_UNDER_TEST:-}" && -n "${FRESHEN_CONFIRM_REPLY:-}" ]]; then
+            reply="${FRESHEN_CONFIRM_REPLY}"
+        else
+            read -k 1 reply
+        fi
         [[ "$reply" == $'\n' ]] || print
         if [[ "$reply" == [nNqQ] ]]; then
             _warn "Cancelled"
             return 0
         fi
-        _phase_state[inventory]="${_phase_state[inventory]:-done}"
+        _phase_state[inventory]="${_inv_state_saved:-done}"
+        _phase_detail[inventory]="${_inv_detail_saved}"
         print
+        _live_resume
     fi
 
     if (( ! sequential )); then
@@ -2417,6 +2881,47 @@ freshen() {
     done
     (( ${#_errors} > 0 )) && overall_state="degraded"
 
+    if [[ "$overall_state" != "done" ]]; then
+        if (( residual_retry == 0 )); then
+            case "${_phase_state[formulae]}" in
+                degraded|failed) _add_next_action "freshen -L -Y --progress=lines --no-color  # sequential upgrades" ;;
+            esac
+            if [[ "${_next_actions[-1]:-}" != *"sequential upgrades"* ]]; then
+                case "${_phase_state[casks]}" in
+                    degraded|failed) _add_next_action "freshen -L -Y --progress=lines --no-color  # sequential upgrades" ;;
+                esac
+            fi
+        else
+            case "${_phase_state[formulae]}" in
+                failed) _add_next_action "freshen -L -Y --progress=lines --no-color  # sequential upgrades" ;;
+            esac
+            if [[ "${_next_actions[-1]:-}" != *"sequential upgrades"* ]]; then
+                case "${_phase_state[casks]}" in
+                    failed) _add_next_action "freshen -L -Y --progress=lines --no-color  # sequential upgrades" ;;
+                esac
+            fi
+        fi
+        print "  ${bold}Attention${rst}"
+        for phase_key in "${_phase_order[@]}"; do
+            case "${_phase_state[$phase_key]}" in
+                degraded|failed)
+                    print "     ${ylw}!${rst} ${_phase_label[$phase_key]}: $(_phase_attention_detail "$phase_key")"
+                    ;;
+            esac
+        done
+    fi
+    if { (( ${#_next_actions} > 0 )) || [[ "$overall_state" != "done" ]]; } && (( ! quiet )); then
+        print "  ${bold}Next actions${rst}"
+        local action_i=0 action_line
+        for action_line in "${_next_actions[@]}"; do
+            (( action_i++ ))
+            print "     ${action_i}. ${action_line}"
+        done
+        if [[ "$overall_state" != "done" ]]; then
+            (( action_i++ ))
+            print "     ${action_i}. Review log for residual packages and toolchain errors"
+        fi
+    fi
     print "  ${bold}Summary${rst}"
     if [[ "${_phase_state[inventory]}" == failed || "${_phase_state[inventory]}" == degraded ]] || (( verbose )); then
         _emit_phase inventory
@@ -2426,36 +2931,14 @@ freshen() {
     done
     print "  ${bold}Total${rst}: duration $(_fmt_dur "$duration")${freed_str:+ · root volume free-delta ${freed_str}}"
     (( ${#skipped_lanes} > 0 && ! quiet )) && print "  ${bold}Skipped${rst}: ${(j:, :)skipped_lanes}"
-    if [[ "$overall_state" != "done" ]]; then
-        print "  ${bold}Attention${rst}"
-        for phase_key in "${_phase_order[@]}"; do
-            case "${_phase_state[$phase_key]}" in
-                degraded|failed)
-                    print "     ${ylw}!${rst} ${_phase_label[$phase_key]}: $(_phase_attention_detail "$phase_key")"
-                    ;;
-            esac
-        done
-        if (( residual_retry == 0 )); then
-            _add_next_action "freshen -L -Y --progress=lines --no-color  # sequential upgrades"
-        fi
-        _add_next_action "Review log for residual packages and toolchain errors"
-    fi
-    if (( ${#_next_actions} > 0 )) && (( ! quiet )); then
-        print "  ${bold}Next actions${rst}"
-        local action_i=0 action_line
-        for action_line in "${_next_actions[@]}"; do
-            (( action_i++ ))
-            print "     ${action_i}. ${action_line}"
-        done
-    fi
     if [[ "$overall_state" != "done" ]] || (( verbose )); then
         print "  ${bold}Log${rst}: ${_log_file}"
     fi
     print
 
-    if (( ! quiet && _is_interactive )) && [[ "${FRESHEN_LOW_POWER:-0}" != "1" ]]; then
+    if (( ! quiet && _is_interactive )) && [[ "${FRESHEN_LOW_POWER:-0}" != "1" && "$_render_mode" != plain ]]; then
         printf '\a'
-        if [[ "$OSTYPE" == darwin* ]]; then
+        if [[ -z "${FRESHEN_UNDER_TEST:-}" && "$OSTYPE" == darwin* ]]; then
             local notif_title notif_body
             if [[ "$overall_state" == "done" ]]; then
                 notif_title="freshen — all fresh!"
@@ -2488,7 +2971,7 @@ _freshen() {
         '(--no-cache -A)'{--no-cache,-A}'[Skip cache cleaning]' \
         '--docker-prune[Opt-in docker system prune during caches]' \
         '--gem-cleanup[Opt-in gem cleanup during caches]' \
-        '(--storage-plan -S)'{--storage-plan,-S}'[Read-only storage savings plan]' \
+        '(--storage-plan -S)'{--storage-plan,-S}'[Classified storage plan; still writes a private log]' \
         '--storage-root=[Root label for --storage-plan]:path:_files -/' \
         '--restore-target-gib=[Target free GiB for restore planning]:GiB:' \
         '(--dev-prune -P)'{--dev-prune,-P}'[Trash regenerable project-local dev directories under the root]' \

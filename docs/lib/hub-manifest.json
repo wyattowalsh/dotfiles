@@ -59,7 +59,7 @@
     {
       "slug": "freshen",
       "title": "freshen",
-      "description": "Brew/mas upgrade helper.",
+      "description": "Brew/mas helper; live TTY board.",
       "firstCommand": "just check-freshen",
       "group": "operate"
     },

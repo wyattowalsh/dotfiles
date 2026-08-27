@@ -1,21 +1,70 @@
 ---
 icon: freshen
 title: freshen
-description: Brew/mas upgrade helper.
+description: Brew/mas helper; live TTY board.
 ---
 
-`rig/home/dot_zsh/functions/freshen` → `~/.zsh/functions/` (Chezmoi).
+`rig/home/dot_zsh/functions/freshen` → `~/.zsh/functions/` (Chezmoi). Autoload plus aliases `fr` / `frn` / `frc` / `frs` (see [Shell](/docs/shell)).
 
-| Mode | |
-| --- | --- |
-| default | inventory → upgrade → cleanup |
-| `-N` / `--dry-run` | plan only |
-| `-C` / `--clean-only` | cleanup path |
-| `-S` / `--storage-plan` | report only |
-| docker/gem prune | **opt-in** only |
+`freshen` inventories outdated Homebrew formulae, casks, and Mac App Store apps, then upgrades only after confirmation or `--yes`. It can clean caches, optionally prune regenerable dev dirs, print a classified storage plan, and run `brew doctor`. It is a TTY operator, not a web UI.
+
+## Commands
 
 ```bash
+frn                              # dry-run, plain, no color
+freshen -N --progress=plain --no-color
+freshen -Y                       # apply (live board on a TTY)
+frc                              # clean-only, plain; still confirms unless -Y
+frs                              # storage-plan
+freshen --yes --progress=plain --no-color   # automation
 just check-freshen
 ```
 
-Tests: `rig/home/dot_zsh/functions/tests/`. Env knobs: `FRESHEN_*` (timeouts, low-power, opt-in reclaim) — see function header / tests.
+| Mode | |
+| --- | --- |
+| default | inventory → confirm → upgrade → residual retry → cleanup/caches |
+| `-N` / `--dry-run` | plan only |
+| `-C` / `--clean-only` | cleanup / caches / optional dev-prune / doctor |
+| `-S` / `--storage-plan` | classified report only |
+| docker/gem prune | **opt-in** only |
+
+Default cask inventory still uses `--greedy`. Apps whose live version is already newer than Homebrew’s tap version are skipped so a greedy reinstall cannot downgrade them. Equal versions still upgrade.
+
+## Progress
+
+| Mode | When |
+| --- | --- |
+| `auto` (default) | Live dashboard on a TTY; `lines` otherwise |
+| `live` | Same as `auto`. `FRESHEN_FORCE_LIVE=1` is test-only and requires `FRESHEN_UNDER_TEST` |
+| `lines` | Append-only phase lines, color when allowed |
+| `plain` | Append-only, no color, no cursor controls — logs and screen readers |
+
+Live draws on the terminal alt-screen so Plan/Outdated stay in scrollback. Sudo preflight and the confirm prompt **pause** that board (cursor back, alt-screen left) so the password/`[Y/n/q]` line is not wiped. `FRESHEN_LOW_POWER=1` forces `plain` and skips the bell/notification. `--progress=plain --no-color` never emits ANSI cursor, color, bells, or animation — including the apply path.
+
+A degraded **apply** run prints **Attention** and **Next actions** first, then the phase **Summary**. Dry-run has no Attention block. Status words (`attempted` / `confirmed` / `unresolved` / `degraded` / `failed` / `done` / `cleaned`) are part of the contract — do not restyle them.
+
+## Safety
+
+- `--dry-run` never upgrades, cleans, prunes, or updates apps.
+- Non-interactive mutations require `--yes`.
+- Cask upgrades preflight `sudo` once so the password prompt does not land inside the dashboard.
+- `--dev-prune` uses `gomi` only (no `rm` fallback), skips caches newer than 14 days (`FRESHEN_DEV_PRUNE_MIN_AGE_DAYS`, `0` disables), and skips the live workspace.
+- `--storage-plan` labels surfaces `cache-prune` / `review` / `report-only`. Unique models, app libraries, Kopia, and Docker volumes that exist are do-not-touch. It may probe `docker system df`, `nix store gc --dry-run`, and `kopia repository status` (no password on argv). It does not prune, invoke `mo`, or run files-buddy.
+
+## Automation
+
+```bash
+freshen --yes --progress=plain --no-color
+```
+
+| Exit | Meaning |
+| --- | --- |
+| 0 | Enabled work completed or was intentionally skipped |
+| 1 | Degraded or failed work — read Attention |
+| 2 | Usage error |
+| 127 | Required dependency missing |
+| 130 | Interrupted |
+
+Logs: `$FRESHEN_STATE_DIR/freshen` → `$XDG_STATE_HOME/freshen` → `~/Library/Logs/freshen` → `~/.local/state/freshen`. Filenames: `<timestamp>.<pid>.log`. Credential-shaped output is redacted. Do not commit raw logs or live inventories.
+
+Full flags and `FRESHEN_*` knobs: `freshen --help`. Tests: `rig/home/dot_zsh/functions/tests/`.

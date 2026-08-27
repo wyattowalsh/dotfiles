@@ -132,6 +132,7 @@ setup_env() {
         unset "$key"
     done
     unset BUN_INSTALL_CACHE_DIR
+    unset SUDO_RC GOMI_RC
 
     write_brew_stub
     write_mas_stub
@@ -147,6 +148,50 @@ setup_env() {
     write_tool_stub go
     write_tool_stub gem
     write_docker_stub
+}
+
+# Portable mtime stamp for age-gated --dev-prune fixtures (BSD + GNU).
+freshen_stamp_mtime_days_ago() {
+    local path="$1" days="$2"
+    local py touch_bin date_bin
+    py="$(command -v python3 2>/dev/null || true)"
+    if [[ -z "$py" && -x /usr/bin/python3 ]]; then
+        py="/usr/bin/python3"
+    fi
+    if [[ -n "$py" ]] && "$py" -c 'import os, sys, time; p, d = sys.argv[1], int(sys.argv[2]); t = time.time() - d * 86400; os.utime(p, (t, t))' "$path" "$days"; then
+        :
+    else
+        touch_bin="/usr/bin/touch"
+        [[ -x "$touch_bin" ]] || touch_bin="/bin/touch"
+        date_bin="/bin/date"
+        [[ -x "$date_bin" ]] || date_bin="date"
+        if "$date_bin" -v-1d +%s >/dev/null 2>&1; then
+            "$touch_bin" -t "$("$date_bin" -v-${days}d +%Y%m%d%H%M)" "$path" || return 1
+        else
+            "$touch_bin" -d "${days} days ago" "$path" || return 1
+        fi
+    fi
+    if [[ -n "$py" ]]; then
+        "$py" -c 'import os, sys, time; p, d = sys.argv[1], int(sys.argv[2]); age = (time.time() - os.stat(p).st_mtime) / 86400; sys.exit(0 if age >= d - 0.5 else 1)' "$path" "$days" || return 1
+    fi
+    return 0
+}
+
+run_freshen_in() {
+    local cwd="$1"
+    local output_file="$2"
+    shift 2
+    local rc=0
+    (
+        cd -- "$cwd" || exit 2
+        PATH="${TEST_BIN}:/usr/bin:/bin:/usr/sbin:/sbin" \
+        HOME="${TEST_HOME}" \
+        XDG_STATE_HOME="${TEST_STATE}" \
+        TMPDIR="${TEST_TMP}" \
+        TRACE_FILE="${TRACE_FILE}" \
+        zsh -fc 'fpath=("$1" $fpath); autoload -Uz freshen; shift; freshen "$@"' zsh "$FRESHEN_DIR" "$@"
+    ) >"$output_file" 2>&1 || rc=$?
+    return "$rc"
 }
 
 write_tool_stub() {
@@ -280,6 +325,18 @@ case "$1" in
         [[ -n "${BREW_DOCTOR_STDERR:-}" ]] && print -u2 -r -- "${BREW_DOCTOR_STDERR}"
         exit "${BREW_DOCTOR_RC:-0}"
         ;;
+    info)
+        if [[ " $* " == *" --json=v2 "* ]] && [[ " $* " == *" --cask "* ]]; then
+            [[ -n "${BREW_CASK_INFO_SLEEP:-}" ]] && sleep "${BREW_CASK_INFO_SLEEP}"
+            if [[ -n "${BREW_CASK_INFO_JSON+x}" ]]; then
+                [[ -n "${BREW_CASK_INFO_JSON:-}" ]] && print -r -- "${BREW_CASK_INFO_JSON}"
+            else
+                print -r -- '{"casks":[]}'
+            fi
+            [[ -n "${BREW_CASK_INFO_STDERR:-}" ]] && print -u2 -r -- "${BREW_CASK_INFO_STDERR}"
+            exit "${BREW_CASK_INFO_RC:-0}"
+        fi
+        ;;
     --version)
         print "Homebrew test"
         exit 0
@@ -383,6 +440,7 @@ run_freshen() {
     XDG_STATE_HOME="${TEST_STATE}" \
     TMPDIR="${TEST_TMP}" \
     TRACE_FILE="${TRACE_FILE}" \
+    FRESHEN_UNDER_TEST="${FRESHEN_UNDER_TEST:-$FRESHEN_FILE}" \
     zsh -fc 'fpath=("$1" $fpath); autoload -Uz freshen; shift; freshen "$@"' zsh "$FRESHEN_DIR" "$@" >"$output_file" 2>&1 || rc=$?
     return "$rc"
 }
@@ -403,6 +461,8 @@ freshen "\$@" >/dev/null 2>&1 || true
 local -a watch=(
   _err _warn _run_with_timeout _classify_batch_items _prepare_sudo_for_casks
   _positive_int_env _set_phase _emit_phase __freshen_teardown
+  _mtime_epoch _is_live_workspace_dir _print_backup_status _run_report_cmd
+  _live_enter _live_leave _live_begin _live_pause_for_prompt _live_resume _live_abort_dashboard
 )
 local name
 for name in \$watch; do
@@ -419,6 +479,7 @@ EOF
     XDG_STATE_HOME="${TEST_STATE}" \
     TMPDIR="${TEST_TMP}" \
     TRACE_FILE="${TRACE_FILE}" \
+    FRESHEN_UNDER_TEST="${FRESHEN_UNDER_TEST:-$FRESHEN_FILE}" \
     zsh "$probe" "$@" >"$output_file" 2>&1 || rc=$?
     return "$rc"
 }
@@ -449,7 +510,7 @@ test_help_and_version() {
 
     run_freshen "$version_out" --version --no-color
     assert_status 0 $? "version exits cleanly"
-    assert_contains "$version_out" "freshen 1.9.3" "version reports new release"
+    assert_contains "$version_out" "freshen 1.10.0" "version reports new release"
 }
 
 test_capital_shorthands() {
@@ -697,12 +758,12 @@ test_help_completion_and_version_metadata_parity() {
         assert_contains "$FRESHEN_FILE" "$flag" "completion/source mentions ${flag}"
         assert_contains "$out" "$flag" "help mentions ${flag}"
     done
-    assert_contains "$FRESHEN_FILE" "freshen v1.9.3" "header version matches release"
+    assert_contains "$FRESHEN_FILE" "freshen v1.10.0" "header version matches release"
     assert_not_contains "$FRESHEN_FILE" "_arguments -s" "completion does not advertise unsupported stacked short options"
     assert_contains "$FRESHEN_FILE" ">/dev/null 2>&1 &!" "notification subprocess is disowned to avoid job-control noise"
     assert_contains "$out" "FRESHEN_LOW_POWER" "help documents low-power mode"
     run_freshen "$out" --version --no-color
-    assert_contains "$out" "freshen 1.9.3 (2026-08-18)" "version output matches release metadata"
+    assert_contains "$out" "freshen 1.10.0 (2026-08-26)" "version output matches release metadata"
 }
 
 test_batch_formula_partial_failure() {
@@ -996,6 +1057,7 @@ test_dev_prune_dry_run_and_gomi_safety() {
     local project_root="${TEST_ROOT}/project with space"
     local modules_dir="${project_root}/node_modules"
     mkdir -p "$modules_dir"
+    freshen_stamp_mtime_days_ago "$modules_dir" 20
     local out="${TEST_ROOT}/dev-prune.out"
 
     run_freshen "$out" --clean-only --dry-run --dev-prune --dev-prune-root="$project_root" --progress=plain --no-color
@@ -1191,6 +1253,7 @@ test_interrupt_reporting() {
     XDG_STATE_HOME="${TEST_STATE}" \
     TMPDIR="${TEST_TMP}" \
     TRACE_FILE="${TRACE_FILE}" \
+    FRESHEN_UNDER_TEST="${FRESHEN_UNDER_TEST:-$FRESHEN_FILE}" \
     zsh -fc 'fpath=("$1" $fpath); autoload -Uz freshen; shift; freshen "$@"' zsh "$FRESHEN_DIR" --yes --no-mas --no-cleanup --no-cache --no-color >"$out" 2>&1 &
     local runner_pid=$!
     local tries=0
@@ -1221,6 +1284,7 @@ test_interrupt_stops_mas_inventory_child() {
     MAS_PID_FILE="${MAS_PID_FILE}" \
     MAS_OUTDATED_SLEEP="${MAS_OUTDATED_SLEEP}" \
     FRESHEN_MAS_TIMEOUT_SEC="${FRESHEN_MAS_TIMEOUT_SEC}" \
+    FRESHEN_UNDER_TEST="${FRESHEN_UNDER_TEST:-$FRESHEN_FILE}" \
     zsh -fc 'fpath=("$1" $fpath); autoload -Uz freshen; shift; freshen "$@"' zsh "$FRESHEN_DIR" --yes --no-cache --no-cleanup --no-color >"$out" 2>&1 &
     local runner_pid=$!
     local tries=0
@@ -1281,6 +1345,7 @@ test_interrupt_stops_parallel_brew_outdated_children() {
     BREW_CASK_OUTDATED_PID_FILE="${BREW_CASK_OUTDATED_PID_FILE}" \
     BREW_OUTDATED_FORMULAE_SLEEP="${BREW_OUTDATED_FORMULAE_SLEEP}" \
     BREW_OUTDATED_CASKS_SLEEP="${BREW_OUTDATED_CASKS_SLEEP}" \
+    FRESHEN_UNDER_TEST="${FRESHEN_UNDER_TEST:-$FRESHEN_FILE}" \
     zsh -fc 'fpath=("$1" $fpath); autoload -Uz freshen; shift; freshen "$@"' zsh "$FRESHEN_DIR" --dry-run --yes --no-cache --no-cleanup --no-color >"$out" 2>&1 &
     local runner_pid=$!
     local tries=0
@@ -1323,6 +1388,7 @@ test_dev_prune_rejects_symlink_at_execution() {
     local outside_dir="${TEST_ROOT}/outside-target"
     mkdir -p "$project_root" "$outside_dir"
     ln -s "$outside_dir" "$modules_dir"
+    freshen_stamp_mtime_days_ago "$modules_dir" 20
     local out="${TEST_ROOT}/dev-prune-symlink.out"
 
     run_freshen "$out" --clean-only --yes --no-cleanup --dev-prune --dev-prune-root="$project_root" --progress=plain --no-color
