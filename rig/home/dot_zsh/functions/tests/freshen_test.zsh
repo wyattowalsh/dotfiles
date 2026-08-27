@@ -510,7 +510,7 @@ test_help_and_version() {
 
     run_freshen "$version_out" --version --no-color
     assert_status 0 $? "version exits cleanly"
-    assert_contains "$version_out" "freshen 1.10.0" "version reports new release"
+    assert_contains "$version_out" "freshen 1.11.0" "version reports new release"
 }
 
 test_capital_shorthands() {
@@ -754,16 +754,16 @@ test_help_completion_and_version_metadata_parity() {
     run_freshen "$out" --help --no-color
     assert_status 0 $? "metadata parity help exits cleanly"
     local flag
-    for flag in --dry-run --clean-only --formula-only --cask-only --no-greedy --no-cleanup --no-cache --storage-plan --dev-prune --no-mas --doctor --sequential --progress --no-sudo-preflight --verbose --quiet --no-color --version --help; do
+    for flag in --dry-run --clean-only --formula-only --cask-only --no-greedy --no-cleanup --no-cache --storage-plan --dev-prune --no-mas --doctor --sequential --progress --replace --no-sudo-preflight --verbose --quiet --no-color --version --help; do
         assert_contains "$FRESHEN_FILE" "$flag" "completion/source mentions ${flag}"
         assert_contains "$out" "$flag" "help mentions ${flag}"
     done
-    assert_contains "$FRESHEN_FILE" "freshen v1.10.0" "header version matches release"
+    assert_contains "$FRESHEN_FILE" "freshen v1.11.0" "header version matches release"
     assert_not_contains "$FRESHEN_FILE" "_arguments -s" "completion does not advertise unsupported stacked short options"
     assert_contains "$FRESHEN_FILE" ">/dev/null 2>&1 &!" "notification subprocess is disowned to avoid job-control noise"
     assert_contains "$out" "FRESHEN_LOW_POWER" "help documents low-power mode"
     run_freshen "$out" --version --no-color
-    assert_contains "$out" "freshen 1.10.0 (2026-08-26)" "version output matches release metadata"
+    assert_contains "$out" "freshen 1.11.0 (2026-08-27)" "version output matches release metadata"
 }
 
 test_batch_formula_partial_failure() {

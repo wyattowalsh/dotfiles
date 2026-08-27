@@ -6,23 +6,26 @@ description: Brew/mas helper; live TTY board.
 
 `rig/home/dot_zsh/functions/freshen` → `~/.zsh/functions/` (Chezmoi). Autoload plus aliases `fr` / `frn` / `frc` / `frs` (see [Shell](/docs/shell)).
 
-`freshen` inventories outdated Homebrew formulae, casks, and Mac App Store apps, then upgrades only after confirmation or `--yes`. It can clean caches, optionally prune regenerable dev dirs, print a classified storage plan, and run `brew doctor`. It is a TTY operator, not a web UI.
+Bare `freshen` is `-Y -P --dev-prune-root=$HOME/dev -v -D -R=auto` (live dashboard on a TTY, no confirm). It inventories outdated Homebrew formulae, casks, and Mac App Store apps, then applies upgrades, optional stale-dev prune under `~/dev`, and `brew doctor`. It can clean caches, print a classified storage plan, and run `brew doctor`. It is a TTY operator, not a web UI.
 
 ## Commands
 
 ```bash
+fr                               # same as bare freshen (live apply defaults)
 frn                              # dry-run, plain, no color
 freshen -N --progress=plain --no-color
-freshen -Y                       # apply (live board on a TTY)
+freshen                          # apply; live board on a TTY
 frc                              # clean-only, plain; still confirms unless -Y
 frs                              # storage-plan
 freshen --yes --progress=plain --no-color   # automation
+freshen --replace                # take over a stuck lock
 just check-freshen
 ```
 
 | Mode | |
 | --- | --- |
-| default | inventory → confirm → upgrade → residual retry → cleanup/caches |
+| bare `freshen` / `fr` | `--yes`, `--dev-prune` under `$HOME/dev`, verbose, doctor, `--progress=auto` |
+| default with flags | inventory → confirm (unless `-Y`) → upgrade → residual retry → cleanup/caches |
 | `-N` / `--dry-run` | plan only |
 | `-C` / `--clean-only` | cleanup / caches / optional dev-prune / doctor |
 | `-S` / `--storage-plan` | classified report only |
@@ -39,14 +42,18 @@ Default cask inventory still uses `--greedy`. Apps whose live version is already
 | `lines` | Append-only phase lines, color when allowed |
 | `plain` | Append-only, no color, no cursor controls — logs and screen readers |
 
-Live draws on the terminal alt-screen so Plan/Outdated stay in scrollback. Sudo preflight and the confirm prompt **pause** that board (cursor back, alt-screen left) so the password/`[Y/n/q]` line is not wiped. `FRESHEN_LOW_POWER=1` forces `plain` and skips the bell/notification. `--progress=plain --no-color` never emits ANSI cursor, color, bells, or animation — including the apply path.
+Live draws on the terminal alt-screen as a **dashboard**: a PHASES rail plus a NOW pane. NOW includes an OVERALL discovery graph (inventory fans out into per-package formula/cask/app nodes, then cleanup → caches → doctor), a short package list, and the last brew child lines (`Downloading` / `Pouring` / `Installing`). The frame sizes from the real TTY (`stty` on `/dev/tty`), not a stale `$COLUMNS=80`. Identical frames are skipped so the board does not blink.
+
+Sudo preflight and the confirm prompt **pause** that board so the password/`[Y/n/q]` line is not wiped. Recap reuses the same rounded box. `FRESHEN_LOW_POWER=1` forces `plain` and skips the bell/notification. `--progress=plain --no-color` never emits ANSI cursor, color, bells, or animation — including the apply path.
 
 A degraded **apply** run prints **Attention** and **Next actions** first, then the phase **Summary**. Dry-run has no Attention block. Status words (`attempted` / `confirmed` / `unresolved` / `degraded` / `failed` / `done` / `cleaned`) are part of the contract — do not restyle them.
+
+A second `freshen` lists the lock holder and offers to replace it (`y` / `--replace`). It interrupts the in-shell run and takes the lock; it does not SIGKILL a login zsh.
 
 ## Safety
 
 - `--dry-run` never upgrades, cleans, prunes, or updates apps.
-- Non-interactive mutations require `--yes`.
+- Non-interactive mutations require `--yes` (bare `freshen` implies `--yes`).
 - Cask upgrades preflight `sudo` once so the password prompt does not land inside the dashboard.
 - `--dev-prune` uses `gomi` only (no `rm` fallback), skips caches newer than 14 days (`FRESHEN_DEV_PRUNE_MIN_AGE_DAYS`, `0` disables), and skips the live workspace.
 - `--storage-plan` labels surfaces `cache-prune` / `review` / `report-only`. Unique models, app libraries, Kopia, and Docker volumes that exist are do-not-touch. It may probe `docker system df`, `nix store gc --dry-run`, and `kopia repository status` (no password on argv). It does not prune, invoke `mo`, or run files-buddy.

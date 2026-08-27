@@ -1,6 +1,6 @@
 # ~/.zsh/functions/freshen
 #compdef freshen
-# freshen v1.10.0 — System maintenance: brew + caches + App Store + storage planning
+# freshen v1.11.0 — System maintenance: brew + caches + App Store + storage planning
 
 typeset -g _FRESHEN_VERSION _FRESHEN_RELEASE_DATE
 if [[ -z "$_FRESHEN_VERSION" ]]; then
@@ -12,8 +12,8 @@ if [[ -z "$_FRESHEN_VERSION" ]]; then
         fi
         break
     done
-    [[ -n "$_FRESHEN_VERSION" ]] || _FRESHEN_VERSION="1.10.0"
-    [[ -n "$_FRESHEN_RELEASE_DATE" ]] || _FRESHEN_RELEASE_DATE="2026-08-26"
+    [[ -n "$_FRESHEN_VERSION" ]] || _FRESHEN_VERSION="1.11.0"
+    [[ -n "$_FRESHEN_RELEASE_DATE" ]] || _FRESHEN_RELEASE_DATE="2026-08-27"
 fi
 
 # ── Helper: help text ──────────────────────────────────────────────────────
@@ -27,8 +27,10 @@ START HERE
     Storage:     freshen -S
     Automation:  freshen --yes --progress=plain --no-color
     Aliases (if loaded): fr / frn / frc / frs
+    Bare `freshen` = -Y -P --dev-prune-root=$HOME/dev -v -D -R=auto (live on a TTY).
     Degraded apply runs print Attention and Next actions before the phase Summary.
     Live uses the terminal alt-screen; sudo and confirm pause it.
+    A busy lock lists the holder and offers replace (or pass --replace).
     Full flags, environment, and troubleshooting follow.
 
 USAGE
@@ -36,7 +38,7 @@ USAGE
 
 WHAT IT DOES
     freshen inventories outdated Homebrew formulae, casks, and Mac App Store apps,
-    then upgrades them only after confirmation or --yes. It can also run cleanup,
+    then upgrades them (bare `freshen` implies --yes). It can also run cleanup,
     prune tool caches, report storage opportunities, and optionally run brew doctor.
 
 SAFE FIRST RUN
@@ -94,6 +96,7 @@ FLAGS
     --sequential, -L  Upgrade packages one-by-one for more visibility
     --progress=MODE, -R=MODE
                       Progress renderer: auto, live, lines, or plain
+    --replace         If another freshen holds the lock, list it and take over (stop it)
     --no-sudo-preflight
                       Do not preflight sudo before cask upgrades
     --no-residual-retry
@@ -114,7 +117,7 @@ PROGRESS MODES
     plain   Append-only, no color, no cursor controls; best for logs and screen readers.
 
 EXAMPLES
-    freshen                    Full maintenance cycle with confirmation
+    freshen                    Same as: -Y -P --dev-prune-root=$HOME/dev -v -D -R=auto
     freshen -N                 Preview the exact plan only
     freshen -C                 Skip upgrade inventory; clean only
     freshen -C -N              Preview cleanup and cache targets only
@@ -174,6 +177,7 @@ ENVIRONMENT
     FRESHEN_FORCE_LIVE=1               Test harness only (needs FRESHEN_UNDER_TEST): live without a TTY
     FRESHEN_FORCE_INTERACTIVE=1        Test harness only (needs FRESHEN_UNDER_TEST): treat stdin as interactive
     FRESHEN_CONFIRM_REPLY              Test harness only (needs FRESHEN_UNDER_TEST): confirm reply (y/n/q)
+    FRESHEN_LOCK_REPLY                 Test harness only (needs FRESHEN_UNDER_TEST): lock-replace reply (y/N)
     FRESHEN_NO_EMOJI=1                 ASCII brand (no emoji) even when color is on
     FRESHEN_RESIDUAL_MAX               Cap sequential residual retries (0=unlimited)
     FRESHEN_RESIDUAL_INVENTORY_TIMEOUT_SEC  Residual outdated inventory timeout (default: FRESHEN_UPDATE_TIMEOUT_SEC / 300)
@@ -224,7 +228,7 @@ freshen() {
     setopt LOCAL_OPTIONS LOCAL_TRAPS NO_MONITOR PIPE_FAIL
     zmodload zsh/datetime 2>/dev/null || true
 
-    local dry_run=0 assume_yes=0 verbose=0 quiet=0 sequential=0 storage_plan=0 clean_only=0
+    local dry_run=0 assume_yes=0 verbose=0 quiet=0 sequential=0 storage_plan=0 clean_only=0 replace_lock=0
     local do_formulae=1 do_casks=1 cask_greedy=1 formula_only_set=0 cask_only_set=0
     local run_cleanup=1 run_cache=1 run_mas=1 run_doctor=0 run_dev_prune=0
     local docker_prune=0 gem_cleanup=0 residual_retry=1 print_trust_plan=0
@@ -233,6 +237,8 @@ freshen() {
     local storage_root="$HOME" restore_target_gib=0
     local _freshen_lock_dir=""
     local -a _next_actions=()
+    local _bare_invocation=0
+    (( $# == 0 )) && _bare_invocation=1
 
     while (( $# > 0 )); do
         case "$1" in
@@ -301,6 +307,7 @@ freshen() {
                 ;;
             -R=*)            progress_mode="${1#-R=}" ;;
             -R*)             progress_mode="${1#-R}" ;;
+            --replace)       replace_lock=1 ;;
             --no-sudo-preflight) sudo_preflight=0 ;;
             --no-color)      use_color=0 ;;
             --version|-V)    print "freshen ${_FRESHEN_VERSION} (${_FRESHEN_RELEASE_DATE})"; return 0 ;;
@@ -320,6 +327,19 @@ freshen() {
     if (( $# > 0 )); then
         print -u2 "freshen: unexpected argument: $1"
         return 2
+    fi
+
+    if (( _bare_invocation )); then
+        # Operator default: freshen -Y -P --dev-prune-root=$HOME/dev -v -D -R=auto
+        assume_yes=1
+        run_dev_prune=1
+        verbose=1
+        run_doctor=1
+        progress_mode="auto"
+        if (( ! dev_prune_root_set )); then
+            dev_prune_root="${HOME}/dev"
+            dev_prune_root_set=1
+        fi
     fi
 
     if (( formula_only_set && cask_only_set )); then
@@ -376,17 +396,22 @@ freshen() {
         _collect_dev_prune_candidates _dev_prune_total_kb _print_dev_prune_plan _print_storage_plan
         _phase_icon _phase_color _phase_status_word _now_ms _terminal_width _truncate
         _render_dashboard _render_tick _finish_render _live_enter _live_leave _live_begin
-        _live_pause_for_prompt _live_resume _live_abort_dashboard _sanitize_output _load_mas_outdated
+        _live_pause_for_prompt _live_resume _live_abort_dashboard
+        _ui_fg _ui_repeat _ui_pad _ui_bar _ui_last_child_line _ui_child_tail _ui_watch_from_cmd _ui_watch_ingest _ui_pkg_rows _ui_pkg_node _ui_center _ui_phase_glyph _ui_lane_chain _ui_discovery_graph _ui_live_paint _ui_recap_open _ui_recap_close
+        _sanitize_output _load_mas_outdated
         _cache_timeout_for _is_safe_cache_path __freshen_refuse_bun_cache
         _prepare_sudo_for_casks _stop_sudo_keepalive _log_phase _print_prefixed_output
         _emit_phase _phase_attention_detail _set_phase _mark_skipped _warn _err
         _classify_batch_items _run_with_timeout _quit_if_requested _check_quit
         _note_waiting _add_next_action _brew_outdated_to_file _cask_info_json_to_file _filter_casks_already_newer
         _residual_prepare _run_residual_upgrades
-        _freshen_acquire_lock _freshen_release_lock _osascript_escape
+        _freshen_acquire_lock _freshen_release_lock _freshen_lock_holder_line _freshen_pid_is_shell _freshen_lock_free _freshen_replace_lock_holder _osascript_escape
         __freshen_teardown __freshen_cleanup __freshen_exit
     )
     local -A _batch_status
+    local -a _live_watch_pkgs=()
+    local -A _live_pkg_state
+    local _live_current_pkg=""
 
     _positive_int_env() {
         local name="$1" default_value="$2" value="${(P)1:-}"
@@ -419,7 +444,7 @@ freshen() {
 
     local _is_tty=0 _is_interactive=0
     local _render_mode="lines" _render_started=0 _last_render_ms=0 _render_interval_ms
-    local _live_ready=0 _live_paused=0 _live_closed=0
+    local _live_ready=0 _live_paused=0 _live_closed=0 _live_last_frame=""
     local -a _live_deferred_msgs=()
     _render_interval_ms="$(_positive_int_env FRESHEN_RENDER_INTERVAL_MS 500)"
     [[ -t 1 ]] && _is_tty=1
@@ -430,14 +455,14 @@ freshen() {
 
     case "$progress_mode" in
         auto)
-            if (( ! verbose && ! quiet )) && { (( _is_tty )) || [[ "${FRESHEN_FORCE_LIVE:-0}" == "1" && -n "${FRESHEN_UNDER_TEST:-}" ]]; }; then
+            if (( ! quiet )) && { (( _is_tty )) || [[ "${FRESHEN_FORCE_LIVE:-0}" == "1" && -n "${FRESHEN_UNDER_TEST:-}" ]]; }; then
                 _render_mode="live"
             else
                 _render_mode="lines"
             fi
             ;;
         live)
-            if (( ! verbose && ! quiet )) && { (( _is_tty )) || [[ "${FRESHEN_FORCE_LIVE:-0}" == "1" && -n "${FRESHEN_UNDER_TEST:-}" ]]; }; then
+            if (( ! quiet )) && { (( _is_tty )) || [[ "${FRESHEN_FORCE_LIVE:-0}" == "1" && -n "${FRESHEN_UNDER_TEST:-}" ]]; }; then
                 _render_mode="live"
             else
                 _render_mode="lines"
@@ -1504,8 +1529,18 @@ PY
     }
 
     _terminal_width() {
-        local cols="${COLUMNS:-80}"
+        local cols=""
+        if [[ -t 1 ]]; then
+            if [[ "$(uname -s 2>/dev/null)" == Darwin ]]; then
+                cols="$(stty -f /dev/tty size 2>/dev/null | awk '{print $2}')"
+            else
+                cols="$(stty -F /dev/tty size 2>/dev/null | awk '{print $2}')"
+            fi
+            [[ "$cols" == <-> ]] || cols="$(tput cols 2>/dev/null)"
+        fi
+        [[ "$cols" == <-> && "$cols" -ge 40 ]] || cols="${COLUMNS:-80}"
         [[ "$cols" == <-> && "$cols" -ge 40 ]] || cols=80
+        (( cols > 400 )) && cols=400
         print -r -- "$cols"
     }
 
@@ -1526,6 +1561,7 @@ PY
         (( _render_started )) && return 0
         printf '\e[?1049h\e[?25l'
         _render_started=1
+        _live_last_frame=""
     }
 
     _live_leave() {
@@ -1563,34 +1599,507 @@ PY
         _live_leave
     }
 
-    _render_dashboard() {
-        [[ "$_render_mode" == live ]] || return 0
-        (( _live_ready && ! _live_paused && ! _live_closed )) || return 0
-
-        local cols="$(_terminal_width)"
-        local key state icon detail elapsed row
-        _live_enter
-
-        printf '\e[H\e[J'
-        local live_brand="freshen"
-        if [[ "${FRESHEN_NO_EMOJI:-0}" != "1" && "$_render_mode" != plain ]] && (( use_color )); then
-            live_brand="🍃 freshen"
+    _ui_fg() {
+        local code="$1"
+        if (( use_color )); then
+            print -r -- $'\e[38;5;'"${code}m"
+        else
+            print -r -- ""
         fi
-        print "${cyn}${live_brand}${rst}  ${dim}${_current_label:-system maintenance}${rst}"
-        print "${dim}Log:${rst} ${_log_file}"
-        print "${dim}$(_progress_meter)${rst}"
-        print
+    }
+
+    _ui_repeat() {
+        local ch="$1" n="${2:-0}" s="" i
+        (( n < 0 )) && n=0
+        for (( i = 0; i < n; i++ )); do
+            s+="$ch"
+        done
+        print -r -- "$s"
+    }
+
+    _ui_pad() {
+        local text="$1" width="$2" out pad
+        out="$(_truncate "$text" "$width")"
+        pad=$(( width - ${#out} ))
+        (( pad < 0 )) && pad=0
+        print -r -- "${out}$(_ui_repeat ' ' "$pad")"
+    }
+
+    _ui_bar() {
+        local done="${1:-0}" total="${2:-0}" width="${3:-12}"
+        local filled empty i s=""
+        (( width < 2 )) && width=2
+        if (( total <= 0 )); then
+            print -r -- "$(_ui_repeat '─' "$width")"
+            return 0
+        fi
+        (( done < 0 )) && done=0
+        (( done > total )) && done="$total"
+        filled=$(( done * width / total ))
+        empty=$(( width - filled ))
+        (( filled < 0 )) && filled=0
+        (( empty < 0 )) && empty=0
+        for (( i = 0; i < filled; i++ )); do s+="█"; done
+        for (( i = 0; i < empty; i++ )); do s+="░"; done
+        print -r -- "$s"
+    }
+
+    _ui_last_child_line() {
+        local f="${_active_run_tmpout:-}"
+        [[ -n "$f" && -f "$f" ]] || { print -r -- ""; return 0; }
+        local line=""
+        line="$(tr '\r' '\n' < "$f" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -n 1)"
+        print -r -- "$line"
+    }
+
+    _ui_child_tail() {
+        local n="${1:-8}" f="${_active_run_tmpout:-}"
+        [[ -n "$f" && -f "$f" ]] || return 0
+        tr '\r' '\n' < "$f" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -n "$n"
+    }
+
+    _ui_watch_from_cmd() {
+        _live_watch_pkgs=()
+        _live_pkg_state=()
+        _live_current_pkg=""
+        local collecting=0 a
+        for a in "$@"; do
+            if [[ "$a" == "upgrade" || "$a" == "reinstall" ]]; then
+                collecting=1
+                continue
+            fi
+            (( collecting )) || continue
+            [[ "$a" == -* ]] && continue
+            [[ "$a" == brew || "$a" == upgrade || "$a" == --cask || "$a" == --formula || "$a" == --greedy ]] && continue
+            _live_watch_pkgs+=("$a")
+            _live_pkg_state[$a]="queued"
+        done
+    }
+
+    _ui_watch_ingest() {
+        (( ${#_live_watch_pkgs} == 0 )) && return 0
+        local f="${_active_run_tmpout:-}"
+        [[ -n "$f" && -f "$f" ]] || return 0
+        local line cand orig last=""
+        local -A seen=()
+        while IFS= read -r line; do
+            cand=""
+            case "$line" in
+                "==> Upgrading Cask "*) cand="${line#==> Upgrading Cask }" ;;
+                "==> Installing Cask "*) cand="${line#==> Installing Cask }" ;;
+                "==> Upgrading "*) cand="${line#==> Upgrading }" ;;
+                "==> Installing "*) cand="${line#==> Installing }" ;;
+                "==> Pouring "*) cand="${line#==> Pouring }" ; cand="${cand%%--*}" ;;
+                "==> Downloading "*)
+                    # keep current pkg; still useful as brew line
+                    continue
+                    ;;
+                *) continue ;;
+            esac
+            cand="${cand%%[[:space:]:]*}"
+            cand="${cand%%.tar*}"
+            [[ -z "$cand" ]] && continue
+            orig=""
+            local p
+            for p in "${_live_watch_pkgs[@]}"; do
+                if [[ "${p:l}" == "${cand:l}" ]]; then
+                    orig="$p"
+                    break
+                fi
+            done
+            [[ -z "$orig" ]] && continue
+            if [[ -n "$last" && "$last" != "$orig" && "${_live_pkg_state[$last]}" == "running" ]]; then
+                _live_pkg_state[$last]="done"
+            fi
+            _live_pkg_state[$orig]="running"
+            last="$orig"
+            seen[$orig]=1
+        done < <(tr '\r' '\n' < "$f" 2>/dev/null)
+        _live_current_pkg="$last"
+        if [[ -n "$last" ]] && ! kill -0 "${_current_cmd_pid:-0}" 2>/dev/null; then
+            _live_pkg_state[$last]="done"
+        fi
+    }
+
+    _ui_pkg_node() {
+        local pkg="$1" lane="$2" st
+        st="${_live_pkg_state[$pkg]:-}"
+        if [[ -z "$st" ]]; then
+            case "${_phase_state[$lane]}" in
+                done) st="done" ;;
+                failed|degraded) st="failed" ;;
+                running|waiting)
+                    if [[ -n "${_live_current_pkg:-}" && "${_live_current_pkg:l}" == "${pkg:l}" ]]; then
+                        st="running"
+                    else
+                        st="queued"
+                    fi
+                    ;;
+                skipped) st="skipped" ;;
+                *) st="queued" ;;
+            esac
+        fi
+        case "$st" in
+            done|upgraded) print -r -- "●" ;;
+            failed) print -r -- "✗" ;;
+            running) print -r -- "▶" ;;
+            skipped) print -r -- "·" ;;
+            *) print -r -- "○" ;;
+        esac
+    }
+
+    _ui_center() {
+        local width="$1" text="$2" pad
+        pad=$(( (width - ${#text}) / 2 ))
+        (( pad < 0 )) && pad=0
+        print -r -- "$(_ui_repeat ' ' "$pad")${text}"
+    }
+
+    _ui_phase_glyph() {
+        local key="$1"
+        case "${_phase_state[$key]}" in
+            done) print -r -- "●" ;;
+            failed|degraded) print -r -- "✗" ;;
+            running|waiting) print -r -- "▶" ;;
+            skipped) print -r -- "·" ;;
+            *) print -r -- "○" ;;
+        esac
+    }
+
+    _ui_lane_chain() {
+        local key="$1" col_w="$2"
+        shift 2
+        local -a names=("$@")
+        local st="${_phase_state[$key]}" node p chain="" shown=0 extra=0 done_n=0
+        if [[ "$st" == skipped ]]; then
+            print -r -- "·"
+            return 0
+        fi
+        if (( ${#names} == 0 )); then
+            if [[ "$st" == queued || -z "$st" ]]; then
+                print -r -- "…"
+                return 0
+            fi
+            _ui_phase_glyph "$key"
+            return 0
+        fi
+        local maxn=$(( (col_w - 2) / 2 ))
+        (( maxn < 2 )) && maxn=2
+        for p in "${names[@]}"; do
+            node="$(_ui_pkg_node "$p" "$key")"
+            [[ "$node" == "●" || "$node" == "✗" ]] && (( done_n++ ))
+            if (( shown < maxn )); then
+                (( shown > 0 )) && chain+="─"
+                chain+="$node"
+                (( shown++ ))
+            else
+                (( extra++ ))
+            fi
+        done
+        (( extra > 0 )) && chain+="…"
+        print -r -- "$chain"
+    }
+
+    _ui_discovery_graph() {
+        local width="${1:-40}"
+        local pkg_done="${2:-0}" pkg_total="${3:-0}"
+        (( width < 24 )) && width=24
+        if (( pkg_total > 0 )); then
+            print -r -- "OVERALL  ${pkg_done}/${pkg_total} pkgs"
+        else
+            print -r -- "OVERALL  discovering…"
+        fi
+        local invg
+        invg="$(_ui_phase_glyph inventory)"
+        _ui_center "$width" "${invg} inventory"
+        _ui_center "$width" "│"
+
+        local -a keys=() labels=() chains=() names=() counts=()
+        local key lab ch nm
+        if [[ "${_phase_state[formulae]}" != skipped ]]; then
+            keys+=(formulae)
+            if (( ${#out_formulae[@]} > 0 )); then
+                chains+=("$(_ui_lane_chain formulae $(( width / 3 + 2 )) "${out_formulae[@]}")")
+                names+=("${(j:, :)out_formulae[1,3]}")
+                counts+=("${#out_formulae}")
+            else
+                chains+=("$(_ui_lane_chain formulae $(( width / 3 + 2 )))")
+                names+=("")
+                counts+=("0")
+            fi
+        fi
+        if [[ "${_phase_state[casks]}" != skipped ]]; then
+            keys+=(casks)
+            if (( ${#out_casks[@]} > 0 )); then
+                chains+=("$(_ui_lane_chain casks $(( width / 3 + 2 )) "${out_casks[@]}")")
+                names+=("${(j:, :)out_casks[1,3]}")
+                counts+=("${#out_casks}")
+            else
+                chains+=("$(_ui_lane_chain casks $(( width / 3 + 2 )))")
+                names+=("")
+                counts+=("0")
+            fi
+        fi
+        if [[ "${_phase_state[apps]}" != skipped ]]; then
+            keys+=(apps)
+            if (( ${#out_mas[@]} > 0 )); then
+                chains+=("$(_ui_lane_chain apps $(( width / 3 + 2 )) "${out_mas[@]}")")
+                names+=("${(j:, :)out_mas[1,3]}")
+                counts+=("${#out_mas}")
+            else
+                chains+=("$(_ui_lane_chain apps $(( width / 3 + 2 )))")
+                names+=("")
+                counts+=("0")
+            fi
+        fi
+
+        local nw=${#keys[@]}
+        local col_w=$(( width / (nw > 0 ? nw : 1) ))
+        (( col_w < 8 )) && col_w=8
+        local i
+        if (( nw <= 1 )); then
+            _ui_center "$width" "│"
+            _ui_center "$width" "▼"
+            if (( nw == 1 )); then
+                _ui_center "$width" "${chains[1]}"
+                _ui_center "$width" "${_phase_label[${keys[1]}]}"
+                [[ -n "${names[1]}" && "${counts[1]}" -le 3 ]] && _ui_center "$width" "${names[1]}"
+            fi
+        else
+            # fan-out from inventory stem
+            case "$nw" in
+                2) _ui_center "$width" "┌────┴────┐" ;;
+                *) _ui_center "$width" "┌─────┼─────┐" ;;
+            esac
+            local arrows="" labs="" chs="" nms=""
+            for (( i = 1; i <= nw; i++ )); do
+                arrows+="$(_ui_pad " ▼" "$col_w")"
+                chs+="$(_ui_pad " ${chains[i]}" "$col_w")"
+                labs+="$(_ui_pad " ${_phase_label[${keys[i]}]}" "$col_w")"
+                if [[ -n "${names[i]}" && "${counts[i]}" -le 3 ]]; then
+                    nms+="$(_ui_pad " ${names[i]}" "$col_w")"
+                else
+                    nms+="$(_ui_pad " ${counts[i]} nodes" "$col_w")"
+                fi
+            done
+            print -r -- "$arrows"
+            print -r -- "$chs"
+            print -r -- "$labs"
+            print -r -- "$nms"
+            case "$nw" in
+                2) _ui_center "$width" "└────┬────┘" ;;
+                *) _ui_center "$width" "└─────┼─────┘" ;;
+            esac
+            _ui_center "$width" "▼"
+        fi
+        local cg kg dg
+        cg="$(_ui_phase_glyph cleanup)"
+        kg="$(_ui_phase_glyph caches)"
+        dg="$(_ui_phase_glyph doctor)"
+        _ui_center "$width" "${cg} cleanup ──► ${kg} caches ──► ${dg} doctor"
+    }
+
+    _ui_pkg_rows() {
+        local -a pkgs=("${_live_watch_pkgs[@]}")
+        if (( ${#pkgs} == 0 )); then
+            if (( ${#out_casks[@]} > 0 )) && [[ "${_phase_state[casks]}" != skipped ]]; then
+                pkgs=("${out_casks[@]}")
+            elif (( ${#out_formulae[@]} > 0 )) && [[ "${_phase_state[formulae]}" != skipped ]]; then
+                pkgs=("${out_formulae[@]}")
+            else
+                return 0
+            fi
+        fi
+        local p st icon done=0 failed=0 queued=0 running=0
+        for p in "${pkgs[@]}"; do
+            st="${_live_pkg_state[$p]:-queued}"
+            case "$st" in
+                done|upgraded) (( done++ )) ;;
+                failed) (( failed++ )) ;;
+                running) (( running++ )) ;;
+                *) (( queued++ )) ;;
+            esac
+        done
+        print -r -- "packages  ${done}/$(( done + failed + running + queued ))  (▶ ${running}  queued ${queued})"
+        local shown=0 max_show=8
+        for p in "${pkgs[@]}"; do
+            st="${_live_pkg_state[$p]:-queued}"
+            case "$st" in
+                done|upgraded) icon="✓" ;;
+                failed) icon="✗" ;;
+                running) icon="▶" ;;
+                *) icon="·" ;;
+            esac
+            if (( shown < max_show )); then
+                print -r -- "  ${icon} ${p}"
+                (( shown++ ))
+            fi
+        done
+        local more=$(( ${#pkgs} - shown ))
+        (( more > 0 )) && print -r -- "  +${more} more"
+    }
+
+    _ui_live_paint() {
+        local cols="$(_terminal_width)"
+        local frm="$(_ui_fg 240)" acc="$(_ui_fg 212)" rst_l="$rst"
+        (( use_color )) || rst_l=""
+        local k=0 n=${#_phase_order[@]} key state word
+        for key in "${_phase_order[@]}"; do
+            case "${_phase_state[$key]}" in
+                queued|"") ;;
+                *) (( k++ )) ;;
+            esac
+        done
+        word="running"
+        [[ "$k" -ge "$n" ]] && word="done"
+        local left="╭─ freshen "
+        local right=" ${k}/${n} ${word} ─╮"
+        local fill=$(( cols - ${#left} - ${#right} ))
+        (( fill < 1 )) && fill=1
+        print -r -- "${frm}${left}${acc}$(_ui_repeat '─' "$fill")${frm}${right}${rst_l}"
+
+        local inner=$(( cols - 2 ))
+        (( inner < 20 )) && inner=20
+        local now_key="${_current_phase:-}"
+        local now_label="${_current_label:-}"
+        if [[ -z "$now_key" ]]; then
+            for key in "${_phase_order[@]}"; do
+                case "${_phase_state[$key]}" in
+                    running|waiting) now_key="$key"; break ;;
+                esac
+            done
+        fi
+        [[ -z "$now_key" ]] && now_key="${_last_active_phase:-inventory}"
+        [[ -z "$now_label" ]] && now_label="${_last_active_label:-${_phase_detail[$now_key]}}"
+        local now_title="${_phase_label[$now_key]:-$now_key}"
+        [[ -n "$now_label" ]] && now_title="${now_title} · ${now_label}"
+        local att="${_phase_attempted[$now_key]:-0}"
+        local upg="${_phase_upgraded[$now_key]:-0}"
+        local failn="${_phase_failed[$now_key]:-0}"
+        local bar_done=$(( upg + failn ))
+        local pkg_done=$(( ${_upgraded_total:-0} + ${_failed_total:-0} ))
+        local pkg_total="${_total_planned:-0}"
+        local el="${_phase_elapsed[$now_key]:-}"
+        local el_s=""
+        [[ -n "$el" && "$el" != "0" ]] && el_s="elapsed $(_fmt_dur "$el")"
+        local attn="Attention: (none)"
+        if (( ${#_errors} > 0 )); then
+            attn="Attention: ${_errors[-1]}"
+        elif (( ${#_warnings} > 0 )); then
+            attn="Attention: ${_warnings[-1]}"
+        fi
+        local -a brew_lines=()
+        local bl
+        while IFS= read -r bl; do
+            [[ -n "$bl" ]] && brew_lines+=("$bl")
+        done < <(_ui_child_tail 8)
+        if (( ${#brew_lines} == 0 )); then
+            bl="$(_ui_last_child_line)"
+            [[ -z "$bl" ]] && bl="${_phase_detail[$now_key]:-idle}"
+            brew_lines+=("$bl")
+        fi
+
+        local -a phase_lines=("PHASES")
+        local icon detail row
         for key in "${_phase_order[@]}"; do
             state="${_phase_state[$key]}"
             icon="$(_phase_icon "$state")"
-            detail="${_phase_detail[$key]}"
-            elapsed="${_phase_elapsed[$key]}"
-            [[ -n "$elapsed" && "$elapsed" != "0" ]] && detail="${detail:+${detail} · }$(_fmt_dur "$elapsed")"
-            row="  ${icon} ${_phase_label[$key]}: $(_phase_status_word "$state")${detail:+ — ${detail}}"
-            print -r -- "$(_truncate "$row" "$cols")"
+            detail="$(_phase_status_word "$state")"
+            row="${icon} ${_phase_label[$key]}  ${detail}"
+            phase_lines+=("$row")
         done
-        print
-        print "${dim}Press q between phases to stop after the current phase.${rst}"
+
+        local left_w=32
+        local right_w
+        if (( cols < 80 )); then
+            left_w="$inner"
+            right_w="$inner"
+        else
+            (( left_w > inner / 4 )) && left_w=$(( inner / 4 ))
+            (( left_w < 24 )) && left_w=24
+            (( left_w > 40 )) && left_w=40
+            right_w=$(( inner - left_w - 1 ))
+            (( right_w < 24 )) && right_w=24
+        fi
+        local watch_done=0 _wp _wst
+        for _wp in "${_live_watch_pkgs[@]}"; do
+            _wst="${_live_pkg_state[$_wp]:-queued}"
+            case "$_wst" in
+                done|upgraded|failed) (( watch_done++ )) ;;
+            esac
+        done
+        if (( pkg_total > 0 )); then
+            pkg_done=$(( ${_upgraded_total:-0} + ${_failed_total:-0} + watch_done ))
+            (( pkg_done > pkg_total )) && pkg_done="$pkg_total"
+        fi
+        now_lines=("NOW" "$now_title")
+        local gl
+        while IFS= read -r gl; do
+            [[ -n "$gl" ]] && now_lines+=("$gl")
+        done < <(_ui_discovery_graph "$right_w" "$pkg_done" "$pkg_total")
+        local pr
+        while IFS= read -r pr; do
+            [[ -n "$pr" ]] && now_lines+=("$pr")
+        done < <(_ui_pkg_rows)
+        now_lines+=("brew:")
+        local _bl
+        for _bl in "${brew_lines[@]}"; do
+            now_lines+=("  ${_bl}")
+        done
+        [[ -n "$el_s" ]] && now_lines+=("$el_s")
+        now_lines+=("$attn")
+        now_lines+=("q between phases")
+
+        if (( cols < 80 )); then
+            local line
+            for line in "${now_lines[@]}" "${phase_lines[@]}"; do
+                print -r -- "${frm}│${rst_l}$(_ui_pad " ${line}" "$inner")${frm}│${rst_l}"
+            done
+        else
+            local i max=${#phase_lines[@]}
+            (( ${#now_lines[@]} > max )) && max=${#now_lines[@]}
+            local lp rp
+            for (( i = 1; i <= max; i++ )); do
+                lp="${phase_lines[i]:-}"
+                rp="${now_lines[i]:-}"
+                print -r -- "${frm}│${rst_l}$(_ui_pad " ${lp}" "$left_w")${frm}│${rst_l}$(_ui_pad " ${rp}" "$right_w")${frm}│${rst_l}"
+            done
+        fi
+        print -r -- "${frm}╰$(_ui_repeat '─' "$(( cols - 2 ))")╯${rst_l}"
+    }
+
+    _ui_recap_open() {
+        [[ "$_render_mode" == live ]] || return 0
+        local cols="$(_terminal_width)"
+        local frm="$(_ui_fg 240)" rst_l="$rst"
+        (( use_color )) || rst_l=""
+        local left="╭─ freshen "
+        local right=" recap ─╮"
+        local fill=$(( cols - ${#left} - ${#right} ))
+        (( fill < 1 )) && fill=1
+        print -r -- "${frm}${left}$(_ui_repeat '─' "$fill")${right}${rst_l}"
+    }
+
+    _ui_recap_close() {
+        [[ "$_render_mode" == live ]] || return 0
+        local cols="$(_terminal_width)"
+        local frm="$(_ui_fg 240)" rst_l="$rst"
+        (( use_color )) || rst_l=""
+        print -r -- "${frm}╰$(_ui_repeat '─' "$(( cols - 2 ))")╯${rst_l}"
+    }
+
+    _render_dashboard() {
+        [[ "$_render_mode" == live ]] || return 0
+        (( _live_ready && ! _live_paused && ! _live_closed )) || return 0
+        _live_enter
+        local frame
+        frame="$(_ui_live_paint)"
+        [[ -n "$frame" && "$frame" == "$_live_last_frame" ]] && return 0
+        _live_last_frame="$frame"
+        # Home + overwrite + erase tail — do not blank the screen first (blink).
+        printf '\e[H'
+        print -r -- "$frame"
+        printf '\e[J'
     }
 
     _render_tick() {
@@ -1945,6 +2454,7 @@ PY
         _phase_state[$key]="running"
         _phase_detail[$key]="$label"
         _emit_phase "$key"
+        _ui_watch_from_cmd "$@"
         _log_phase "$key" "START ${label} :: $(printf '%q ' "$@")"
 
         local started=$EPOCHSECONDS
@@ -1965,8 +2475,27 @@ PY
             _current_timeout_pid=$killer_pid
         fi
 
-        wait "$cmd_pid"
+        local _watch_bytes=0 _watch_now=0
+        while kill -0 "$cmd_pid" 2>/dev/null; do
+            _ui_watch_ingest
+            _watch_now=0
+            [[ -n "${_active_run_tmpout:-}" && -f "${_active_run_tmpout}" ]] && _watch_now="$(wc -c < "${_active_run_tmpout}")"
+            if (( _watch_now != _watch_bytes )); then
+                _watch_bytes="$_watch_now"
+                _render_tick 1
+            else
+                _render_tick 0
+            fi
+            if _check_quit; then
+                kill -TERM "$cmd_pid" 2>/dev/null || true
+                break
+            fi
+            sleep 0.25
+        done
+        wait "$cmd_pid" 2>/dev/null
         local rc=$?
+        _ui_watch_ingest
+        _render_tick 1
 
         if (( killer_pid > 0 )); then
             kill "$killer_pid" 2>/dev/null
@@ -1988,7 +2517,7 @@ PY
 
         if [[ -n "$output" ]]; then
             print -r -- "$output" >> "$_log_file"
-            (( verbose )) && _print_prefixed_output "$output"
+            (( verbose )) && [[ "$_render_mode" != live ]] && _print_prefixed_output "$output"
         fi
 
         (( __interrupt_flag )) && rc=130
@@ -2036,6 +2565,56 @@ PY
         _freshen_lock_dir=""
     }
 
+    _freshen_lock_holder_line() {
+        local pid="$1"
+        local line=""
+        line="$(ps -p "$pid" -o pid=,etime=,tty=,command= 2>/dev/null | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        print -r -- "$line"
+    }
+
+    _freshen_pid_is_shell() {
+        local cmd="$1"
+        [[ "$cmd" == -* || "$cmd" == *"/zsh" || "$cmd" == "zsh" || "$cmd" == *"/bash" || "$cmd" == "bash" || "$cmd" == *"/fish" ]]
+    }
+
+    _freshen_lock_free() {
+        local lock_dir="$1" old_pid="$2" cur=""
+        [[ -d "$lock_dir" ]] || return 0
+        [[ -r "${lock_dir}/pid" ]] && cur="$(< "${lock_dir}/pid")"
+        [[ -z "$cur" || "$cur" != "$old_pid" ]] && return 0
+        kill -0 "$old_pid" 2>/dev/null || return 0
+        return 1
+    }
+
+    _freshen_replace_lock_holder() {
+        local pid="$1" lock_dir="$2"
+        [[ "$pid" == <-> ]] || return 1
+        [[ "$pid" == "$$" ]] && return 1
+        local cmd="" child=""
+        cmd="$(ps -p "$pid" -o command= 2>/dev/null | sed -e 's/^[[:space:]]*//')"
+        # Interrupt freshen-in-shell; also poke brew/gomi children. Never SIGKILL a login shell.
+        kill -INT "$pid" 2>/dev/null || true
+        while read -r child; do
+            [[ "$child" == <-> ]] || continue
+            kill -INT "$child" 2>/dev/null || true
+        done < <(pgrep -P "$pid" 2>/dev/null)
+        local i
+        for (( i = 0; i < 25; i++ )); do
+            _freshen_lock_free "$lock_dir" "$pid" && return 0
+            sleep 0.1
+        done
+        if _freshen_pid_is_shell "$cmd"; then
+            return 0
+        fi
+        kill -TERM "$pid" 2>/dev/null || true
+        sleep 0.3
+        _freshen_lock_free "$lock_dir" "$pid" && return 0
+        kill -KILL "$pid" 2>/dev/null || true
+        sleep 0.1
+        _freshen_lock_free "$lock_dir" "$pid" && return 0
+        return 1
+    }
+
     _freshen_acquire_lock() {
         local lock_dir="${log_dir}/freshen.lock.d"
         if mkdir "$lock_dir" 2>/dev/null; then
@@ -2054,7 +2633,51 @@ PY
                 return 0
             fi
         fi
+        local holder=""
+        holder="$(_freshen_lock_holder_line "$old_pid")"
         _err "another freshen is running (pid ${old_pid:-unknown}); lock ${lock_dir}"
+        if [[ -n "$holder" ]]; then
+            print -u2 "     ${holder}"
+        else
+            print -u2 "     (process ${old_pid} is alive but ps listing failed)"
+        fi
+        local child=""
+        while read -r child; do
+            [[ -n "$child" ]] && print -u2 "     child ${child}"
+        done < <(pgrep -P "$old_pid" 2>/dev/null | while read -r c; do
+            ps -p "$c" -o pid=,command= 2>/dev/null
+        done)
+        local reply=""
+        if [[ -n "${FRESHEN_UNDER_TEST:-}" && -n "${FRESHEN_LOCK_REPLY:-}" ]]; then
+            reply="${FRESHEN_LOCK_REPLY}"
+        elif (( replace_lock )); then
+            reply="y"
+        elif (( _is_interactive && ! quiet )); then
+            printf "  Replace the running freshen (stop pid %s and continue)? [y/N] " "$old_pid"
+            if [[ -n "${FRESHEN_UNDER_TEST:-}" && -n "${FRESHEN_CONFIRM_REPLY:-}" ]]; then
+                reply="${FRESHEN_CONFIRM_REPLY}"
+                print -r -- "$reply"
+            else
+                read -r reply
+            fi
+        else
+            print -u2 "  Re-run from a TTY to replace it, or pass --replace."
+            return 1
+        fi
+        if [[ "$reply" != [yY] && "$reply" != [yY][eE][sS] ]]; then
+            _warn "Left the running freshen in place (pid ${old_pid})"
+            return 1
+        fi
+        print -u2 "  Interrupting pid ${old_pid} and taking the lock…"
+        _freshen_replace_lock_holder "$old_pid" "$lock_dir" || true
+        rm -rf -- "$lock_dir" 2>/dev/null || true
+        if mkdir "$lock_dir" 2>/dev/null; then
+            print -r -- "$$" >| "${lock_dir}/pid"
+            _freshen_lock_dir="$lock_dir"
+            print -u2 "  Took the lock (was pid ${old_pid})."
+            return 0
+        fi
+        _err "lock still busy after replace (pid ${old_pid})"
         return 1
     }
 
@@ -2172,24 +2795,30 @@ PY
     if [[ "${FRESHEN_NO_EMOJI:-0}" != "1" && "$_render_mode" != plain ]] && (( use_color )); then
         brand="🍃 freshen"
     fi
-    (( quiet )) || print "\n${cyn}${brand}${rst}\n"
     (( ! quiet )) && print "  ${dim}Log: ${_log_file}${rst}"
-    (( _is_interactive && ! quiet )) && print "  ${dim}Press q between phases to stop after the current phase.${rst}\n"
 
     local mode_label="batch"
     (( clean_only )) && mode_label="clean-only"
     (( sequential )) && mode_label="sequential"
-    (( quiet )) || {
-        print "  ${bold}Plan${rst}"
-        print "     ${dim}Mode:${rst} ${mode_label}"
-        print "     ${dim}Casks:${rst} $([[ $cask_greedy -eq 1 ]] && print 'greedy' || print 'standard')"
-        print "     ${dim}Mac App Store:${rst} $([[ $run_mas -eq 1 ]] && print 'enabled' || print 'disabled')"
-        print "     ${dim}Cleanup:${rst} $([[ $run_cleanup -eq 1 ]] && print 'enabled' || print 'disabled')"
-        print "     ${dim}Caches:${rst} $([[ $run_cache -eq 1 ]] && print 'enabled' || print 'disabled')"
-        print "     ${dim}Dev prune:${rst} $([[ $run_dev_prune -eq 1 ]] && print "enabled (${dev_prune_root})" || print 'disabled')"
-        print "     ${dim}Doctor:${rst} $([[ $run_doctor -eq 1 ]] && print 'enabled' || print 'disabled')"
-        print
-    }
+
+    if [[ "$_render_mode" == live ]]; then
+        _current_label="${mode_label}"
+        _live_begin
+    else
+        (( quiet )) || print "\n${cyn}${brand}${rst}\n"
+        (( _is_interactive && ! quiet )) && print "  ${dim}Press q between phases to stop after the current phase.${rst}\n"
+        (( quiet )) || {
+            print "  ${bold}Plan${rst}"
+            print "     ${dim}Mode:${rst} ${mode_label}"
+            print "     ${dim}Casks:${rst} $([[ $cask_greedy -eq 1 ]] && print 'greedy' || print 'standard')"
+            print "     ${dim}Mac App Store:${rst} $([[ $run_mas -eq 1 ]] && print 'enabled' || print 'disabled')"
+            print "     ${dim}Cleanup:${rst} $([[ $run_cleanup -eq 1 ]] && print 'enabled' || print 'disabled')"
+            print "     ${dim}Caches:${rst} $([[ $run_cache -eq 1 ]] && print 'enabled' || print 'disabled')"
+            print "     ${dim}Dev prune:${rst} $([[ $run_dev_prune -eq 1 ]] && print "enabled (${dev_prune_root})" || print 'disabled')"
+            print "     ${dim}Doctor:${rst} $([[ $run_doctor -eq 1 ]] && print 'enabled' || print 'disabled')"
+            print
+        }
+    fi
 
     local -a out_formulae=() out_casks=() out_mas=() _casks_skipped_newer=()
     local nf=0 nc=0 nm=0
@@ -2341,7 +2970,7 @@ PY
 
     (( run_cache && run_dev_prune )) && _collect_dev_prune_candidates "$dev_prune_root"
 
-    (( quiet || clean_only )) || {
+    (( quiet || clean_only )) || [[ "$_render_mode" == live ]] || {
         print
         print "  ${bold}Outdated${rst}"
         print "     ${dim}Formulae:${rst} ${nf}"
@@ -2354,7 +2983,7 @@ PY
         print
     }
 
-    (( run_cache && run_dev_prune && ! quiet )) && _print_dev_prune_plan
+    (( run_cache && run_dev_prune && ! quiet )) && [[ "$_render_mode" != live ]] && _print_dev_prune_plan
 
     _live_begin
 
@@ -2881,6 +3510,7 @@ PY
     done
     (( ${#_errors} > 0 )) && overall_state="degraded"
 
+    _ui_recap_open
     if [[ "$overall_state" != "done" ]]; then
         if (( residual_retry == 0 )); then
             case "${_phase_state[formulae]}" in
@@ -2934,6 +3564,7 @@ PY
     if [[ "$overall_state" != "done" ]] || (( verbose )); then
         print "  ${bold}Log${rst}: ${_log_file}"
     fi
+    _ui_recap_close
     print
 
     if (( ! quiet && _is_interactive )) && [[ "${FRESHEN_LOW_POWER:-0}" != "1" && "$_render_mode" != plain ]]; then
@@ -2984,6 +3615,7 @@ _freshen() {
         '(--progress -R)--progress=[Progress renderer]:mode:(auto live lines plain)' \
         '(-R --progress)-R=[Progress renderer]:mode:(auto live lines plain)' \
         '--no-sudo-preflight[Do not preflight sudo before cask upgrades]' \
+        '--replace[Stop a running freshen and take its lock]' \
         '(--verbose -v)'{--verbose,-v}'[Show detailed command output]' \
         '(--quiet -q)'{--quiet,-q}'[Suppress routine progress output]' \
         '--no-color[Disable color]' \

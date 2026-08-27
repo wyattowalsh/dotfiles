@@ -85,7 +85,7 @@ test_live_waiting_does_not_append_phase_line() {
     run_freshen "$out" --yes --cask-only --no-mas --no-cleanup --no-cache --progress=live --no-color
     assert_status 0 $? "forced live cask run exits cleanly"
     assert_contains "$out" $'\e[?1049h' "forced live enters the alt-screen dashboard"
-    assert_contains "$out" "Casks: waiting" "live dashboard rendered the waiting cask state"
+    assert_contains "$out" "Casks  waiting" "live dashboard rendered the waiting cask state"
     assert_not_contains "$out" "  W Casks: waiting — validating sudo for cask installers" \
         "live waiting does not append the lines-mode waiting row"
     local log_path
@@ -158,20 +158,16 @@ import re, sys
 from pathlib import Path
 data = Path(sys.argv[1]).read_bytes()
 needle = b"gomi is required"
-idx = data.find(needle)
-if idx < 0:
+if needle not in data:
     sys.exit(1)
-last_enter = max((m.start() for m in re.finditer(rb"\x1b\[\?1049h", data)), default=-1)
-last_leave = max((m.start() for m in re.finditer(rb"\x1b\[\?1049l", data)), default=-1)
-# Error must not sit between last enter and last leave (alt-screen).
-if last_enter >= 0 and last_leave > last_enter and last_enter < idx < last_leave:
-    sys.exit(2)
-sys.exit(0)
+leaves = [m.end() for m in re.finditer(rb"\x1b\[\?1049l", data)]
+tail = data[leaves[-1]:] if leaves else data
+sys.exit(0 if needle in tail else 2)
 ' "$out"; then
-        pass "gomi error is not painted on the live alt-screen"
+        pass "gomi refusal remains in the recap after live leave"
     else
-        print -u2 -r -- "gomi error landed on the alt-screen or was missing"
-        fail "gomi error is not painted on the live alt-screen"
+        print -u2 -r -- "gomi refusal missing from recap tail"
+        fail "gomi refusal remains in the recap after live leave"
     fi
 }
 
@@ -227,18 +223,18 @@ test_live_sudo_csi_does_not_reenter_before_prompt() {
         "no alt-screen re-enter between leave and sudo preflight message"
 }
 
-test_force_live_verbose_and_quiet_stay_off_dashboard() {
+test_force_live_verbose_keeps_dashboard_quiet_still_demotes() {
     setup_env force-live-demote
     export FRESHEN_FORCE_LIVE=1
     local out="${TEST_ROOT}/force-live-verbose.out"
     run_freshen "$out" --dry-run --yes --verbose --progress=live --no-mas --no-color
     assert_status 0 $? "force-live plus verbose dry-run exits cleanly"
-    assert_not_contains "$out" $'\e[?1049h' "verbose wins over FRESHEN_FORCE_LIVE"
+    assert_contains "$out" $'\e[?1049h' "verbose does not disable live"
 
     local outq="${TEST_ROOT}/force-live-quiet.out"
     run_freshen "$outq" --dry-run --yes --quiet --progress=live --no-mas --no-color
     assert_status 0 $? "force-live plus quiet dry-run exits cleanly"
-    assert_not_contains "$outq" $'\e[?1049h' "quiet wins over FRESHEN_FORCE_LIVE"
+    assert_not_contains "$outq" $'\e[?1049h' "quiet still wins over FRESHEN_FORCE_LIVE"
 }
 
 test_force_live_auto_still_lives_under_test() {

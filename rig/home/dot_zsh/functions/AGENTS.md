@@ -28,6 +28,10 @@ Version SSOT: `rig/home/dot_zsh/functions/freshen.VERSION` (run `./checks/freshe
 - `--clean-only --dry-run` skips upgrade inventory and all mutations
 - Noninteractive mutations require `--yes`
 - `--progress=plain --no-color` — no ANSI cursor controls, color escapes, bells, or animations
+- Bare `freshen` (no args) equals `-Y -P --dev-prune-root=$HOME/dev -v -D -R=auto`; verbose does not disable live
+- Live (`auto`/`live`) paints a rounded PHASES rail + NOW pane; FORCE_LIVE dumps must include `PHASES`, `NOW`, and `╭`; `plain` must not
+- NOW OVERALL is a discovery DAG (inventory fans out to formula/cask/app nodes); live skips identical frames (no full-screen wipe)
+- Busy lock lists the holder and offers replace (`--replace` / TTY); never SIGKILL a login shell
 - Dev-prune must never fall back to `rm` and must refuse broad roots
 - Dev-prune skips caches newer than `FRESHEN_DEV_PRUNE_MIN_AGE_DAYS` (default 14; `0` disables) and live-workspace dirs (cwd / ancestor / descendant, except when cwd equals the prune root)
 - `--storage-plan` is classified report-only (`cache-prune` / `review` / `report-only`); it may probe `docker system df`, `nix store gc --dry-run`, `kopia repository status` (stdin closed; `FRESHEN_BACKUP_STATUS_TIMEOUT_SEC`), and Darwin `tmutil destinationinfo`. It must not prune, invoke `mo`, run files-buddy, or pass a Kopia password on argv. It still writes a private log.
