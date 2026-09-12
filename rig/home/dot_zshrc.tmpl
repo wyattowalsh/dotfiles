@@ -264,15 +264,10 @@ if command -v rbenv &>/dev/null; then
   eval "$(rbenv init - zsh)"
 fi
 
-# Cursor / Ghostty shell integration
+# Cursor shell integration
 if [[ "${TERM_PROGRAM:-}" == "vscode" || "${TERM_PROGRAM:-}" == "cursor" ]] \
   && command -v cursor &>/dev/null; then
   source "$(cursor --locate-shell-integration-path zsh 2>/dev/null)" 2>/dev/null || true
-fi
-# Official Ghostty integration only; skip custom afplay helper (double-notify with native notify-on-command-finish).
-if [[ "${TERM_PROGRAM:-}" == "ghostty" && -r "$HOME/.config/ghostty/shell-integration.zsh" ]] \
-  && command grep -qE 'GHOSTTY_RESOURCES_DIR|ghostty-integration' "$HOME/.config/ghostty/shell-integration.zsh"; then
-  source "$HOME/.config/ghostty/shell-integration.zsh"
 fi
 
 # ───────────────────────────────────────────────────────────────────────────────

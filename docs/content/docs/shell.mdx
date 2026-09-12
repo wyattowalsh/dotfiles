@@ -58,6 +58,8 @@ New high-signal aliases (full catalog is `als`):
 | `atuin-agents` | `atuin search --author '$all-agent'` |
 | `als` | list tracked aliases with descriptions |
 
+Ghostty owns its initial-zsh integration through `shell-integration = detect`; zshrc does not source a separate Ghostty shim. `gtyv` validates the deployed config (including a real local overlay), while `just check-ghostty` validates repository contracts and an isolated rendered base config. `gtyc` prints effective non-default settings.
+
 Markdown jq: `mq '.h'` lists headings; Glow stays the yazi Markdown preview. Structural search: `sg` / `ast-grep` (global `~/sgconfig.yml`; not a second secrets scanner). DuckDB is SQL (`~/.duckdbrc`); VisiData is the interactive sheet (`vd`); yazi preview for csv/parquet stays DuckDB. `du`/`df` remain `dust`/`duf`.
 
 Pipelines (keep `curl` in scripts; do not alias `http`/`hf`/`oc`):

@@ -47,6 +47,13 @@ repos:
         pass_filenames: false
         files: ^(setup\.sh|rig/bootstrap/(macos|linux|dev-env)\.sh|checks/.*\.(sh|bats)|justfile|rig/home/dot_local/bin/executable_kopia-nightly)$
 
+      - id: dotfiles-ghostty-config
+        name: dotfiles Ghostty source contract
+        entry: just check-ghostty
+        language: system
+        pass_filenames: false
+        files: ^(rig/home/private_dot_config/ghostty/config\.tmpl|rig/home/\.chezmoidata\.toml|rig/dots/zshrc|rig/home/dot_zshrc\.tmpl|rig/home/AGENTS\.md|checks/ghostty\.sh|justfile|\.pre-commit-config\.yaml|docs/content/docs/(terminal|validation|home-config|shell)\.mdx)$
+
       - id: dotfiles-zsh-parity
         name: dotfiles zsh syntax and parity
         entry: just check-zsh

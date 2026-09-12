@@ -6,11 +6,32 @@ description: Ghostty + fonts.
 
 SSOT: `rig/home/private_dot_config/ghostty/config.tmpl` (defaults in `rig/home/.chezmoidata.toml`). Fonts: Nerd Font casks in `rig/brew/Brewfile`.
 
-The tmpl enables contextual alternates with `font-feature = calt`, disables standard ligatures with `font-feature = -liga`, generates the palette, includes an optional overlay `config-file = ?…/.config/ghostty/config.local` (missing file is fine), and uses native bell audio. The bell sound file stays local (`~/.config/ghostty/sounds/`). Backgrounds: `~/.config/ghostty/backgrounds/` (local only; missing PNG is expected until copied).
+## Tracked behavior
 
-Ghostty owns everyday splits. The tracked tmux formula exists only as Agent Deck's backend. Left Option is mapped to Alt for bindings such as Yazi's DuckDB preview keys.
+| Area | Desired state |
+| --- | --- |
+| Typography | `font-feature = calt` enables contextual alternates; `font-feature = -liga` disables standard ligatures. |
+| Palette | `palette-generate = true` plus `palette-harmonious = true` produces an extended palette ordered for the light theme. Legacy TUIs that assume indices 16–231 run dark-to-light need a visual check. |
+| Local overlay | `config-file = ?config.local` loads an optional, untracked sibling at `~/.config/ghostty/config.local`; a missing file is valid. |
+| Local assets | Bell audio stays under `~/.config/ghostty/sounds/`; backgrounds stay under `~/.config/ghostty/backgrounds/`. Missing local assets are expected until copied. |
+| Fullscreen | `macos-non-native-fullscreen = padded-notch` avoids native fullscreen animation and pads below the notch. Ghostty native tabs are unavailable while using non-native fullscreen. |
+| Links | With the pointer over a detected URL, **Cmd-Option-U** copies it to the clipboard. |
+| Shell integration | `shell-integration = detect` lets Ghostty inject its official initial-zsh integration; zshrc does not source a separate Ghostty shim. |
+
+Ghostty owns everyday splits. The tracked tmux formula exists only as Agent Deck's backend. Left Option is mapped to Alt for Ghostty actions and bindings such as Yazi's DuckDB preview keys.
+
+## Validation
+
+| Command | Scope |
+| --- | --- |
+| `just check-ghostty` | Tracked source contracts plus isolated Chezmoi rendering and native parsing when both tools are available; never applies config. |
+| `gtyv` | Deployed Ghostty config, including a real `config.local` overlay when present. |
+| `gtyc` | Effective non-default Ghostty settings. |
+| `just home-diff` | Preview the Chezmoi deployment delta. |
 
 ```bash
+just check-ghostty
 just home-diff
-ghostty +validate-config
+gtyv
+gtyc
 ```

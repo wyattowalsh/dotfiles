@@ -10,6 +10,7 @@ just check-shell    # bash -n + shellcheck + shfmt -d
 just check-just-fmt # canonical justfile formatting
 just check-mise-boundary
 just check-rig-ecosystem-assurance
+just check-ghostty
 just check-yazi-config
 just check-kopia-nightly
 just check-apple-text
@@ -28,6 +29,7 @@ just docs-ci
 | --- | --- |
 | `just check-zsh` | zsh syntax/mirror parity, exact plugin/history/load ordering, tracked pnpm completion, `fkill` PID safety, and activation-only `layout_uv` fixtures |
 | `just check-rig-ecosystem-assurance` | Agent Deck/tmux ownership, nbdime provider and Git wiring, no unapproved `dft`/difftastic wiring, and no G4 macOS defaults |
+| `just check-ghostty` | Ghostty template/data/zsh/docs contracts plus isolated Chezmoi rendering and native parsing when Ghostty and Chezmoi are available; never applies config |
 | `just check-yazi-config` | Current fields, resolved plugin/flavor locks, dark/light theme mapping, Option DuckDB keys, and isolated native parsing when Yazi is available |
 | `just check-kopia-nightly` | Static runner/plist contract (cap in the runner, no launchd `TimeOut`; no live `kopia` / launchd) |
 | `just check-apple-text` | Canonical Text Replacement / Shortcuts registries plus offline merge harness (no Apple DB writes) |
@@ -66,6 +68,7 @@ Runs in this order:
 | `secrets-scan` | obvious secret-shaped values in tracked source |
 | `brew-exclude` | Brewfile vs `rig/brew/exclude.txt` (no Homebrew required) |
 | `check-rig-ecosystem-assurance` | Agent Deck/tmux ownership, nbdime, no unapproved `dft` wiring |
+| `check-ghostty` | Ghostty source contract plus optional isolated rendered parse; no home config writes |
 | `check-yazi-config` | fields, locks, flavors, keys, isolated parse |
 | `check-stale-paths` | freeze on pre-`rig/` machine path contracts |
 | `check-kopia-nightly` | headless Kopia runner contract (no live `kopia` / launchd) |
