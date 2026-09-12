@@ -3,9 +3,7 @@
 ## Purpose
 
 Justfile orchestrates macOS and Linux bootstrap, validation, inventory, and the portable agent-dev-env wrapper. AI/MCP harness configs live in wyattowalsh/agents.
-
 ## Requirements
-
 ### Requirement: Justfile Orchestration
 
 The repository SHALL expose bootstrap, validation, inventory, docs, package, and secrets workflows through `justfile`.
@@ -13,7 +11,7 @@ The repository SHALL expose bootstrap, validation, inventory, docs, package, and
 #### Scenario: Run aggregate checks
 
 - **WHEN** `just check` is run
-- **THEN** the following static gates run without mutating managed files: `check-hooks`, `check-shell`, `check-zsh`, `check-freshen`, `check-json`, `secrets-scan`, `brew-exclude`, `check-stale-paths`, `check-kopia-nightly`, `check-chezmoi-ignore`, `check-darwin-lock`, `check-linux-dev-env-rc`, and `check-shell-files`.
+- **THEN** the following static gates run without mutating managed files: `check-hooks`, `check-shell`, `check-zsh`, `check-freshen`, `check-json`, `secrets-scan`, `brew-exclude`, `check-stale-paths`, `check-kopia-nightly`, `check-ghostty`, `check-chezmoi-ignore`, `check-darwin-lock`, `check-linux-dev-env-rc`, and `check-shell-files`.
 
 #### Scenario: Run CI checks
 
