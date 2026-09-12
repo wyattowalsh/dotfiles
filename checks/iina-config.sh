@@ -82,7 +82,7 @@ require_hs_layout() {
 validate_info_json() {
   local path="$1"
   if command -v python3 >/dev/null 2>&1; then
-    if ! python3 - "$path" <<'INFOJSON'; then
+    if ! python3 - "$path" <<'INFOJSON'
 import json
 import sys
 from pathlib import Path
@@ -105,6 +105,7 @@ if errors:
     print("; ".join(errors), file=sys.stderr)
     raise SystemExit(1)
 INFOJSON
+    then
       fail_msg "Info.json schema/permissions check failed"
     fi
     return
