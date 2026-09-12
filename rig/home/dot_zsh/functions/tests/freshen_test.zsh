@@ -7,6 +7,12 @@ TEST_SCRIPT_DIR="${0:A:h}"
 FRESHEN_FILE="${FRESHEN_UNDER_TEST:-${TEST_SCRIPT_DIR:h}/freshen}"
 FRESHEN_FILE="${FRESHEN_FILE:A}"
 FRESHEN_DIR="${FRESHEN_FILE:h}"
+# Resolve through mise before fixtures replace HOME and invalidate its trust lookup.
+TEST_PYTHON3="$(command python3 -c 'import sys; print(sys.executable)' 2>/dev/null || true)"
+if [[ -n "$TEST_PYTHON3" ]]; then
+    path=("${TEST_PYTHON3:h}" $path)
+    rehash
+fi
 TEST_BASE_TMP="${TMPDIR:-/tmp}"
 
 if [[ ! -r "$FRESHEN_FILE" ]]; then
@@ -1288,7 +1294,8 @@ test_interrupt_stops_mas_inventory_child() {
     zsh -fc 'fpath=("$1" $fpath); autoload -Uz freshen; shift; freshen "$@"' zsh "$FRESHEN_DIR" --yes --no-cache --no-cleanup --no-color >"$out" 2>&1 &
     local runner_pid=$!
     local tries=0
-    while (( tries < 50 )) && [[ ! -s "$MAS_PID_FILE" ]]; do
+    # Stub writes its pid before sleeping; allow slow freshen startup under load.
+    while (( tries < 150 )) && [[ ! -s "$MAS_PID_FILE" ]]; do
         sleep 0.1
         (( tries++ ))
     done
@@ -1349,7 +1356,8 @@ test_interrupt_stops_parallel_brew_outdated_children() {
     zsh -fc 'fpath=("$1" $fpath); autoload -Uz freshen; shift; freshen "$@"' zsh "$FRESHEN_DIR" --dry-run --yes --no-cache --no-cleanup --no-color >"$out" 2>&1 &
     local runner_pid=$!
     local tries=0
-    while (( tries < 50 )) && [[ ! -s "$BREW_FORMULAE_OUTDATED_PID_FILE" || ! -s "$BREW_CASK_OUTDATED_PID_FILE" ]]; do
+    # Same load-tolerant pid observation as the mas interrupt test above.
+    while (( tries < 150 )) && [[ ! -s "$BREW_FORMULAE_OUTDATED_PID_FILE" || ! -s "$BREW_CASK_OUTDATED_PID_FILE" ]]; do
         sleep 0.1
         (( tries++ ))
     done
