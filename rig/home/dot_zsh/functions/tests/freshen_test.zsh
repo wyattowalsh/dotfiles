@@ -468,6 +468,8 @@ local -a watch=(
   _err _warn _run_with_timeout _classify_batch_items _prepare_sudo_for_casks
   _positive_int_env _set_phase _emit_phase __freshen_teardown
   _mtime_epoch _is_live_workspace_dir _print_backup_status _run_report_cmd
+  _storage_is_absent_leaf _storage_skip_du _storage_inuse_leaf _storage_path_in_use
+  _kopia_nightly_running _kopia_coverage_complete
   _live_enter _live_leave _live_begin _live_pause_for_prompt _live_resume _live_abort_dashboard
 )
 local name
@@ -516,7 +518,7 @@ test_help_and_version() {
 
     run_freshen "$version_out" --version --no-color
     assert_status 0 $? "version exits cleanly"
-    assert_contains "$version_out" "freshen 1.11.0" "version reports new release"
+    assert_contains "$version_out" "freshen 1.13.0" "version reports new release"
 }
 
 test_capital_shorthands() {
@@ -764,12 +766,12 @@ test_help_completion_and_version_metadata_parity() {
         assert_contains "$FRESHEN_FILE" "$flag" "completion/source mentions ${flag}"
         assert_contains "$out" "$flag" "help mentions ${flag}"
     done
-    assert_contains "$FRESHEN_FILE" "freshen v1.11.0" "header version matches release"
+    assert_contains "$FRESHEN_FILE" "freshen v1.13.0" "header version matches release"
     assert_not_contains "$FRESHEN_FILE" "_arguments -s" "completion does not advertise unsupported stacked short options"
     assert_contains "$FRESHEN_FILE" ">/dev/null 2>&1 &!" "notification subprocess is disowned to avoid job-control noise"
     assert_contains "$out" "FRESHEN_LOW_POWER" "help documents low-power mode"
     run_freshen "$out" --version --no-color
-    assert_contains "$out" "freshen 1.11.0 (2026-08-27)" "version output matches release metadata"
+    assert_contains "$out" "freshen 1.13.0 (2026-09-17)" "version output matches release metadata"
 }
 
 test_batch_formula_partial_failure() {

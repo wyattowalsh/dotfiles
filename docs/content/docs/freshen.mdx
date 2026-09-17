@@ -31,7 +31,7 @@ just check-freshen
 | `-S` / `--storage-plan` | classified report only |
 | docker/gem prune | **opt-in** only |
 
-Default cask inventory still uses `--greedy`. Apps whose live version is already newer than Homebrew’s tap version are skipped so a greedy reinstall cannot downgrade them. Equal versions still upgrade.
+Default cask inventory still uses `--greedy`. Apps whose live version is already newer than Homebrew’s tap version are skipped so a greedy reinstall cannot downgrade them. Equal versions still upgrade. Tokens in `~/.config/freshen/skip-casks` or `FRESHEN_SKIP_CASKS` are dropped from cask upgrades (Spotify is pinned; see [Spotify](/docs/spotify)).
 
 ## Progress
 
@@ -56,7 +56,7 @@ A second `freshen` lists the lock holder and offers to replace it (`y` / `--repl
 - Non-interactive mutations require `--yes` (bare `freshen` implies `--yes`).
 - Cask upgrades preflight `sudo` once so the password prompt does not land inside the dashboard.
 - `--dev-prune` uses `gomi` only (no `rm` fallback), skips caches newer than 14 days (`FRESHEN_DEV_PRUNE_MIN_AGE_DAYS`, `0` disables), and skips the live workspace.
-- `--storage-plan` labels surfaces `cache-prune` / `review` / `report-only`. Unique models, app libraries, Kopia, and Docker volumes that exist are do-not-touch. It may probe `docker system df`, `nix store gc --dry-run`, and `kopia repository status` (no password on argv). It does not prune, invoke `mo`, or run files-buddy.
+- `--storage-plan` labels surfaces `cache-prune` / `review` / `report-only`, including named leaves (`~/.cache/uv`, `~/.npm/_npx`, pnpm v11 store, OpenCode cache, system CoreSimulator, iCloud/Drive File Provider). Parent cache rows and File Provider roots are never `du`'d. In-use cache leaves print `in-use / skip` (never `--force`). Unique models, app libraries, Kopia, and Docker volumes that exist are do-not-touch. It may probe `docker system df`, `nix store gc --dry-run`, `kopia repository status` (no password on argv), and `kopia snapshot list --all --json` unless `com.wyattowalsh.kopia-nightly` is running. Unique-cold reclaim stays closed until expected sources have non-zero snapshots; unique models stay report-only even then. Downloads is not a Kopia source. It does not prune, delete simulators, empty `gomi` trash, invoke `mo` (Mole is a separate interactive cleaner), or run files-buddy. Tool claims, allocated deltas, and measured free space can differ; staged trash is not confirmed reclaim.
 
 ## Automation
 

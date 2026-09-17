@@ -1,6 +1,6 @@
 # ~/.zsh/functions/freshen
 #compdef freshen
-# freshen v1.11.0 — System maintenance: brew + caches + App Store + storage planning
+# freshen v1.13.0 — System maintenance: brew + caches + App Store + storage planning
 
 typeset -g _FRESHEN_VERSION _FRESHEN_RELEASE_DATE
 if [[ -z "$_FRESHEN_VERSION" ]]; then
@@ -12,8 +12,8 @@ if [[ -z "$_FRESHEN_VERSION" ]]; then
         fi
         break
     done
-    [[ -n "$_FRESHEN_VERSION" ]] || _FRESHEN_VERSION="1.11.0"
-    [[ -n "$_FRESHEN_RELEASE_DATE" ]] || _FRESHEN_RELEASE_DATE="2026-08-27"
+    [[ -n "$_FRESHEN_VERSION" ]] || _FRESHEN_VERSION="1.13.0"
+    [[ -n "$_FRESHEN_RELEASE_DATE" ]] || _FRESHEN_RELEASE_DATE="2026-09-17"
 fi
 
 # ── Helper: help text ──────────────────────────────────────────────────────
@@ -141,11 +141,17 @@ SAFETY MODEL
     caches newer than FRESHEN_DEV_PRUNE_MIN_AGE_DAYS days (default 14; 0 disables)
     and live-workspace dirs (cwd, ancestors, descendants except when cwd is the
     prune root). Default cask inventory skips live apps already newer than the tap
-    when compare succeeds; if python3 or brew info is unavailable the inventory is kept. Cask upgrades preflight sudo once so password prompts do
+    when compare succeeds; if python3 or brew info is unavailable the inventory is
+    kept. Tokens in ~/.config/freshen/skip-casks or FRESHEN_SKIP_CASKS are never
+    cask-upgraded. Cask upgrades preflight sudo once so password prompts do
     not corrupt progress output. storage-plan labels surfaces cache-prune / review /
-    report-only and may probe docker system df, nix store gc --dry-run, kopia
-    repository status (no password on argv; stdin closed), and Darwin tmutil
-    destinationinfo. It does not upgrade, prune, invoke mo, or run files-buddy.
+    report-only (named leaves: uv, npm npx, pnpm v11 store, OpenCode, CoreSimulator,
+    CloudStorage) and may probe docker system df, nix store gc --dry-run, kopia
+    repository status (no password on argv; stdin closed), kopia snapshot list
+    --all --json for coverage, and Darwin tmutil destinationinfo.
+    Unique-cold reclaim stays closed until expected sources have non-zero
+    snapshots. It does not upgrade, prune, invoke mo, delete simulators, or
+    run files-buddy.
     A private log file is still created under the freshen log directory, and logs
     older than 30 days may be pruned from that directory.
 
@@ -182,6 +188,9 @@ ENVIRONMENT
     FRESHEN_RESIDUAL_MAX               Cap sequential residual retries (0=unlimited)
     FRESHEN_RESIDUAL_INVENTORY_TIMEOUT_SEC  Residual outdated inventory timeout (default: FRESHEN_UPDATE_TIMEOUT_SEC / 300)
     FRESHEN_STATE_DIR                  Override log/lock root (before XDG_STATE_HOME)
+    FRESHEN_SKIP_CASKS                 Comma/space-separated cask tokens to skip (with skip-casks file)
+    FRESHEN_KOPIA_NIGHTLY_RUNNING     1=skip Kopia coverage (nightly running); 0=force probe
+    FRESHEN_TEST_SIMCTL=1              Test harness only (needs FRESHEN_UNDER_TEST): allow simctl probe
     FRESHEN_STORAGE_SCAN_SURFACES=1    Opt into bounded broad storage sizing
     FRESHEN_STORAGE_DU_TIMEOUT_SEC     Per-surface du timeout, default 30s
     FRESHEN_DEV_PRUNE_MAX_DEPTH        Dev-prune search depth, default 5
@@ -392,7 +401,9 @@ freshen() {
     local -a _freshen_helper_fns=(
         _positive_int_env _timeout_sec_env _fmt_dur _human_kb _percent _progress_bar _progress_meter
         _du_kb _is_safe_dev_prune_root _is_safe_dev_prune_target
-        _mtime_epoch _is_live_workspace_dir _run_report_cmd _storage_surface_catalog _print_backup_status
+        _mtime_epoch _is_live_workspace_dir _run_report_cmd _storage_surface_catalog
+        _storage_is_absent_leaf _storage_skip_du _storage_inuse_leaf _storage_path_in_use
+        _kopia_nightly_running _kopia_coverage_complete _print_backup_status
         _collect_dev_prune_candidates _dev_prune_total_kb _print_dev_prune_plan _print_storage_plan
         _phase_icon _phase_color _phase_status_word _now_ms _terminal_width _truncate
         _render_dashboard _render_tick _finish_render _live_enter _live_leave _live_begin
@@ -403,7 +414,7 @@ freshen() {
         _prepare_sudo_for_casks _stop_sudo_keepalive _log_phase _print_prefixed_output
         _emit_phase _phase_attention_detail _set_phase _mark_skipped _warn _err
         _classify_batch_items _run_with_timeout _quit_if_requested _check_quit
-        _note_waiting _add_next_action _brew_outdated_to_file _cask_info_json_to_file _filter_casks_already_newer
+        _note_waiting _add_next_action _brew_outdated_to_file _cask_info_json_to_file _filter_casks_already_newer _filter_casks_pinned
         _residual_prepare _run_residual_upgrades
         _freshen_acquire_lock _freshen_release_lock _freshen_lock_holder_line _freshen_pid_is_shell _freshen_lock_free _freshen_replace_lock_holder _osascript_escape
         __freshen_teardown __freshen_cleanup __freshen_exit
@@ -723,14 +734,131 @@ freshen() {
         print -r -- "report-only	unique-model; do-not-touch	${HOME}/Library/Application Support/LM Studio"
         print -r -- "report-only	unique-model; do-not-touch	${HOME}/.ollama/models"
         print -r -- "cache-prune	hub blobs redownload	${HOME}/.cache/huggingface"
+        print -r -- "cache-prune	uv cache prune; no dry-run; skip if in-use; never --force	${HOME}/.cache/uv"
+        print -r -- "cache-prune	npm npx cache; skip if in-use	${HOME}/.npm/_npx"
+        print -r -- "cache-prune	pnpm store prune; v11 store only; no dry-run	${HOME}/Library/pnpm/store/v11"
+        print -r -- "review	no cache-only native prune; do not uninstall OpenCode	${HOME}/.cache/opencode"
+        print -r -- "report-only	simctl unused runtimes; do-not-delete	/Library/Developer/CoreSimulator"
+        print -r -- "report-only	File Provider; do-not-du; eviction not in freshen	${HOME}/Library/CloudStorage"
         print -r -- "report-only	docker-volumes; do-not-touch	${HOME}/.docker/volumes"
         print -r -- "report-only	kopia; do-not-touch	${HOME}/Library/Application Support/kopia"
         print -r -- "report-only	app-library; do-not-touch	${HOME}/Library/Mail"
         print -r -- "report-only	app-library; do-not-touch	${HOME}/Library/Messages"
     }
 
+    _storage_is_absent_leaf() {
+        case "$1" in
+            "${HOME}/.cache/uv"|"${HOME}/.npm/_npx"|"${HOME}/Library/pnpm/store/v11"|"${HOME}/.cache/opencode"|"${HOME}/Library/CloudStorage"|"/Library/Developer/CoreSimulator")
+                return 0
+                ;;
+        esac
+        return 1
+    }
+
+    _storage_skip_du() {
+        case "$1" in
+            "${HOME}/.cache"|"${HOME}/Library/Caches"|"${HOME}/Library/Developer/CoreSimulator"|"${HOME}/Library/CloudStorage"|"/Library/Developer/CoreSimulator")
+                return 0
+                ;;
+        esac
+        return 1
+    }
+
+    _storage_inuse_leaf() {
+        case "$1" in
+            "${HOME}/.cache/uv"|"${HOME}/.npm/_npx"|"${HOME}/Library/pnpm/store/v11"|"${HOME}/.cache/opencode")
+                return 0
+                ;;
+        esac
+        return 1
+    }
+
+    _storage_path_in_use() {
+        local abs="$1"
+        local ps_out rc=0
+        [[ -n "$abs" ]] || return 0
+        if command -v timeout >/dev/null 2>&1; then
+            ps_out="$(command timeout 2 ps -axo pid=,command= 2>/dev/null)" || rc=$?
+        elif command -v gtimeout >/dev/null 2>&1; then
+            ps_out="$(command gtimeout 2 ps -axo pid=,command= 2>/dev/null)" || rc=$?
+        else
+            ps_out="$(command ps -axo pid=,command= 2>/dev/null)" || rc=$?
+        fi
+        (( rc != 0 )) && return 0
+        [[ "$ps_out" == *"$abs"* ]] && return 0
+        return 1
+    }
+
+    _kopia_nightly_running() {
+        case "${FRESHEN_KOPIA_NIGHTLY_RUNNING:-}" in
+            1|yes|true) return 0 ;;
+            0|no|false) return 1 ;;
+        esac
+        [[ "$(uname -s)" == Darwin ]] || return 1
+        local launch_out=""
+        launch_out="$(command launchctl print "gui/${UID}/com.wyattowalsh.kopia-nightly" 2>/dev/null)" || return 1
+        [[ "$launch_out" == *"state = running"* ]]
+    }
+
+    _kopia_coverage_complete() {
+        local json="$1"
+        local py
+        py="$(command -v python3 2>/dev/null || true)"
+        [[ -n "$py" ]] || return 1
+        "$py" -c '
+import json, os, sys
+home = os.environ.get("HOME", "")
+expected_rel = (
+    "Documents", "Movies", "Music", "Pictures", "Public", "dev", "src",
+    ".bash_profile", ".bashrc", ".codex/memories", ".gitconfig", ".github",
+    ".gitignore", ".zshrc",
+)
+expected = [(rel, os.path.join(home, rel)) for rel in expected_rel]
+raw = sys.stdin.read()
+start = raw.find("[")
+if start < 0:
+    sys.exit(1)
+try:
+    data = json.loads(raw[start:])
+except Exception:
+    sys.exit(1)
+if not isinstance(data, list):
+    sys.exit(1)
+latest = {}
+for snap in data:
+    if not isinstance(snap, dict):
+        continue
+    src = snap.get("source") or {}
+    path = src.get("path") if isinstance(src, dict) else None
+    if not path:
+        continue
+    stats = snap.get("stats") or {}
+    files = stats.get("fileCount") or snap.get("fileCount") or 0
+    size = stats.get("totalSize") or snap.get("totalSize") or 0
+    start_time = snap.get("startTime") or snap.get("start_time") or ""
+    prev = latest.get(path)
+    if prev is None or str(start_time) > str(prev[0]):
+        latest[path] = (start_time, int(files or 0), int(size or 0))
+ok = True
+for rel, exp in expected:
+    match = None
+    for path, meta in latest.items():
+        if path.rstrip("/") == exp.rstrip("/"):
+            if match is None or str(meta[0]) > str(match[0]):
+                match = meta
+    files = match[1] if match else 0
+    size = match[2] if match else 0
+    start_time = match[0] if match else "-"
+    status = "ok" if files > 0 and size > 0 else "incomplete"
+    if status != "ok":
+        ok = False
+    print(f"{rel}\t{start_time}\t{files}\t{size}\t{status}")
+sys.exit(0 if ok else 2)
+' <<<"$json"
+    }
+
     _print_backup_status() {
-        local kopia_state="not installed" tm_state="" rc=0
+        local kopia_state="not installed" tm_state="" rc=0 coverage_rc=1
         print "  ${bold}Backup of record${rst}"
         if command -v kopia >/dev/null 2>&1; then
             rc=0
@@ -750,7 +878,40 @@ freshen() {
             fi
             print "     ${dim}Time Machine:${rst} ${tm_state}"
         fi
-        if [[ "$kopia_state" != "reachable" ]]; then
+        if [[ "$kopia_state" == "reachable" ]]; then
+            print "     ${dim}Downloads:${rst} not covered (0 snapshots; not a nightly source)"
+            if _kopia_nightly_running; then
+                print "     ${dim}Coverage:${rst} nightly running; coverage not probed"
+                print "     ${dim}Unique-cold reclaim:${rst} not recommended until Kopia coverage is complete"
+            else
+                local json=""
+                json="$(_run_report_cmd kopia snapshot list --all --json 2>/dev/null)" || true
+                if [[ -z "$json" ]]; then
+                    print "     ${dim}Coverage:${rst} coverage unknown"
+                    print "     ${dim}Unique-cold reclaim:${rst} not recommended until Kopia coverage is complete"
+                else
+                    local coverage_out=""
+                    coverage_rc=0
+                    coverage_out="$(_kopia_coverage_complete "$json")" || coverage_rc=$?
+                    if (( coverage_rc == 1 )); then
+                        print "     ${dim}Coverage:${rst} coverage unknown"
+                        print "     ${dim}Unique-cold reclaim:${rst} not recommended until Kopia coverage is complete"
+                    else
+                        local line name start_time files size cov_status
+                        print "     ${dim}Coverage:${rst}"
+                        while IFS=$'\t' read -r name start_time files size cov_status; do
+                            [[ -n "$name" ]] || continue
+                            print "        ${name}  files=${files} size=${size}  ${cov_status}  ${start_time}"
+                        done <<< "$coverage_out"
+                        if (( coverage_rc == 0 )); then
+                            print "     ${dim}Unique-cold reclaim:${rst} coverage complete; unique models stay report-only"
+                        else
+                            print "     ${dim}Unique-cold reclaim:${rst} not recommended until Kopia coverage is complete"
+                        fi
+                    fi
+                fi
+            fi
+        else
             print "     ${dim}Unique-cold reclaim:${rst} not recommended until Kopia verify succeeds"
         fi
         print
@@ -892,8 +1053,8 @@ freshen() {
         local root="$1"
         local target_gib="$2"
         local available_kb target_kb gap_kb dev_total_kb restore_pct restore_bar df_root
-        local storage_path size_kb shown=0 limit=24
-        local class hint docker_rc=0
+        local storage_path size_kb shown=0 limit=40
+        local class hint docker_rc=0 inuse_note extra
 
         df_root="$root"
         [[ -d "$df_root" ]] || df_root="$HOME"
@@ -929,19 +1090,37 @@ freshen() {
             print "     ${dim}Skipped broad surface sizing by default; set FRESHEN_STORAGE_SCAN_SURFACES=1 for bounded du probes.${rst}"
         fi
         while IFS=$'\t' read -r class hint storage_path; do
-            [[ -n "$storage_path" && -d "$storage_path" ]] || continue
+            [[ -n "$storage_path" ]] || continue
             (( shown >= limit )) && break
-            if [[ "${FRESHEN_STORAGE_SCAN_SURFACES:-0}" == "1" ]]; then
+            if [[ ! -d "$storage_path" ]]; then
+                if _storage_is_absent_leaf "$storage_path"; then
+                    print "     ${class}  absent  ${storage_path}"
+                    print "        ${dim}restore:${rst} ${hint}"
+                    (( shown++ ))
+                fi
+                continue
+            fi
+            inuse_note=""
+            extra=""
+            if _storage_inuse_leaf "$storage_path" && _storage_path_in_use "$storage_path"; then
+                inuse_note="in-use / skip"
+                extra="  ${inuse_note}"
+            fi
+            if [[ "${FRESHEN_STORAGE_SCAN_SURFACES:-0}" == "1" ]] && ! _storage_skip_du "$storage_path" && [[ -z "$inuse_note" ]]; then
                 size_kb="$(_du_kb "$storage_path" "${FRESHEN_STORAGE_DU_TIMEOUT_SEC:-30}")" || size_kb=""
                 if [[ -n "$size_kb" ]]; then
-                    print "     ${class}  $(_human_kb "$size_kb")  ${storage_path}"
+                    print "     ${class}  $(_human_kb "$size_kb")  ${storage_path}${extra}"
                 else
-                    print "     ${class}  ${storage_path}"
+                    print "     ${class}  ${storage_path}${extra}"
                 fi
             else
-                print "     ${class}  ${storage_path}"
+                print "     ${class}  ${storage_path}${extra}"
             fi
-            print "        ${dim}restore:${rst} ${hint}"
+            if [[ -n "$inuse_note" ]]; then
+                print "        ${dim}restore:${rst} ${hint}; do not prune; never --force"
+            else
+                print "        ${dim}restore:${rst} ${hint}"
+            fi
             (( shown++ ))
         done < <(_storage_surface_catalog)
         if [[ "$root" != "$HOME" && -d "$root" ]]; then
@@ -965,6 +1144,25 @@ freshen() {
             print "  ${bold}Nix store${rst}"
             _run_report_cmd nix store gc --dry-run 2>/dev/null | sed 's/^/     /' || true
             print "     ${dim}Dry-run only; --storage-plan does not garbage-collect.${rst}"
+            print
+        fi
+
+        if [[ "$(uname -s)" == Darwin ]] && { [[ -z "${FRESHEN_UNDER_TEST:-}" ]] || [[ "${FRESHEN_TEST_SIMCTL:-0}" == "1" ]]; }; then
+            print "  ${bold}Simulator runtimes${rst}"
+            if command -v xcrun >/dev/null 2>&1; then
+                local sim_out="" sim_rc=0
+                sim_out="$(_run_report_cmd xcrun simctl runtime list 2>&1)" || sim_rc=$?
+                if (( sim_rc != 0 )) && [[ "$sim_out" == *"license"* || "$sim_out" == *"Agreeing to the Xcode"* ]]; then
+                    print "     ${dim}simctl skipped: Xcode license${rst}"
+                elif (( sim_rc != 0 )); then
+                    print "     ${dim}simctl skipped${rst}"
+                else
+                    print -r -- "$sim_out" | sed 's/^/     /'
+                    print "     ${dim}Report only; --storage-plan does not run simctl runtime delete.${rst}"
+                fi
+            else
+                print "     ${dim}xcrun not installed${rst}"
+            fi
             print
         fi
 
@@ -998,6 +1196,11 @@ freshen() {
         if [[ "$target_gib" == <-> && "$target_gib" -gt 0 && "$gap_kb" -gt 0 ]]; then
             print "     ${ylw}!${rst} Restore is still short by $(_human_kb "$gap_kb"); do not start a large restore yet."
         fi
+        print
+        print "  ${bold}Reclaim notes${rst}"
+        print "     ${dim}Claims:${rst} tool claim ≠ allocated delta ≠ measured free"
+        print "     ${dim}Staged:${rst} gomi trash is not confirmed reclaim until emptied"
+        print "     ${dim}This report:${rst} does not empty trash, delete simulators, invoke mo, or offload Drive"
         print
 
         print "  ${bold}Scan Bounds${rst}"
@@ -1325,6 +1528,38 @@ PY
         fi
         rm -f -- "$info_json" "$decision_file"
         out_casks=("${kept[@]}")
+        return 0
+    }
+
+    # Drop casks listed in FRESHEN_SKIP_CASKS or $XDG_CONFIG_HOME/freshen/skip-casks.
+    _filter_casks_pinned() {
+        _casks_skipped_pinned=()
+        (( ${#out_casks} > 0 )) || return 0
+        local -a skip=() keep=()
+        local file line tok c
+        file="${XDG_CONFIG_HOME:-$HOME/.config}/freshen/skip-casks"
+        if [[ -r "$file" ]]; then
+            while IFS= read -r line || [[ -n "$line" ]]; do
+                line="${line%%#*}"
+                line="${${line##[[:space:]]#}%%[[:space:]]#}"
+                [[ -n "$line" ]] && skip+=("$line")
+            done < "$file"
+        fi
+        if [[ -n "${FRESHEN_SKIP_CASKS:-}" ]]; then
+            for tok in ${=FRESHEN_SKIP_CASKS//,/ }; do
+                [[ -n "$tok" ]] && skip+=("$tok")
+            done
+        fi
+        (( ${#skip} > 0 )) || return 0
+        for c in "${out_casks[@]}"; do
+            if (( ${skip[(Ie)$c]} )); then
+                _casks_skipped_pinned+=("$c")
+                _log_phase casks "SKIP PINNED pkg=${c}"
+            else
+                keep+=("$c")
+            fi
+        done
+        out_casks=("${keep[@]}")
         return 0
     }
 
@@ -2820,7 +3055,7 @@ PY
         }
     fi
 
-    local -a out_formulae=() out_casks=() out_mas=() _casks_skipped_newer=()
+    local -a out_formulae=() out_casks=() out_mas=() _casks_skipped_newer=() _casks_skipped_pinned=()
     local nf=0 nc=0 nm=0
 
     local inventory_degraded=0
@@ -2933,6 +3168,7 @@ PY
     _inventory_tmp=""
 
     (( do_casks )) && _filter_casks_already_newer
+    (( do_casks )) && _filter_casks_pinned
 
     (( formulae_rc != 0 )) && inventory_degraded=1
     (( casks_rc != 0 )) && inventory_degraded=1
@@ -2945,6 +3181,7 @@ PY
     _phase_attempted[inventory]=$_total_planned
     _phase_detail[inventory]="formulae ${nf}, casks ${nc}, apps ${nm}"
     (( ${#_casks_skipped_newer} > 0 )) && _phase_detail[inventory]="${_phase_detail[inventory]}, skipped ${#_casks_skipped_newer} newer"
+    (( ${#_casks_skipped_pinned} > 0 )) && _phase_detail[inventory]="${_phase_detail[inventory]}, skipped ${#_casks_skipped_pinned} pinned"
     _phase_elapsed[inventory]=$t_update
 
     if (( inventory_degraded )); then
@@ -2978,6 +3215,7 @@ PY
         print "     ${dim}Casks:${rst} ${nc}"
         (( nc > 0 )) && print "        ${(j:, :)out_casks}"
         (( ${#_casks_skipped_newer} > 0 )) && print "     ${dim}Skipped (already newer):${rst} ${(j:, :)_casks_skipped_newer}"
+        (( ${#_casks_skipped_pinned} > 0 )) && print "     ${dim}Skipped (pinned):${rst} ${(j:, :)_casks_skipped_pinned}"
         print "     ${dim}App Store:${rst} ${nm}"
         (( nm > 0 )) && print "        ${(j:, :)out_mas}"
         print

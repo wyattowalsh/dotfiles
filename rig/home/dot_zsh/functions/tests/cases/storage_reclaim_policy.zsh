@@ -138,11 +138,12 @@ test_storage_plan_kopia_status_fail_is_verify_unknown() {
     assert_contains "$out" "not recommended until Kopia verify succeeds" "failed Kopia does not recommend unique-cold reclaim"
 }
 
-test_storage_plan_kopia_reachable_omits_unique_cold_block() {
+test_storage_plan_kopia_reachable_keeps_unique_cold_until_coverage() {
     setup_env storage-plan-kopia-ok
     command rm -f "${TEST_BIN}/brew"
     write_tool_stub kopia
     export STUB_RC_KOPIA=0
+    export FRESHEN_KOPIA_NIGHTLY_RUNNING=0
     local empty_root="${TEST_ROOT}/empty-dev"
     mkdir -p "$empty_root"
     local out="${TEST_ROOT}/storage-plan-kopia-ok.out"
@@ -150,7 +151,12 @@ test_storage_plan_kopia_reachable_omits_unique_cold_block() {
     run_freshen "$out" --storage-plan --dev-prune-root="$empty_root" --no-color
     assert_status 0 $? "reachable Kopia still leaves storage-plan at 0"
     assert_contains "$out" "Kopia: reachable" "reachable Kopia is reported"
-    assert_not_contains "$out" "not recommended until Kopia verify succeeds" "reachable Kopia omits unique-cold block"
+    assert_contains "$out" "Downloads" "reachable Kopia reports Downloads uncovered"
+    assert_contains "$out" "not covered" "Downloads not covered wording is present"
+    assert_contains "$out" "not recommended until Kopia coverage is complete" "reachable Kopia without snapshots keeps unique-cold closed"
+    assert_contains "$TRACE_FILE" "kopia snapshot list --all --json" "coverage probe uses snapshot list json"
+    assert_not_contains "$TRACE_FILE" "kopia snapshot verify" "storage-plan does not run snapshot verify"
+    assert_not_contains "$TRACE_FILE" "kopia maintenance" "storage-plan does not run kopia maintenance"
 }
 
 test_storage_plan_mentions_mo_not_invoked() {
@@ -218,4 +224,177 @@ test_dev_prune_caps_huge_min_age_days() {
     run_freshen "$out" --clean-only --yes --no-cleanup --dev-prune --dev-prune-root="$project_root" --progress=plain --no-color
     assert_status 0 $? "huge MIN_AGE_DAYS still exits cleanly"
     assert_not_contains "$TRACE_FILE" "gomi -- ${modules_dir}" "overflow min-age does not disable the age skip"
+}
+
+_kopia_snapshot_json() {
+    local home="$1" music_files="${2:-10}" py
+    py="${TEST_PYTHON3:-}"
+    [[ -n "$py" ]] || py="$(command -v python3 2>/dev/null || true)"
+    [[ -n "$py" ]] || return 1
+    "$py" -c '
+import json, os, sys
+home = sys.argv[1]
+music_files = int(sys.argv[2])
+names = ("Documents", "Movies", "Music", "Pictures", "Public", "dev", "src",
+         ".bash_profile", ".bashrc", ".codex/memories", ".gitconfig", ".github",
+         ".gitignore", ".zshrc")
+snaps = []
+for name in names:
+    files = music_files if name == "Music" else 10
+    size = 0 if files == 0 else 100
+    snaps.append({
+        "id": name,
+        "source": {"path": os.path.join(home, name)},
+        "startTime": "2026-09-01T00:00:00Z",
+        "stats": {"fileCount": files, "totalSize": size},
+    })
+print(json.dumps(snaps))
+' "$home" "$music_files"
+}
+
+test_storage_plan_named_leaves_and_absent() {
+    setup_env storage-plan-leaves
+    command rm -f "${TEST_BIN}/brew"
+    local empty_root="${TEST_ROOT}/empty-dev"
+    mkdir -p "$empty_root" "${TEST_HOME}/.cache/uv" "${TEST_HOME}/Library/pnpm/store/v11" "${TEST_HOME}/.cache/opencode"
+    local out="${TEST_ROOT}/storage-plan-leaves.out"
+
+    run_freshen "$out" --storage-plan --dev-prune-root="$empty_root" --no-color
+    assert_status 0 $? "named leaves still leave storage-plan at 0"
+    assert_contains "$out" "cache-prune  ${TEST_HOME}/.cache/uv" "uv cache is a cache-prune leaf"
+    assert_contains "$out" "cache-prune  ${TEST_HOME}/Library/pnpm/store/v11" "pnpm v11 store is a cache-prune leaf"
+    assert_contains "$out" "review  ${TEST_HOME}/.cache/opencode" "OpenCode cache is review"
+    assert_contains "$out" "absent  ${TEST_HOME}/.npm/_npx" "missing npx leaf is absent"
+    assert_contains "$out" "absent  ${TEST_HOME}/Library/CloudStorage" "missing CloudStorage leaf is absent"
+    assert_not_contains "$out" "opencode uninstall" "OpenCode row does not recommend uninstall"
+}
+
+test_storage_plan_parent_and_cloudstorage_never_du() {
+    setup_env storage-plan-no-du
+    command rm -f "${TEST_BIN}/brew"
+    write_tool_stub du
+    export FRESHEN_STORAGE_SCAN_SURFACES=1
+    local empty_root="${TEST_ROOT}/empty-dev"
+    mkdir -p "$empty_root" \
+        "${TEST_HOME}/.cache/uv" \
+        "${TEST_HOME}/.cache" \
+        "${TEST_HOME}/Library/Caches" \
+        "${TEST_HOME}/Library/CloudStorage"
+    local out="${TEST_ROOT}/storage-plan-no-du.out"
+
+    run_freshen "$out" --storage-plan --dev-prune-root="$empty_root" --no-color
+    assert_status 0 $? "sized storage-plan still exits 0"
+    assert_contains "$TRACE_FILE" "du -sk -- ${TEST_HOME}/.cache/uv" "leaf uv cache may be sized"
+    if grep -Fxq -- "du -sk -- ${TEST_HOME}/.cache" "$TRACE_FILE"; then
+        fail "parent .cache is not du'd"
+    else
+        pass "parent .cache is not du'd"
+    fi
+    assert_not_contains "$TRACE_FILE" "du -sk -- ${TEST_HOME}/Library/Caches" "parent Library/Caches is not du'd"
+    assert_not_contains "$TRACE_FILE" "du -sk -- ${TEST_HOME}/Library/CloudStorage" "CloudStorage is not du'd"
+}
+
+test_storage_plan_inuse_skip_and_fail_closed() {
+    setup_env storage-plan-inuse
+    command rm -f "${TEST_BIN}/brew"
+    mkdir -p "${TEST_HOME}/.cache/uv"
+    local empty_root="${TEST_ROOT}/empty-dev"
+    mkdir -p "$empty_root"
+    write_tool_stub ps
+    export STUB_STDOUT_PS="123 /usr/bin/python ${TEST_HOME}/.cache/uv/foo"
+    local out="${TEST_ROOT}/storage-plan-inuse.out"
+
+    run_freshen "$out" --storage-plan --dev-prune-root="$empty_root" --no-color
+    assert_status 0 $? "in-use skip still exits 0"
+    assert_contains "$out" "in-use / skip" "uv row is in-use / skip when ps matches the prefix"
+    assert_contains "$out" "never --force" "in-use row does not recommend --force"
+
+    setup_env storage-plan-ps-fail
+    command rm -f "${TEST_BIN}/brew"
+    mkdir -p "${TEST_HOME}/.cache/uv" "${TEST_ROOT}/empty-dev"
+    write_tool_stub ps
+    export STUB_RC_PS=1
+    out="${TEST_ROOT}/storage-plan-ps-fail.out"
+    run_freshen "$out" --storage-plan --dev-prune-root="${TEST_ROOT}/empty-dev" --no-color
+    assert_status 0 $? "ps failure still exits 0"
+    assert_contains "$out" "in-use / skip" "ps failure is fail-closed in-use"
+}
+
+test_storage_plan_kopia_zero_music_and_nightly_skip() {
+    setup_env storage-plan-kopia-music-zero
+    command rm -f "${TEST_BIN}/brew"
+    write_tool_stub kopia
+    export STUB_RC_KOPIA=0
+    export FRESHEN_KOPIA_NIGHTLY_RUNNING=0
+    [[ -n "$TEST_PYTHON3" ]] && ln -sf "$TEST_PYTHON3" "${TEST_BIN}/python3"
+    export STUB_STDOUT_KOPIA="$(_kopia_snapshot_json "$TEST_HOME" 0)"
+    local empty_root="${TEST_ROOT}/empty-dev"
+    mkdir -p "$empty_root"
+    local out="${TEST_ROOT}/storage-plan-kopia-music-zero.out"
+
+    run_freshen "$out" --storage-plan --dev-prune-root="$empty_root" --no-color
+    assert_status 0 $? "zero Music snapshot still exits 0"
+    assert_contains "$out" "Music" "Music coverage row is printed"
+    assert_contains "$out" "incomplete" "zero Music snapshot is incomplete"
+    assert_contains "$out" "not recommended until Kopia coverage is complete" "zero Music keeps unique-cold closed"
+
+    setup_env storage-plan-kopia-nightly
+    command rm -f "${TEST_BIN}/brew"
+    write_tool_stub kopia
+    export STUB_RC_KOPIA=0
+    export FRESHEN_KOPIA_NIGHTLY_RUNNING=1
+    empty_root="${TEST_ROOT}/empty-dev"
+    mkdir -p "$empty_root"
+    out="${TEST_ROOT}/storage-plan-kopia-nightly.out"
+    run_freshen "$out" --storage-plan --dev-prune-root="$empty_root" --no-color
+    assert_status 0 $? "nightly skip still exits 0"
+    assert_contains "$out" "nightly running; coverage not probed" "nightly overlap skips coverage"
+    assert_contains "$out" "not recommended until Kopia coverage is complete" "nightly skip keeps unique-cold closed"
+    assert_not_contains "$TRACE_FILE" "kopia snapshot list" "nightly skip does not list snapshots"
+}
+
+test_storage_plan_kopia_complete_coverage_omits_unique_cold() {
+    setup_env storage-plan-kopia-complete
+    command rm -f "${TEST_BIN}/brew"
+    write_tool_stub kopia
+    export STUB_RC_KOPIA=0
+    export FRESHEN_KOPIA_NIGHTLY_RUNNING=0
+    [[ -n "$TEST_PYTHON3" ]] && ln -sf "$TEST_PYTHON3" "${TEST_BIN}/python3"
+    export STUB_STDOUT_KOPIA="$(_kopia_snapshot_json "$TEST_HOME" 10)"
+    local empty_root="${TEST_ROOT}/empty-dev"
+    mkdir -p "$empty_root"
+    local out="${TEST_ROOT}/storage-plan-kopia-complete.out"
+
+    run_freshen "$out" --storage-plan --dev-prune-root="$empty_root" --no-color
+    assert_status 0 $? "complete coverage still exits 0"
+    assert_contains "$out" "Kopia: reachable" "complete coverage still reports reachable"
+    assert_not_contains "$out" "not recommended until Kopia coverage is complete" "complete coverage omits unique-cold block"
+    assert_not_contains "$out" "not recommended until Kopia verify succeeds" "complete coverage omits verify-unknown unique-cold block"
+}
+
+test_storage_plan_footer_and_simctl_license() {
+    setup_env storage-plan-footer
+    command rm -f "${TEST_BIN}/brew"
+    local empty_root="${TEST_ROOT}/empty-dev"
+    mkdir -p "$empty_root"
+    local out="${TEST_ROOT}/storage-plan-footer.out"
+
+    run_freshen "$out" --storage-plan --dev-prune-root="$empty_root" --no-color
+    assert_status 0 $? "footer still leaves storage-plan at 0"
+    assert_contains "$out" "Reclaim notes" "footer section is present"
+    assert_contains "$out" "gomi trash is not confirmed reclaim until emptied" "footer states staged trash is not confirmed"
+    assert_contains "$out" "invoke mo" "footer states mo is not invoked"
+
+    setup_env storage-plan-simctl-license
+    command rm -f "${TEST_BIN}/brew"
+    write_tool_stub xcrun
+    export STUB_RC_XCRUN=1
+    export STUB_STDERR_XCRUN="You have not agreed to the Xcode license agreements"
+    export FRESHEN_TEST_SIMCTL=1
+    mkdir -p "${TEST_ROOT}/empty-dev"
+    out="${TEST_ROOT}/storage-plan-simctl.out"
+    run_freshen "$out" --storage-plan --dev-prune-root="${TEST_ROOT}/empty-dev" --no-color
+    assert_status 0 $? "simctl license skip is non-fatal"
+    assert_contains "$out" "simctl skipped: Xcode license" "Xcode license skip is reported"
+    assert_not_contains "$TRACE_FILE" "simctl runtime delete" "storage-plan does not delete runtimes"
 }

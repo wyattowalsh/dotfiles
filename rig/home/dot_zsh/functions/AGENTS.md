@@ -24,6 +24,7 @@ Version SSOT: `rig/home/dot_zsh/functions/freshen.VERSION` (run `./checks/freshe
 ## Safety invariants
 
 - Skip a cask whose live `CFBundleShortVersionString` is already newer than the tap version when compare succeeds; if python3 or brew info is unavailable, keep the inventory (do not silent-skip)
+- Skip cask tokens listed in `FRESHEN_SKIP_CASKS` (comma/space) or `$XDG_CONFIG_HOME/freshen/skip-casks` (Chezmoi: `private_dot_config/freshen/skip-casks`) so greedy upgrades cannot overwrite version pins
 - `--dry-run` must not mutate Homebrew, mas, caches, or dev-prune targets
 - `--clean-only --dry-run` skips upgrade inventory and all mutations
 - Noninteractive mutations require `--yes`
@@ -34,8 +35,8 @@ Version SSOT: `rig/home/dot_zsh/functions/freshen.VERSION` (run `./checks/freshe
 - Busy lock lists the holder and offers replace (`--replace` / TTY); never SIGKILL a login shell
 - Dev-prune must never fall back to `rm` and must refuse broad roots
 - Dev-prune skips caches newer than `FRESHEN_DEV_PRUNE_MIN_AGE_DAYS` (default 14; `0` disables) and live-workspace dirs (cwd / ancestor / descendant, except when cwd equals the prune root)
-- `--storage-plan` is classified report-only (`cache-prune` / `review` / `report-only`); it may probe `docker system df`, `nix store gc --dry-run`, `kopia repository status` (stdin closed; `FRESHEN_BACKUP_STATUS_TIMEOUT_SEC`), and Darwin `tmutil destinationinfo`. It must not prune, invoke `mo`, run files-buddy, or pass a Kopia password on argv. It still writes a private log.
-- Unique-model, app-library, Kopia, and docker-volume paths that exist are report-only / do-not-touch; unique-cold reclaim is not recommended while Kopia is missing or verify-unknown
+- `--storage-plan` is classified report-only (`cache-prune` / `review` / `report-only`); it may probe `docker system df`, `nix store gc --dry-run`, `kopia repository status` (stdin closed; `FRESHEN_BACKUP_STATUS_TIMEOUT_SEC`), `kopia snapshot list --all --json` unless `com.wyattowalsh.kopia-nightly` is running, and Darwin `tmutil destinationinfo`. Named leaves (uv, npm `_npx`, pnpm v11 store, OpenCode, CloudStorage, system CoreSimulator) print `absent` when missing. Parent `.cache` / `Library/Caches` / user CoreSimulator and CloudStorage / system CoreSimulator are never passed to `du`. In-use cache leaves skip `du` and never `--force`. It must not prune, invoke `mo`, run files-buddy, delete simulators, or pass a Kopia password on argv. It still writes a private log. Footer: claimed ≠ measured.
+- Unique-model, app-library, Kopia, and docker-volume paths that exist are report-only / do-not-touch; unique-cold reclaim stays closed until expected nightly sources have non-zero `fileCount` and `totalSize`, and unique models stay report-only even then; Downloads is never covered
 - Interrupts return 130; clean up child processes and temp files
 - Nested helpers must be listed in `_freshen_helper_fns` and unfunctioned on EXIT (no interactive-shell leak)
 - Instance lock under the log dir; second concurrent freshen fails; stale PID is reclaimed
