@@ -1,11 +1,11 @@
 "use strict";
 
-// Node-testable schema v4 validate/migrate. Keep rules in sync with main.js.
+// Node-testable schema v5 validate/migrate. Keep rules in sync with main.js.
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 const DEFAULTS = {
-  schemaVersion     : 4,
+  schemaVersion     : 5,
   cursorCentric     : true,
   showOSD           : true,
   resetOnFile       : true,
@@ -18,6 +18,9 @@ const DEFAULTS = {
   maxZoomPercent    : 1000,
   detentPercent     : 105,
   panStep           : 0.1,
+  zoomPreset1       : 100,
+  zoomPreset2       : 200,
+  zoomPreset3       : 400,
   mkvSubtitleCompat : false,
   hintVersion       : 0,
 };
@@ -39,6 +42,9 @@ const NUMBER_SPECS = {
   maxZoomPercent    : { min: 100,   max: 1000, integer: true,  fallback: 1000 },
   detentPercent     : { min: 100,   max: 1000, integer: true,  fallback: 105 },
   panStep           : { min: 0.025, max: 0.5,  integer: false, fallback: 0.1 },
+  zoomPreset1       : { min: 100,   max: 1000, integer: true,  fallback: 100 },
+  zoomPreset2       : { min: 100,   max: 1000, integer: true,  fallback: 200 },
+  zoomPreset3       : { min: 100,   max: 1000, integer: true,  fallback: 400 },
   hintVersion       : { min: 0,     max: 1000, integer: true,  fallback: 0 },
 };
 
@@ -101,7 +107,8 @@ function migrateLegacy(raw) {
     }
   });
 
-  ["scrollSensitivity", "discreteStep", "keyboardStep", "panStep", "detentPercent"].forEach((key) => {
+  ["scrollSensitivity", "discreteStep", "keyboardStep", "panStep", "detentPercent",
+   "zoomPreset1", "zoomPreset2", "zoomPreset3"].forEach((key) => {
     const value = Number(source[key]);
     if (Number.isFinite(value)) {
       next[key] = value;
@@ -139,10 +146,6 @@ function migrateLegacy(raw) {
   return next;
 }
 
-function hasLegacyLogZoom(raw) {
-  return typeof raw.minZoom === "number" || typeof raw.maxZoom === "number";
-}
-
 function migrate(raw) {
   if (!raw || typeof raw !== "object") {
     return { settings: cloneDefaults(), persist: true, reason: "empty" };
@@ -151,7 +154,7 @@ function migrate(raw) {
   if (Number.isFinite(version) && version > SCHEMA_VERSION) {
     return { settings: cloneDefaults(), persist: false, reason: "future" };
   }
-  if (version === SCHEMA_VERSION && !hasLegacyLogZoom(raw)) {
+  if (version === SCHEMA_VERSION) {
     return { settings: validate(raw), persist: false, reason: "current" };
   }
   return { settings: validate(migrateLegacy(raw)), persist: true, reason: "legacy" };
@@ -166,5 +169,4 @@ module.exports = {
   validate,
   migrateLegacy,
   migrate,
-  hasLegacyLogZoom,
 };

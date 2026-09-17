@@ -1,5 +1,9 @@
-{ ... }:
+{ config, ... }:
 
+let
+  primaryUser = config.system.primaryUser;
+  primaryHome = config.users.users.${primaryUser}.home;
+in
 {
   system.defaults = {
     NSGlobalDomain = {
@@ -51,8 +55,13 @@
       };
       "com.colliderli.iina" = {
         currentInputConfigName = "IINA-QoL";
-        horizontalScrollAction = 1;
-        verticalScrollAction = 4;
+        # 3 = passToMpv so WHEEL_* pan bindings in IINA-QoL.conf run.
+        # (1 = seek, 4 = playbackSpeed — those fight Cmd+scroll zoom / pan.)
+        horizontalScrollAction = 3;
+        verticalScrollAction = 3;
+        # 0 = none. Hammerspoon posts a middle-click poke before zoom F-keys;
+        # IINA 4 = togglePIP (live 1.5.0-beta1 default-was-none, this Mac was 4).
+        middleClickAction = 0;
         playbackSpeedScrollAmount = 3;
         screenshotSaveToFile = true;
         screenshotCopyToClipboard = true;
@@ -61,6 +70,14 @@
         screenShotFormat = 0;
         useMediaKeys = true;
         enableAdvancedSettings = true;
+        fullScreenWhenOpen = false;
+        audioDriverEnableAVFoundation = true;
+        enableThumbnailPreview = true;
+        enableThumbnailForRemoteFiles = true;
+        thumbnailWidth = 480;
+        maxThumbnailPreviewCacheSize = 1024;
+        useUserDefinedConfDir = true;
+        userDefinedConfDir = "${primaryHome}/.config/iina-mpv";
       };
     };
   };

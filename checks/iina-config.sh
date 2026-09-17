@@ -8,6 +8,11 @@ HS_DIR="$HOME_ROOT/dot_hammerspoon"
 IINA_SUPPORT="$HOME_ROOT/Library/Application Support/com.colliderli.iina"
 PLUGIN="$IINA_SUPPORT/plugins/IINA-QoL.iinaplugin"
 CONF="$IINA_SUPPORT/input_conf/IINA-QoL.conf"
+MPV_CONFIG="$HOME_ROOT/private_dot_config/iina-mpv/mpv.conf"
+SHADER_PIN="$HOME_ROOT/private_dot_config/iina-mpv/shaders-pin.json"
+OFFICIAL_PLUGIN_PIN="$IINA_SUPPORT/official-plugins-pin.json"
+SHADER_INSTALLER="$ROOT/checks/iina-shaders.sh"
+PLUGIN_INSTALLER="$ROOT/checks/iina-plugins.sh"
 ZOOM_PY="$ROOT/checks/iina_zoom.py"
 INFO_JSON="$PLUGIN/Info.json"
 
@@ -32,6 +37,11 @@ require_chezmoiignore() {
   require_file "$ignore" || return 0
   local needle
   for needle in \
+    '.hammerspoon/AGENTS.md' \
+    '.config/iina-mpv/AGENTS.md' \
+    '.config/iina-mpv/shaders' \
+    'Library/Application Support/com.colliderli.iina/official-plugins-pin.json' \
+    'Library/Application Support/com.colliderli.iina/plugins/IINA-QoL.iinaplugin/AGENTS.md' \
     'Library/Application Support/com.colliderli.iina/plugins/.data' \
     'Library/Application Support/com.colliderli.iina/plugins/.preferences' \
     'Library/Application Support/com.colliderli.iina/history.plist' \
@@ -130,7 +140,18 @@ require_conf_needles() {
     fail_msg 'IINA-QoL.conf must contain seek 10'
   fi
   local needle
-  for needle in 'relative+exact' 'relative+keyframes' 'screenshot video' 'ab-loop'; do
+  for needle in \
+    'relative+exact' \
+    'relative+keyframes' \
+    'screenshot video' \
+    'ab-loop' \
+    'show-text' \
+    'playlist-shuffle' \
+    'WHEEL_UP' \
+    'video-pan-y' \
+    'change-list glsl-shaders clr' \
+    'FSRCNNX_x2_16-0-4-1.glsl' \
+    'Anime4K_Restore_CNN_M.glsl'; do
     if ! rg -F -q "$needle" "$CONF"; then
       fail_msg "IINA-QoL.conf must contain ${needle}"
     fi
@@ -158,6 +179,60 @@ require_conf_needles() {
   fi
 }
 
+require_shader_contract() {
+  if [[ ! -f "$CONF" || ! -f "$SHADER_PIN" ]]; then
+    return 0
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    fail_msg 'python3 required for IINA shader binding/pin contract'
+    return 0
+  fi
+  if ! python3 - "$CONF" "$SHADER_PIN" <<'PY'
+import json
+import re
+import sys
+from pathlib import Path
+
+conf = Path(sys.argv[1]).read_text()
+pin = json.load(open(sys.argv[2]))
+pinned = set()
+for source in pin.get("sources", []):
+    entries = source.get("files", []) if source.get("id") == "anime4k" else source.get("assets", [])
+    pinned.update(entry.get("name") for entry in entries if isinstance(entry, dict))
+referenced = set(re.findall(r"~~/shaders/([A-Za-z0-9_.-]+\.glsl)", conf))
+errors = []
+if not referenced:
+    errors.append("input profile references no shaders")
+missing = sorted(referenced - pinned)
+unused = sorted(pinned - referenced)
+if missing:
+    errors.append("un-pinned shader references: " + ", ".join(missing))
+if unused:
+    errors.append("pinned shaders unused by input profile: " + ", ".join(unused))
+if errors:
+    print("; ".join(errors), file=sys.stderr)
+    raise SystemExit(1)
+PY
+  then
+    fail_msg 'IINA shader binding/pin contract failed'
+  fi
+}
+
+require_pin_previews() {
+  if [[ -x "$SHADER_INSTALLER" && -f "$SHADER_PIN" ]]; then
+    if ! IINA_SHADERS_PIN="$SHADER_PIN" IINA_SHADERS_DEST_ROOT="$HOME_ROOT/private_dot_config/iina-mpv/.check-dest" \
+      "$SHADER_INSTALLER" preview >/dev/null; then
+      fail_msg 'IINA shader pin/installer preview failed'
+    fi
+  fi
+  if [[ -x "$PLUGIN_INSTALLER" && -f "$OFFICIAL_PLUGIN_PIN" ]]; then
+    if ! IINA_PLUGINS_PIN="$OFFICIAL_PLUGIN_PIN" IINA_PLUGINS_DEST="$IINA_SUPPORT/.check-plugins" \
+      "$PLUGIN_INSTALLER" preview >/dev/null; then
+      fail_msg 'IINA official-plugin pin/installer preview failed'
+    fi
+  fi
+}
+
 require_hs_contracts() {
   if [[ "${#hs_lua_files[@]}" -eq 0 ]]; then
     fail_msg 'Hammerspoon lua files are missing'
@@ -168,8 +243,20 @@ require_hs_contracts() {
     fail_msg 'Hammerspoon sources must default tap on (DEFAULT_TAP_ENABLED / tapEnabled = true)'
   fi
 
-  if ! rg -q -i -e 'cmd[+[:space:]_-]*shift' -e 'shift[+[:space:]_-]*cmd' -e 'command[+[:space:]_-]*shift' "${hs_lua_files[@]}"; then
-    fail_msg 'Hammerspoon sources must require cmd+shift (must not consume unmodified scroll)'
+  if ! rg -q 'isZoomChord' "${hs_lua_files[@]}"; then
+    fail_msg 'Hammerspoon sources must gate zoom on isZoomChord (Command required, never unmodified scroll)'
+  fi
+  if ! rg -q 'checkKeyboardModifiers' "${hs_lua_files[@]}"; then
+    fail_msg 'Hammerspoon sources must merge checkKeyboardModifiers into the zoom chord (scroll NSEvents omit cmd)'
+  fi
+  if ! rg -q 'emitPan' "${hs_lua_files[@]}"; then
+    fail_msg 'Hammerspoon sources must pan on unmodified scroll over IINA (emitPan)'
+  fi
+  if ! rg -q 'allWindows' "${hs_lua_files[@]}"; then
+    fail_msg 'Hammerspoon window lookup must fall back to IINA allWindows (orderedWindows misses PiP)'
+  fi
+  if ! rg -q -i 'shift optional' "${hs_lua_files[@]}"; then
+    fail_msg 'Hammerspoon sources must document the Shift-optional zoom chord'
   fi
 
   if ! rg -q 'pokePointer' "${hs_lua_files[@]}"; then
@@ -177,6 +264,27 @@ require_hs_contracts() {
   fi
   if ! rg -q 'otherMouseDown' "${hs_lua_files[@]}"; then
     fail_msg 'Hammerspoon sources must post otherMouseDown as the pointer poke'
+  fi
+  if ! rg -q 'togglePIP' "${hs_lua_files[@]}"; then
+    fail_msg 'Hammerspoon sources must document that IINA middleClickAction 4 is togglePIP'
+  fi
+}
+
+require_middle_click_none() {
+  local qol="$ROOT/checks/iina-qol.sh"
+  local nix="$ROOT/rig/darwin/modules/macos-defaults.nix"
+  require_file "$qol" || return 0
+  if ! rg -F -q 'middleClickAction\tint\t0' "$qol"; then
+    fail_msg 'iina-qol DEFAULT_SPECS must pin middleClickAction 0 (none); 4 is togglePIP'
+  fi
+  if ! rg -F -q 'verticalScrollAction\tint\t3' "$qol"; then
+    fail_msg 'iina-qol DEFAULT_SPECS must pin verticalScrollAction 3 (passToMpv) so wheel pan bindings run'
+  fi
+  if ! rg -F -q 'horizontalScrollAction\tint\t3' "$qol"; then
+    fail_msg 'iina-qol DEFAULT_SPECS must pin horizontalScrollAction 3 (passToMpv) so wheel pan bindings run'
+  fi
+  if [[ -f "$nix" ]] && ! rg -q 'middleClickAction = 0;' "$nix"; then
+    fail_msg 'macos-defaults.nix must pin middleClickAction = 0 (none)'
   fi
 }
 
@@ -189,6 +297,21 @@ require_plugin_pointer_contract() {
   fi
   if ! rg -q 'keysCarryDirectionOnly' "$PLUGIN/main.js"; then
     fail_msg 'plugin main.js must treat F17–F20 as keysCarryDirectionOnly'
+  fi
+  if ! rg -q 'applyZoomPreset' "$PLUGIN/main.js"; then
+    fail_msg 'plugin main.js must expose applyZoomPreset (cursor-anchored zoom presets)'
+  fi
+  if ! rg -q 'rotateStep' "$PLUGIN/main.js"; then
+    fail_msg 'plugin main.js must expose rotateStep (video-rotate cycle)'
+  fi
+  if ! rg -F -q 'mpv.command("set", ["video-rotate"' "$PLUGIN/main.js"; then
+    fail_msg 'plugin rotation must use the supported mpv command API'
+  fi
+  if ! rg -q 'addSubMenuItem' "$PLUGIN/main.js"; then
+    fail_msg 'plugin controls must use a submenu (IINA first-level item limit)'
+  fi
+  if rg -q 'LEGACY_KEYS|preferences\.get\("minZoom"\)|preferences\.get\("maxZoom"\)' "$PLUGIN/main.js"; then
+    fail_msg 'plugin must not probe undefined legacy preference keys at runtime'
   fi
 }
 
@@ -210,8 +333,15 @@ run_node_checks() {
       fail_msg 'node require lib/zoom.js hover/detent smoke failed'
     fi
   fi
-  if [[ -f "$PLUGIN/lib/settings.js" ]] && ! node --check "$PLUGIN/lib/settings.js"; then
-    fail_msg 'node --check failed for lib/settings.js'
+  if [[ -f "$PLUGIN/lib/settings.js" ]]; then
+    if ! node --check "$PLUGIN/lib/settings.js"; then
+      fail_msg 'node --check failed for lib/settings.js'
+    elif ! (
+      cd "$PLUGIN"
+      node -e "const s=require('./lib/settings.js'); const m=s.migrate({schemaVersion:4}); if (m.settings.schemaVersion!==5) process.exit(2); if (m.settings.zoomPreset1!==100||m.settings.zoomPreset2!==200||m.settings.zoomPreset3!==400) process.exit(3); if (m.persist!==true) process.exit(4); const v=s.validate({zoomPreset2:5000}); if (v.zoomPreset2!==1000) process.exit(5); const f=s.migrate({schemaVersion:9}); if (f.reason!=='future'||f.persist!==false) process.exit(6);"
+    ); then
+      fail_msg 'node require lib/settings.js schema v5 preset migration smoke failed'
+    fi
   fi
 }
 
@@ -252,6 +382,11 @@ require_file "$PLUGIN/main.js" || true
 require_file "$PLUGIN/lib/zoom.js" || true
 require_file "$PLUGIN/lib/settings.js" || true
 require_file "$CONF" || true
+require_file "$MPV_CONFIG" || true
+require_file "$SHADER_PIN" || true
+require_file "$OFFICIAL_PLUGIN_PIN" || true
+require_file "$SHADER_INSTALLER" || true
+require_file "$PLUGIN_INSTALLER" || true
 require_hs_layout
 collect_hs_lua
 
@@ -266,11 +401,14 @@ fi
 if [[ -f "$CONF" ]]; then
   require_conf_needles
 fi
+require_shader_contract
+require_pin_previews
 
 if [[ -d "$HS_DIR" ]]; then
   require_hs_contracts
   run_luac_checks
 fi
+require_middle_click_none
 require_plugin_pointer_contract
 
 run_node_checks

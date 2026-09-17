@@ -16,7 +16,24 @@ local function containsPoint(frame, point)
      and y < (frame.y + frame.h)
 end
 
+local function matchIinaWindow(win, point)
+  if not win or win:isMinimized() then
+    return nil
+  end
+  local app = win:application()
+  if not app or app:bundleID() ~= M.BUNDLE_ID then
+    return nil
+  end
+  if point and not containsPoint(win:frame(), point) then
+    return nil
+  end
+  return win, app
+end
+
 --- Topmost visible IINA window whose frame contains the pointer.
+--- Falls back to IINA's own window list (PiP / non-standard AX windows are
+--- often missing from hs.window.orderedWindows) and then the focused IINA
+--- window when the pointer is still inside it.
 --- Returns `win, app` or nil.
 function M.playerUnderPointer(point)
   point = point or hs.mouse.absolutePosition()
@@ -25,14 +42,24 @@ function M.playerUnderPointer(point)
   end
   local ordered = hs.window.orderedWindows()
   for i = 1, #ordered do
-    local win = ordered[i]
-    if win and not win:isMinimized() then
-      local app = win:application()
-      if app and app:bundleID() == M.BUNDLE_ID then
-        if containsPoint(win:frame(), point) then
-          return win, app
-        end
+    local win, app = matchIinaWindow(ordered[i], point)
+    if win then
+      return win, app
+    end
+  end
+  local app = hs.application.get(M.BUNDLE_ID)
+  if app then
+    local wins = app:allWindows() or {}
+    for i = 1, #wins do
+      local win = matchIinaWindow(wins[i], point)
+      if win then
+        return win, app
       end
+    end
+    local focused = app:focusedWindow() or app:mainWindow()
+    local win = matchIinaWindow(focused, point)
+    if win then
+      return win, app
     end
   end
   return nil

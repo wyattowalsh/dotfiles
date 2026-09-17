@@ -9,12 +9,19 @@ HS_SRC="$HOME_ROOT/dot_hammerspoon"
 IINA_SRC="$HOME_ROOT/Library/Application Support/com.colliderli.iina"
 PLUGIN_SRC="$IINA_SRC/plugins/IINA-QoL.iinaplugin"
 CONF_SRC="$IINA_SRC/input_conf/IINA-QoL.conf"
+MPV_CONFIG_SRC="$HOME_ROOT/private_dot_config/iina-mpv/mpv.conf"
+SHADER_PIN_SRC="$HOME_ROOT/private_dot_config/iina-mpv/shaders-pin.json"
 NIX_DEFAULTS="$REPO/rig/darwin/modules/macos-defaults.nix"
 
 HS_DEST="${IINA_QOL_HAMMERSPOON_DEST:-$HOME/.hammerspoon}"
 IINA_DEST="${IINA_QOL_IINA_DEST:-$HOME/Library/Application Support/com.colliderli.iina}"
+MPV_CONFIG_ROOT="${IINA_QOL_MPV_CONFIG_DEST:-$HOME/.config/iina-mpv}"
 PLUGIN_DEST="$IINA_DEST/plugins/IINA-QoL.iinaplugin"
 CONF_DEST="$IINA_DEST/input_conf/IINA-QoL.conf"
+MPV_CONFIG_DEST="$MPV_CONFIG_ROOT/mpv.conf"
+SHADER_PIN_DEST="$MPV_CONFIG_ROOT/shaders-pin.json"
+LEGACY_CONF_REL="iina/input_conf/IINA QoL Scroll Zoom.conf"
+LEGACY_CONF_DEST="$IINA_DEST/input_conf/IINA QoL Scroll Zoom.conf"
 STATE_ROOT="${IINA_QOL_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/iina-qol}"
 DEFAULTS_DOMAIN="${IINA_QOL_DEFAULTS_DOMAIN:-com.colliderli.iina}"
 
@@ -30,8 +37,9 @@ CMD=""
 # key<TAB>defaults-type<TAB>desired-value
 DEFAULT_SPECS=(
   $'currentInputConfigName\tstring\tIINA-QoL'
-  $'horizontalScrollAction\tint\t1'
-  $'verticalScrollAction\tint\t4'
+  $'horizontalScrollAction\tint\t3'
+  $'verticalScrollAction\tint\t3'
+  $'middleClickAction\tint\t0'
   $'playbackSpeedScrollAmount\tint\t3'
   $'screenshotSaveToFile\tbool\ttrue'
   $'screenshotCopyToClipboard\tbool\ttrue'
@@ -40,13 +48,21 @@ DEFAULT_SPECS=(
   $'screenShotFormat\tint\t0'
   $'useMediaKeys\tbool\ttrue'
   $'enableAdvancedSettings\tbool\ttrue'
+  $'fullScreenWhenOpen\tbool\tfalse'
+  $'audioDriverEnableAVFoundation\tbool\ttrue'
+  $'enableThumbnailPreview\tbool\ttrue'
+  $'enableThumbnailForRemoteFiles\tbool\ttrue'
+  $'thumbnailWidth\tint\t480'
+  $'maxThumbnailPreviewCacheSize\tint\t1024'
+  $'useUserDefinedConfDir\tbool\ttrue'
+  "userDefinedConfDir"$'\t'"string"$'\t'"$MPV_CONFIG_ROOT"
 )
 
 usage() {
   cat <<'EOF'
 Usage: checks/iina-qol.sh [preview|apply|doctor|restore] [--apply|--dry-run]
 
-preview   Print src vs dest for Hammerspoon, plugin, input_conf, and IINA defaults (default)
+preview   Print src vs dest for Hammerspoon, plugin, input/mpv config, and IINA defaults (default)
 apply     Copy tracked files to dest; requires --apply to mutate
 doctor    Trigger Hammerspoon/IINA doctor if hs or open is available
 restore   Restore the latest timestamped backup; requires --apply to mutate
@@ -118,6 +134,8 @@ require_sources() {
   [[ -f "$HS_SRC/init.lua" ]] || die "missing source $(relpath "$HS_SRC/init.lua")"
   [[ -f "$HS_SRC/iina_qol.lua" ]] || die "missing source $(relpath "$HS_SRC/iina_qol.lua")"
   [[ -f "$CONF_SRC" ]] || die "missing source $(relpath "$CONF_SRC")"
+  [[ -f "$MPV_CONFIG_SRC" ]] || die "missing source $(relpath "$MPV_CONFIG_SRC")"
+  [[ -f "$SHADER_PIN_SRC" ]] || die "missing source $(relpath "$SHADER_PIN_SRC")"
   [[ -f "$PLUGIN_SRC/Info.json" ]] || die "missing source $(relpath "$PLUGIN_SRC/Info.json")"
   [[ -f "$PLUGIN_SRC/main.js" ]] || die "missing source $(relpath "$PLUGIN_SRC/main.js")"
   [[ -f "$PLUGIN_SRC/lib/zoom.js" ]] || die "missing source $(relpath "$PLUGIN_SRC/lib/zoom.js")"
@@ -232,6 +250,13 @@ print_tree_preview() {
     print_pair "plugin:$rel" "$PLUGIN_SRC/$rel" "$PLUGIN_DEST/$rel"
   done < <(collect_sorted_files "$PLUGIN_SRC")
   print_pair input_conf "$CONF_SRC" "$CONF_DEST"
+  print_pair mpv.conf "$MPV_CONFIG_SRC" "$MPV_CONFIG_DEST"
+  print_pair shader-pin "$SHADER_PIN_SRC" "$SHADER_PIN_DEST"
+  if [[ -e "$LEGACY_CONF_DEST" ]]; then
+    printf 'iina-qol: %-12s %s (prune on apply, backed up first)\n' "legacy-conf" "$LEGACY_CONF_DEST"
+  else
+    printf 'iina-qol: %-12s absent\n' "legacy-conf"
+  fi
   print_defaults_preview
 }
 
@@ -273,6 +298,20 @@ apply_file() {
     printf '%s\n' "$dest" >>"$BACKUP_DIR/absent.txt"
   fi
   cp -p "$src" "$dest"
+}
+
+# Remove the retired pre-plugin scroll-zoom profile (backed up first when applying).
+prune_legacy_conf() {
+  if [[ ! -e "$LEGACY_CONF_DEST" ]]; then
+    return 0
+  fi
+  if [[ "$APPLY" -eq 1 ]]; then
+    backup_if_present "$LEGACY_CONF_DEST" "$LEGACY_CONF_REL"
+    rm -f "$LEGACY_CONF_DEST"
+    printf 'iina-qol: pruned legacy conf %s\n' "$LEGACY_CONF_DEST"
+  else
+    printf 'iina-qol: dry-run prune legacy conf %s\n' "$LEGACY_CONF_DEST"
+  fi
 }
 
 backup_defaults() {
@@ -352,6 +391,9 @@ cmd_apply() {
     apply_file "$HS_SRC/$rel" "$HS_DEST/$rel" "hammerspoon/$rel"
   done < <(collect_sorted_files "$HS_SRC")
   apply_file "$CONF_SRC" "$CONF_DEST" "iina/input_conf/IINA-QoL.conf"
+  apply_file "$MPV_CONFIG_SRC" "$MPV_CONFIG_DEST" "mpv-config/mpv.conf"
+  apply_file "$SHADER_PIN_SRC" "$SHADER_PIN_DEST" "mpv-config/shaders-pin.json"
+  prune_legacy_conf
   while IFS= read -r rel; do
     [[ -n "$rel" ]] || continue
     apply_file "$PLUGIN_SRC/$rel" "$PLUGIN_DEST/$rel" "iina/plugins/IINA-QoL.iinaplugin/$rel"
@@ -364,7 +406,77 @@ cmd_apply() {
   fi
 }
 
+plugin_version() {
+  if command -v python3 >/dev/null 2>&1 && [[ -f "$1" ]]; then
+    python3 - "$1" <<'PY' 2>/dev/null || printf 'unknown'
+import json, sys
+
+try:
+    print(json.load(open(sys.argv[1])).get("version", "unknown"))
+except Exception:
+    print("unknown")
+PY
+  else
+    printf 'unknown'
+  fi
+}
+
+# Read-only drift report: live defaults vs pinned DEFAULT_SPECS.
+doctor_defaults_drift() {
+  local spec key type wanted shown live drift=0
+  if skip_defaults || ! command -v defaults >/dev/null 2>&1; then
+    return 0
+  fi
+  for spec in "${DEFAULT_SPECS[@]}"; do
+    key="${spec%%$'\t'*}"
+    type="${spec#*$'\t'}"
+    type="${type%%$'\t'*}"
+    wanted="${spec##*$'\t'}"
+    shown="$wanted"
+    if [[ "$type" == "bool" ]]; then
+      if [[ "$wanted" == "true" ]]; then
+        shown="1"
+      else
+        shown="0"
+      fi
+    fi
+    live="$(defaults read "$DEFAULTS_DOMAIN" "$key" 2>/dev/null || printf 'absent')"
+    if [[ "$live" != "$shown" ]]; then
+      printf 'iina-qol: drift %-28s live=%s pinned=%s\n' "$key" "$live" "$wanted"
+      drift=1
+    fi
+  done
+  if [[ "$drift" -eq 0 ]]; then
+    printf 'iina-qol: defaults in sync (%s pinned keys)\n' "${#DEFAULT_SPECS[@]}"
+  fi
+}
+
+# Read-only live-state hygiene: legacy conf, broken plugin symlinks, version diff.
+doctor_live_state() {
+  if [[ -e "$LEGACY_CONF_DEST" ]]; then
+    printf 'iina-qol: warn legacy conf present (pruned by apply): %s\n' "$LEGACY_CONF_DEST"
+  fi
+  local link
+  while IFS= read -r -d '' link; do
+    if [[ ! -e "$link" ]]; then
+      printf 'iina-qol: warn broken plugin symlink: %s\n' "$link"
+    fi
+  done < <(find "$IINA_DEST/plugins" -type l -print0 2>/dev/null)
+  local repo_ver live_ver
+  repo_ver="$(plugin_version "$PLUGIN_SRC/Info.json")"
+  live_ver="$(plugin_version "$PLUGIN_DEST/Info.json")"
+  if [[ "$repo_ver" != "unknown" && "$live_ver" != "unknown" ]]; then
+    if [[ "$repo_ver" != "$live_ver" ]]; then
+      printf 'iina-qol: warn plugin version repo=%s live=%s\n' "$repo_ver" "$live_ver"
+    else
+      printf 'iina-qol: plugin version %s in sync\n' "$repo_ver"
+    fi
+  fi
+}
+
 cmd_doctor() {
+  doctor_defaults_drift
+  doctor_live_state
   local triggered=0
   if command -v hs >/dev/null 2>&1; then
     if hs -c 'hs.urlevent.openURL("hammerspoon://iina-qol?action=doctor")' >/dev/null 2>&1; then
@@ -461,6 +573,9 @@ cmd_restore() {
         ;;
       iina/*)
         restore_file "$backup/$rel" "$IINA_DEST/${rel#iina/}"
+        ;;
+      mpv-config/*)
+        restore_file "$backup/$rel" "$MPV_CONFIG_ROOT/${rel#mpv-config/}"
         ;;
       defaults.tsv | absent.txt) ;;
       *)

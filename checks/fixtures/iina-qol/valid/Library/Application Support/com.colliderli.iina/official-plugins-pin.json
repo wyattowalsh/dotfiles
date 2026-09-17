@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "notes": "Official IINA plugins pinned to GitHub release assets. Packages are downloaded, SHA-256 verified, archive-path validated, and installed by `just iina-plugins`; they are never vendored into this repo.",
+  "plugins": [
+    {
+      "identifier": "io.iina.ytdl",
+      "name": "Online Media",
+      "repo": "iina/plugin-online-media",
+      "tag": "v0.9.10",
+      "version": "0.9.10",
+      "asset": "iina-plugin-ytdl-0.9.10.iinaplgz",
+      "sha256": "9929fc5432323cc8a436ee8f88edbc6c557e657ff00f34cc0770eb5b2887cc52",
+      "dest": "io.iina.ytdl.iinaplugin"
+    },
+    {
+      "identifier": "io.iina.opensub",
+      "name": "OpenSubtitles",
+      "repo": "iina/plugin-opensub",
+      "tag": "v0.9.6",
+      "version": "0.9.6",
+      "asset": "iina-plugin-opensub-0.9.6.iinaplgz",
+      "sha256": "87cf7990e5126893b8a55508dcadc2a3dfb090f98b98bc3fb5366bd4f719ebcb",
+      "dest": "io.iina.opensub.iinaplugin"
+    },
+    {
+      "identifier": "io.iina.user-script",
+      "name": "User Scripts",
+      "repo": "iina/plugin-userscript",
+      "tag": "v0.9.3",
+      "version": "0.9.3",
+      "asset": "iina-plugin-userscript-0.9.3.iinaplgz",
+      "sha256": "c519215cdaa3cbd2624c75580aa63239e74b522cb031ac7f1d1f3bbc0cc52d31",
+      "dest": "io.iina.user-script.iinaplugin"
+    }
+  ]
+}

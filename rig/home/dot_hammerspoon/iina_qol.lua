@@ -1,4 +1,6 @@
--- IINA QoL Hammerspoon bridge: exact Command+Shift+scroll -> private F-keys.
+-- IINA QoL Hammerspoon bridge:
+--   Command+scroll (Shift optional) -> cursor zoom (private F-keys)
+--   unmodified scroll over IINA -> pan (Alt+Meta arrows)
 -- Event tap defaults ON after live cursor-zoom acceptance.
 
 local M = {}
@@ -27,15 +29,42 @@ local state = {
 
 local keyQueue   = {}
 local flushArmed = false
+local panAccV    = 0
+local panAccH    = 0
+local PAN_THRESHOLD = 10.0
 
-local function isExactCmdShift(flags)
-  -- Exact chord: Command+Shift only. alt/ctrl/fn (or a missing flag table) fail.
+local PAN = {
+  y = {
+    [1]  = { key = "up",    mods = { "alt", "cmd" } },
+    [-1] = { key = "down",  mods = { "alt", "cmd" } },
+  },
+  x = {
+    [1]  = { key = "left",  mods = { "alt", "cmd" } },
+    [-1] = { key = "right", mods = { "alt", "cmd" } },
+  },
+}
+
+local function isZoomChord(flags)
+  -- Command required; Shift optional; alt/ctrl/fn (or a missing flag table) fail.
   return flags ~= nil
      and flags.cmd == true
-     and flags.shift == true
      and flags.alt ~= true
      and flags.ctrl ~= true
      and flags.fn ~= true
+end
+
+-- Scroll-wheel NSEvents often omit modifier flags on macOS trackpads.
+-- Merge the event's flags with the keys actually held right now.
+local function chordFlags(eventFlags)
+  local held = hs.eventtap.checkKeyboardModifiers() or {}
+  local flags = eventFlags or {}
+  return {
+    cmd   = flags.cmd == true or held.cmd == true,
+    alt   = flags.alt == true or held.alt == true,
+    ctrl  = flags.ctrl == true or held.ctrl == true,
+    shift = flags.shift == true or held.shift == true,
+    fn    = flags.fn == true or held.fn == true,
+  }
 end
 
 local function axisValue(e, continuous, vertical)
@@ -65,8 +94,10 @@ end
 
 -- IINA 1.4.4 never forwards mouseMoved to plugins, and synthetic F-keys
 -- arrive with locationInWindow at CG origin. Middle-mouse up does reach
--- PluginInputManager with a real window point; default middleClickAction
--- is none. The plugin treats F17–F20 as direction-only and uses that poke.
+-- PluginInputManager with a real window point. middleClickAction MUST be
+-- none (0): IINA 4 is togglePIP, and a live value of 4 made Cmd+scroll
+-- enter Picture-in-Picture. Pin it in iina-qol DEFAULT_SPECS + nix-darwin.
+-- The plugin treats F17–F20 as direction-only and uses that poke.
 local function pokePointer(app, loc)
   local down = hs.eventtap.event.newMouseEvent(types.otherMouseDown, loc)
   local up   = hs.eventtap.event.newMouseEvent(types.otherMouseUp, loc)
@@ -87,14 +118,17 @@ local function pokePointer(app, loc)
   end
 end
 
-local function sendKey(app, key)
+local function sendKey(app, key, mods, opts)
   if not key then
     return
   end
-  local loc = hs.mouse.absolutePosition()
-  pokePointer(app, loc)
-  local down = hs.eventtap.event.newKeyEvent({}, key, true)
-  local up   = hs.eventtap.event.newKeyEvent({}, key, false)
+  opts = opts or {}
+  mods = mods or {}
+  if opts.poke ~= false then
+    pokePointer(app, hs.mouse.absolutePosition())
+  end
+  local down = hs.eventtap.event.newKeyEvent(mods, key, true)
+  local up   = hs.eventtap.event.newKeyEvent(mods, key, false)
   if app then
     down:post(app)
     up:post(app)
@@ -111,19 +145,57 @@ local function flushKeys()
   for i = 1, #batch do
     local item = batch[i]
     pcall(function()
-      sendKey(item.app, item.key)
+      sendKey(item.app, item.key, item.mods, item.opts)
     end)
   end
 end
 
-local function enqueueKey(app, key)
+local function enqueueKey(app, key, mods, opts)
   if not app or not key then
     return
   end
-  keyQueue[#keyQueue + 1] = { app = app, key = key }
+  keyQueue[#keyQueue + 1] = { app = app, key = key, mods = mods, opts = opts }
   if not flushArmed then
     flushArmed = true
     hs.timer.doAfter(0, flushKeys)
+  end
+end
+
+local function resetPan()
+  panAccV = 0
+  panAccH = 0
+end
+
+local function enqueuePan(app, axis, direction)
+  local spec = PAN[axis] and PAN[axis][direction]
+  if not spec then
+    return
+  end
+  enqueueKey(app, spec.key, spec.mods, { poke = false })
+end
+
+local function emitPan(app, vertical, horizontal, continuous)
+  if continuous then
+    panAccV = panAccV + vertical
+    panAccH = panAccH + horizontal
+    while math.abs(panAccV) >= PAN_THRESHOLD do
+      local direction = panAccV > 0 and 1 or -1
+      enqueuePan(app, "y", direction)
+      panAccV = panAccV - direction * PAN_THRESHOLD
+    end
+    while math.abs(panAccH) >= PAN_THRESHOLD do
+      local direction = panAccH > 0 and 1 or -1
+      enqueuePan(app, "x", direction)
+      panAccH = panAccH - direction * PAN_THRESHOLD
+    end
+    return
+  end
+  if math.abs(vertical) >= math.abs(horizontal) then
+    if vertical ~= 0 then
+      enqueuePan(app, "y", vertical > 0 and 1 or -1)
+    end
+  elseif horizontal ~= 0 then
+    enqueuePan(app, "x", horizontal > 0 and 1 or -1)
   end
 end
 
@@ -141,17 +213,14 @@ local function tapShouldRun()
 end
 
 local function handleScroll(e)
-  local flags = e:getFlags()
-  local exact = isExactCmdShift(flags)
-  if not exact and not gesture.isOurs() then
-    return false
-  end
-
+  local flags = chordFlags(e:getFlags())
+  local chord = isZoomChord(flags)
   local win, app = window.playerUnderPointer()
   if not win or not app then
     if gesture.isOurs() then
       gesture.cancel()
     end
+    resetPan()
     return false
   end
 
@@ -161,13 +230,25 @@ local function handleScroll(e)
   local phase      = tonumber(e:getProperty(props.scrollWheelEventScrollPhase)) or 0
   local momentum   = tonumber(e:getProperty(props.scrollWheelEventMomentumPhase)) or 0
 
+  -- Cmd+scroll zooms at the pointer. Unmodified scroll over IINA pans.
+  -- alt/ctrl/fn scroll is left to IINA/macOS.
+  if not chord and not gesture.isOurs() then
+    if flags.alt == true or flags.ctrl == true or flags.fn == true then
+      return false
+    end
+    emitPan(app, vertical, horizontal, continuous)
+    return true
+  end
+
+  resetPan()
+
   local result = gesture.ingest({
     vertical   = vertical,
     horizontal = horizontal,
     continuous = continuous,
     phase      = phase,
     momentum   = momentum,
-    exactChord = exact,
+    zoomChord = chord,
   })
 
   if not result.accept then
@@ -220,6 +301,7 @@ local function stopTap()
     state.tap:stop()
   end
   gesture.reset()
+  resetPan()
   keyQueue   = {}
   flushArmed = false
 end

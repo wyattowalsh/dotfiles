@@ -150,6 +150,15 @@ def self_test() -> int:
     check("detent skips above 105", _approx(apply_outward_detent(200.0, 106.0), 106.0))
     check("detent does not trap zoom-in", _approx(apply_outward_detent(100.0, 104.0), 104.0))
 
+    # Zoom presets (plugin 4.1.0): target percents clamp into the same bounds.
+    check("preset log2(400)=2", _approx(log2_from_percent(400.0), 2.0))
+    check("preset clamps below min", _approx(clamp_percent(50.0), 100.0))
+    check("preset clamps above max", _approx(clamp_percent(4000.0), 1000.0))
+    preset = zoom_at_cursor(100.0, log2_from_percent(400.0), {"x": 12.0, "y": 34.0})
+    check("preset jump to 400", preset.ok and _approx(preset.percent, 400.0))
+    preset_ceiling = zoom_at_cursor(100.0, log2_from_percent(2000.0), {"x": 12.0, "y": 34.0})
+    check("preset jump clamps max", preset_ceiling.ok and _approx(preset_ceiling.percent, 1000.0))
+
     cursor = {"x": 12.0, "y": 34.0}
     stepped = zoom_at_cursor(100.0, 1.0, cursor)
     check("step ok", stepped.ok and stepped.mutated and _approx(stepped.percent, 200.0))
@@ -159,6 +168,9 @@ def self_test() -> int:
 
     floor = zoom_at_cursor(110.0, -2.0, cursor)
     check("step clamps min", floor.ok and _approx(floor.percent, 100.0))
+
+    zoom_out = zoom_at_cursor(200.0, -1.0, cursor)
+    check("step zoom-out from 200", zoom_out.ok and zoom_out.mutated and _approx(zoom_out.percent, 100.0))
 
     detent = zoom_at_cursor(110.0, log2_from_percent(104.0) - log2_from_percent(110.0), cursor)
     check("step detent", detent.ok and _approx(detent.percent, 100.0))

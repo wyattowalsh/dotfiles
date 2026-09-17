@@ -2,19 +2,17 @@
 
 const { core, event, input, menu, mpv, preferences } = iina;
 
-const PLUGIN_VERSION = "4.0.0";
-// OTHER_MOUSE keysCarryDirectionOnly — fixture contract strings for iina-config.sh
-
-const SCHEMA_VERSION = 4;
+const PLUGIN_VERSION = "4.1.0";
+const SCHEMA_VERSION = 5;
 const EPSILON        = 1e-9;
 const MIN_PERCENT    = 100;
 const MAX_PERCENT    = 1000;
 const LOG2_MAX       = Math.log2(10);
 const UNAVAILABLE    = "zoom unavailable";
-const HINT_TEXT      = "Cmd+Shift+scroll zooms at the pointer";
+const HINT_TEXT      = "Cmd+scroll (Shift optional) zooms at the pointer";
 
 const DEFAULTS = {
-  schemaVersion     : 4,
+  schemaVersion     : 5,
   cursorCentric     : true,
   showOSD           : true,
   resetOnFile       : true,
@@ -27,6 +25,9 @@ const DEFAULTS = {
   maxZoomPercent    : 1000,
   detentPercent     : 105,
   panStep           : 0.1,
+  zoomPreset1       : 100,
+  zoomPreset2       : 200,
+  zoomPreset3       : 400,
   mkvSubtitleCompat : false,
   hintVersion       : 0,
 };
@@ -48,11 +49,13 @@ const NUMBER_SPECS = {
   maxZoomPercent    : { min: 100,   max: 1000, integer: true,  fallback: 1000 },
   detentPercent     : { min: 100,   max: 1000, integer: true,  fallback: 105 },
   panStep           : { min: 0.025, max: 0.5,  integer: false, fallback: 0.1 },
+  zoomPreset1       : { min: 100,   max: 1000, integer: true,  fallback: 100 },
+  zoomPreset2       : { min: 100,   max: 1000, integer: true,  fallback: 200 },
+  zoomPreset3       : { min: 100,   max: 1000, integer: true,  fallback: 400 },
   hintVersion       : { min: 0,     max: 1000, integer: true,  fallback: 0 },
 };
 
-const V4_KEYS = Object.keys(DEFAULTS);
-const LEGACY_KEYS = ["minZoom", "maxZoom"];
+const SETTING_KEYS = Object.keys(DEFAULTS);
 
 let osdTimer = null;
 
@@ -208,7 +211,7 @@ function alignAfterZoom(oldZoom, newZoom, panX, panY, mouse, dim) {
 
 function cloneDefaults() {
   const copy = {};
-  V4_KEYS.forEach((key) => {
+  SETTING_KEYS.forEach((key) => {
     copy[key] = DEFAULTS[key];
   });
   return copy;
@@ -261,7 +264,8 @@ function migrateLegacy(raw) {
     }
   });
 
-  ["scrollSensitivity", "discreteStep", "keyboardStep", "panStep", "detentPercent"].forEach((key) => {
+  ["scrollSensitivity", "discreteStep", "keyboardStep", "panStep", "detentPercent",
+   "zoomPreset1", "zoomPreset2", "zoomPreset3"].forEach((key) => {
     const value = Number(source[key]);
     if (Number.isFinite(value)) {
       next[key] = value;
@@ -298,10 +302,6 @@ function migrateLegacy(raw) {
   return next;
 }
 
-function hasLegacyLogZoom(raw) {
-  return typeof raw.minZoom === "number" || typeof raw.maxZoom === "number";
-}
-
 function migrate(raw) {
   if (!raw || typeof raw !== "object") {
     return { settings: cloneDefaults(), persist: true, reason: "empty" };
@@ -310,7 +310,7 @@ function migrate(raw) {
   if (Number.isFinite(version) && version > SCHEMA_VERSION) {
     return { settings: cloneDefaults(), persist: false, reason: "future" };
   }
-  if (version === SCHEMA_VERSION && !hasLegacyLogZoom(raw)) {
+  if (version === SCHEMA_VERSION) {
     return { settings: validate(raw), persist: false, reason: "current" };
   }
   return { settings: validate(migrateLegacy(raw)), persist: true, reason: "legacy" };
@@ -318,10 +318,7 @@ function migrate(raw) {
 
 function readRaw() {
   const raw = {};
-  V4_KEYS.forEach((key) => {
-    raw[key] = preferences.get(key);
-  });
-  LEGACY_KEYS.forEach((key) => {
+  SETTING_KEYS.forEach((key) => {
     raw[key] = preferences.get(key);
   });
   return raw;
@@ -332,18 +329,9 @@ function currentSettings() {
 }
 
 function persistSettings(settings) {
-  V4_KEYS.forEach((key) => {
+  SETTING_KEYS.forEach((key) => {
     preferences.set(key, settings[key]);
   });
-}
-
-function clearLegacyLogKeys(raw) {
-  if (typeof raw.minZoom === "number") {
-    preferences.set("minZoom", false);
-  }
-  if (typeof raw.maxZoom === "number") {
-    preferences.set("maxZoom", false);
-  }
 }
 
 // --- mpv helpers ---
@@ -400,7 +388,9 @@ function showZoomOSD() {
 }
 
 let lastPointer = null;
+let lastPointerAt = 0;
 let lastMpvPointer = null;
+const POINTER_FRESH_MS = 500;
 
 function readOsdDimensions() {
   const dim = safeGetNative("osd-dimensions");
@@ -423,7 +413,28 @@ function rememberPointer(data) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) {
     return;
   }
+  // Synthetic origin is not a pointer.
+  if (x === 0 && y === 0) {
+    return;
+  }
   lastPointer = { x: x, y: y };
+  lastPointerAt = Date.now();
+}
+
+function eventPointLooksSynthetic(data, dim) {
+  const x = Number(data && data.x);
+  const y = Number(data && data.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return true;
+  }
+  if (x === 0 && y === 0) {
+    return true;
+  }
+  // Posted key events often arrive as AppKit (0, windowHeight) — CG (0,0).
+  if (dim && x === 0 && Math.abs(y - dim.h) < 1.5) {
+    return true;
+  }
+  return false;
 }
 
 // IINA key/mouse callbacks use AppKit window coords (origin bottom-left).
@@ -448,30 +459,30 @@ function pointerFromWindow(data, dim) {
   };
 }
 
-function resolveAnchor(eventData) {
+function resolveAnchor(eventData, opts) {
   const dim = readOsdDimensions();
   if (!dim) {
     return null;
   }
-  // IINA documents key/mouse callback x,y as the current cursor in the
-  // player window (AppKit, origin bottom-left). That is player-space
-  // pointer, not a Hammerspoon-encoded payload. Synthetic F-keys with
-  // location (0,0) are treated as missing.
-  const ex = Number(eventData && eventData.x);
-  const ey = Number(eventData && eventData.y);
-  const hasEvent = Number.isFinite(ex) && Number.isFinite(ey)
-    && !(ex === 0 && ey === 0);
-  if (hasEvent) {
+  const directionOnly = opts && opts.keysCarryDirectionOnly === true;
+  // Hardware Cmd+Shift+/- can carry a real window point. Direction-only
+  // F-keys must not: IINA 1.4.4 posts synthetic keys at CG origin
+  // (AppKit 0, windowHeight), which is a corner, not the pointer.
+  if (!directionOnly && eventData && !eventPointLooksSynthetic(eventData, dim)) {
     const mouse = pointerFromWindow(eventData, dim);
     if (cursorIsUsable(mouse, dim)) {
       return { mouse: mouse, dim: dim };
     }
+    // Real point outside the video rect: fail closed (do not use last click).
+    return null;
   }
-  if (lastPointer) {
+  const now = Date.now();
+  if (lastPointer && (now - lastPointerAt) <= POINTER_FRESH_MS) {
     const cached = pointerFromWindow(lastPointer, dim);
     if (cursorIsUsable(cached, dim)) {
       return { mouse: cached, dim: dim };
     }
+    return null;
   }
   const mpvMouse = safeGetNative("mouse-pos");
   if (cursorIsUsable(mpvMouse, dim)) {
@@ -497,8 +508,9 @@ function resetView(showFeedback) {
   safeSet("video-align-x", 0);
   safeSet("video-align-y", 0);
   safeSet("panscan", 0);
+  mpv.command("set", ["video-rotate", "0"]);
   if (showFeedback && currentSettings().showOSD) {
-    core.osd("Zoom reset to 100%");
+    core.osd("View reset (zoom 100%, rotation 0°)");
   }
 }
 
@@ -525,30 +537,24 @@ function restoreView(snap) {
   safeSet("panscan", snap.panscan);
 }
 
-function zoomBy(deltaLog2, eventData) {
-  const settings = currentSettings();
-  const anchor   = resolveAnchor(eventData);
-  if (!anchor) {
+function applyZoomTarget(target, eventData, opts) {
+  const anchor = resolveAnchor(eventData, opts);
+  if (!anchor || !Number.isFinite(target)) {
     showUnavailable();
     return false;
   }
-  const snap    = snapshotView();
-  const newZoom = stepZoom(snap.zoom, deltaLog2, settings);
-  if (!Number.isFinite(newZoom)) {
-    showUnavailable();
-    return false;
-  }
-  if (Math.abs(newZoom) < EPSILON) {
+  const snap = snapshotView();
+  if (Math.abs(target) < EPSILON) {
     resetView(false);
     showZoomOSD();
     return true;
   }
-  const align = alignAfterZoom(snap.zoom, newZoom, snap.panX, snap.panY, anchor.mouse, anchor.dim);
+  const align = alignAfterZoom(snap.zoom, target, snap.panX, snap.panY, anchor.mouse, anchor.dim);
   if (!align) {
     showUnavailable();
     return false;
   }
-  if (!safeSet("video-zoom", newZoom)) {
+  if (!safeSet("video-zoom", target)) {
     restoreView(snap);
     showUnavailable();
     return false;
@@ -559,6 +565,40 @@ function zoomBy(deltaLog2, eventData) {
     return false;
   }
   showZoomOSD();
+  return true;
+}
+
+function zoomBy(deltaLog2, eventData, opts) {
+  const settings = currentSettings();
+  const zoom     = safeGetNumber("video-zoom", 0);
+  return applyZoomTarget(stepZoom(zoom, deltaLog2, settings), eventData, opts);
+}
+
+function applyZoomPreset(percent, eventData) {
+  const settings = currentSettings();
+  const target = clampLog2(log2FromPercent(clampPercent(percent, settings.minZoomPercent, settings.maxZoomPercent)));
+  return applyZoomTarget(target, eventData);
+}
+
+function rotateStep() {
+  const order   = [0, 90, 180, 270];
+  const current = safeGetNumber("video-rotate", 0);
+  let next      = 90;
+  for (let i = 0; i < order.length; i++) {
+    if (Math.abs(current - order[i]) < 1) {
+      next = order[(i + 1) % order.length];
+      break;
+    }
+  }
+  try {
+    mpv.command("set", ["video-rotate", String(next)]);
+  } catch (_) {
+    showUnavailable();
+    return false;
+  }
+  if (currentSettings().showOSD) {
+    core.osd("Rotation " + next + "°");
+  }
   return true;
 }
 
@@ -652,26 +692,57 @@ function privateKeys(base) {
 
 function installPluginMenu() {
   try {
-    menu.addItem(menu.item("Zoom In", () => {
+    const viewMenu = menu.item("Zoom & View");
+    viewMenu.addSubMenuItem(menu.item("Zoom In", () => {
       try {
         zoomBy(currentSettings().keyboardStep, lastPointer);
       } catch (_) {
         showUnavailable();
       }
     }, { keyBinding: "Shift+Meta+=" }));
-    menu.addItem(menu.item("Zoom Out", () => {
+    viewMenu.addSubMenuItem(menu.item("Zoom Out", () => {
       try {
         zoomBy(-currentSettings().keyboardStep, lastPointer);
       } catch (_) {
         showUnavailable();
       }
     }, { keyBinding: "Shift+Meta+-" }));
-    menu.addItem(menu.item("Reset Zoom and Pan", () => {
+    viewMenu.addSubMenuItem(menu.item("Reset Zoom, Pan, and Rotation", () => {
       try {
         resetView(true);
       } catch (_) {}
     }, { keyBinding: "Shift+Meta+0" }));
-    menu.addItem(menu.separator());
+    viewMenu.addSubMenuItem(menu.separator());
+    viewMenu.addSubMenuItem(menu.item("Zoom Preset 1", () => {
+      try {
+        applyZoomPreset(currentSettings().zoomPreset1, lastPointer);
+      } catch (_) {
+        showUnavailable();
+      }
+    }, { keyBinding: "Shift+Meta+1" }));
+    viewMenu.addSubMenuItem(menu.item("Zoom Preset 2", () => {
+      try {
+        applyZoomPreset(currentSettings().zoomPreset2, lastPointer);
+      } catch (_) {
+        showUnavailable();
+      }
+    }, { keyBinding: "Shift+Meta+2" }));
+    viewMenu.addSubMenuItem(menu.item("Zoom Preset 3", () => {
+      try {
+        applyZoomPreset(currentSettings().zoomPreset3, lastPointer);
+      } catch (_) {
+        showUnavailable();
+      }
+    }, { keyBinding: "Shift+Meta+3" }));
+    viewMenu.addSubMenuItem(menu.separator());
+    viewMenu.addSubMenuItem(menu.item("Rotate Video 90°", () => {
+      try {
+        rotateStep();
+      } catch (_) {
+        showUnavailable();
+      }
+    }, { keyBinding: "Meta+r" }));
+    menu.addItem(viewMenu);
     menu.addItem(menu.item("Run Self-Test", () => {
       try {
         runSelfTest();
@@ -690,7 +761,6 @@ function start() {
   const result = migrate(raw);
   if (result.persist) {
     persistSettings(result.settings);
-    clearLegacyLogKeys(raw);
     preferences.sync();
   }
 
@@ -709,18 +779,22 @@ function start() {
     });
   } catch (_) {}
 
-  input.onMouseDown(input.MOUSE, (data) => {
-    rememberPointer(data);
-    return false;
-  }, input.PRIORITY_LOW);
-  input.onMouseDrag(input.MOUSE, (data) => {
-    rememberPointer(data);
-    return false;
-  }, input.PRIORITY_LOW);
-  input.onMouseUp(input.MOUSE, (data) => {
-    rememberPointer(data);
-    return false;
-  }, input.PRIORITY_LOW);
+  function bindPointerButton(button) {
+    input.onMouseDown(button, (data) => {
+      rememberPointer(data);
+      return false;
+    }, input.PRIORITY_LOW);
+    input.onMouseDrag(button, (data) => {
+      rememberPointer(data);
+      return false;
+    }, input.PRIORITY_LOW);
+    input.onMouseUp(button, (data) => {
+      rememberPointer(data);
+      return false;
+    }, input.PRIORITY_LOW);
+  }
+  bindPointerButton(input.MOUSE);
+  bindPointerButton(input.OTHER_MOUSE);
 
   bindHigh(privateKeys("F15"), (data) => {
     runSelfTest(data);
@@ -729,16 +803,16 @@ function start() {
     resetView(true);
   });
   bindHigh(privateKeys("F17"), (data) => {
-    zoomBy(scrollDelta("discrete", 1), data);
+    zoomBy(scrollDelta("discrete", 1), data, { keysCarryDirectionOnly: true });
   });
   bindHigh(privateKeys("F18"), (data) => {
-    zoomBy(scrollDelta("discrete", -1), data);
+    zoomBy(scrollDelta("discrete", -1), data, { keysCarryDirectionOnly: true });
   });
   bindHigh(privateKeys("F19"), (data) => {
-    zoomBy(scrollDelta("continuous", 1), data);
+    zoomBy(scrollDelta("continuous", 1), data, { keysCarryDirectionOnly: true });
   });
   bindHigh(privateKeys("F20"), (data) => {
-    zoomBy(scrollDelta("continuous", -1), data);
+    zoomBy(scrollDelta("continuous", -1), data, { keysCarryDirectionOnly: true });
   });
 
   bindHigh(["Shift+Meta+=", "Shift+Meta+PLUS"], (data) => {
@@ -749,6 +823,18 @@ function start() {
   });
   bindHigh(["Shift+Meta+0"], () => {
     resetView(true);
+  });
+  bindHigh(["Shift+Meta+1"], (data) => {
+    applyZoomPreset(currentSettings().zoomPreset1, data);
+  });
+  bindHigh(["Shift+Meta+2"], (data) => {
+    applyZoomPreset(currentSettings().zoomPreset2, data);
+  });
+  bindHigh(["Shift+Meta+3"], (data) => {
+    applyZoomPreset(currentSettings().zoomPreset3, data);
+  });
+  bindHigh(["Meta+r"], () => {
+    rotateStep();
   });
   bindHigh(["Alt+Meta+LEFT"], () => {
     pan("x", 1);
@@ -767,15 +853,12 @@ function start() {
   // → forceUpdate is a recursive libdispatch lock (SIGTRAP).
   setTimeout(installPluginMenu, 0);
 
-  mpv.addHook("on_load", 20, (next) => {
+  mpv.addHook("on_load", 20, () => {
     try {
       if (currentSettings().mkvSubtitleCompat) {
         safeSet("demuxer-mkv-subtitle-preroll", "yes");
       }
     } catch (_) {}
-    if (typeof next === "function") {
-      next();
-    }
   });
 
   event.on("iina.file-loaded", () => {

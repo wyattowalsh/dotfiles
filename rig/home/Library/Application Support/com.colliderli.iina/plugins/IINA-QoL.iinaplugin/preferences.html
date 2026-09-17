@@ -15,7 +15,7 @@
     <strong>Zoom behavior</strong>
     <p><label><input type="checkbox" data-type="bool" data-pref-key="showOSD" /> Show zoom and pan OSD feedback</label></p>
     <p><label><input type="checkbox" data-type="bool" data-pref-key="resetOnFile" /> Reset zoom and pan when the file changes</label></p>
-    <p><label><input type="checkbox" data-type="bool" data-pref-key="invertScroll" /> Invert Command+Shift+scroll zoom direction</label></p>
+    <p><label><input type="checkbox" data-type="bool" data-pref-key="invertScroll" /> Invert Command+scroll zoom direction</label></p>
   </div>
 
   <div class="pref-section">
@@ -37,6 +37,12 @@
       <input type="number" min="100" max="1000" step="1" data-type="int" data-pref-key="detentPercent" />
       <label>Keyboard pan step</label>
       <input type="number" min="0.025" max="0.5" step="0.025" data-type="float" data-pref-key="panStep" />
+      <label>Zoom preset 1 percent (⌘⇧1)</label>
+      <input type="number" min="100" max="1000" step="1" data-type="int" data-pref-key="zoomPreset1" />
+      <label>Zoom preset 2 percent (⌘⇧2)</label>
+      <input type="number" min="100" max="1000" step="1" data-type="int" data-pref-key="zoomPreset2" />
+      <label>Zoom preset 3 percent (⌘⇧3)</label>
+      <input type="number" min="100" max="1000" step="1" data-type="int" data-pref-key="zoomPreset3" />
     </div>
     <p class="small secondary pref-help">mpv zoom is logarithmic: 100% = 0, 200% = 1, 1000% = log2(10). Zoom-out never goes below the fitted view.</p>
   </div>
@@ -49,7 +55,7 @@
 
   <div class="pref-section">
     <strong>Controls</strong>
-    <p class="small"><code>⌘⇧ scroll</code> zoom at pointer · <code>⌘⇧=</code> in · <code>⌘⇧-</code> out · <code>⌘⇧0</code> reset · <code>⌥⌘ arrows</code> pan</p>
+    <p class="small"><code>⌘ scroll</code> (⇧ optional) zoom at pointer · <code>⌘⇧=</code> in · <code>⌘⇧-</code> out · <code>⌘⇧1/2/3</code> presets · <code>⌘⇧0</code> reset · <code>⌥⌘ arrows</code> pan · <code>⌘R</code> rotate</p>
   </div>
 </body>
 </html>

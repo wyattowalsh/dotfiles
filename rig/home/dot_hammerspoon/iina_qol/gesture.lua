@@ -65,7 +65,7 @@ local function flushContinuous()
 end
 
 --- Ingest one scroll sample.
---- sample: vertical, horizontal, continuous, phase, momentum, exactChord, now
+--- sample: vertical, horizontal, continuous, phase, momentum, zoomChord, now
 --- returns { accept, first, events = { { direction, continuous }, ... } }
 function M.ingest(sample)
   sample = sample or {}
@@ -75,7 +75,7 @@ function M.ingest(sample)
   local phase      = tonumber(sample.phase) or 0
   local momentum   = tonumber(sample.momentum) or 0
   local continuous = sample.continuous == true
-  local exact      = sample.exactChord == true
+  local chord      = sample.zoomChord == true
 
   if st.mode ~= "idle" and (now - st.lastAt) > WATCHDOG_SEC then
     M.reset()
@@ -107,13 +107,13 @@ function M.ingest(sample)
       return empty(false, false)
     end
     -- A trackpad gesture that began without the chord is never hijacked.
-    if began and not exact then
+    if began and not chord then
       st.mode   = "ignore"
       st.lastAt = now
       return empty(false, false)
     end
     local verticalDominant = math.abs(vertical) > math.abs(horizontal)
-    if not exact or not verticalDominant then
+    if not chord or not verticalDominant then
       return empty(false, false)
     end
     st.mode       = "ours"

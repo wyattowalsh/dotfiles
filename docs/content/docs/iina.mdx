@@ -1,46 +1,84 @@
 ---
 icon: iina
 title: IINA
-description: Curated player profile + cursor zoom.
+description: Curated player profile, cursor zoom, pinned shaders and plugins.
 ---
 
-**SSOT:** `rig/home/dot_hammerspoon/` and `rig/home/Library/Application Support/com.colliderli.iina/` (Chezmoi). Overlay, history, and plugin prefs stay untracked.
+**SSOT:** `rig/home/dot_hammerspoon/`, `rig/home/Library/Application Support/com.colliderli.iina/`, and `rig/home/private_dot_config/iina-mpv/` (Chezmoi). Runtime histories/preferences and downloaded third-party assets stay untracked.
 
 ```bash
 just check-iina-config
 just iina-qol preview
 just iina-qol apply --apply
 just iina-qol doctor
+
+just iina-shaders preview
+just iina-shaders install --apply
+just iina-shaders doctor
+
+just iina-plugins preview
+just iina-plugins install --apply
+just iina-plugins doctor
 ```
 
-`just iina-qol` is dry-run unless `--apply`. Checks never write live IINA or Hammerspoon state.
+All three workflows are dry-run unless `--apply`. `iina-qol` writes tracked files and native preferences; the shader/plugin installers download only pinned GitHub release assets, verify SHA-256 and archive structure, then keep timestamped backups for `restore --apply`. Quit IINA before installing/restoring plugins.
 
 | Path | Role |
 | --- | --- |
 | `rig/home/dot_hammerspoon/` | Thin `init.lua` loader + `iina_qol` modules |
 | `…/input_conf/IINA-QoL.conf` | Curated input profile |
 | `…/plugins/IINA-QoL.iinaplugin/` | Plugin code/UI (`show-osd` only) |
+| `…/official-plugins-pin.json` | Official IINA plugin release versions + hashes (packages untracked) |
+| `private_dot_config/iina-mpv/mpv.conf` | IINA's user-defined mpv config root (no shader forced globally) |
+| `private_dot_config/iina-mpv/shaders-pin.json` | Anime4K + FSRCNNX release/file hashes (GPL shaders untracked) |
 
-Enable in IINA → Plugins: `com.wyattowalsh.iina-qol`.
+Enable in IINA → Plugins: `com.wyattowalsh.iina-qol`. The official Online Media, OpenSubtitles, and User Scripts plugins are pinned by `official-plugins-pin.json`. `plugin-more-seeking` is deliberately omitted because the curated profile already owns 10/5/1-second and chapter seeking.
 
 ## Gestures
 
 | Input | Action |
 | --- | --- |
-| Cmd+Shift+scroll | Zoom **at the pointer**. First gesture focuses that player |
-| Unmodified vertical scroll | Speed |
-| Horizontal scroll | Seek |
+| Cmd+scroll (⇧ optional) | Zoom **at the pointer**. Hold **Command**. First gesture focuses that player |
+| Unmodified scroll | **Pan** the picture (both axes). Speed is `[` `]` `{` `}` Backspace, not the wheel |
+| Horizontal scroll | Pan (no longer seek — use arrows / `a` `d`) |
 | `a` / Left · `d` / Right | Seek ±10s |
 | Shift + those keys | Seek ±5s exact |
 | Cmd+Shift + those keys | Seek ±1s exact |
+| `o` · `Shift+o` | OSD time/percent · media title |
+| `Ctrl+p` | Shuffle playlist |
+| `Ctrl+1…8` | Brightness / contrast / gamma / saturation ±5 (deliberate image adjust; plain digits stay ignored) |
+| `Cmd+u` · `Shift+Cmd+u` · `Ctrl+u` | FSRCNNX quality · fast · shaders off |
+| `Alt+1/2/3` | Anime4K fast modes A / B / C |
+| `Shift+Alt+1/2/3` | Anime4K HQ modes A / B / C |
+| `Shift+Cmd+1/2/3` | Jump to zoom preset (100 / 200 / 400%, editable in plugin prefs) |
+| `Shift+Cmd+=/-/0` | Zoom in / out / reset (also resets rotation) |
+| `Cmd+r` | Rotate video 90° steps |
 | `s` | Screenshot (save, copy, subs, preview) |
 | `l` | A-B loop |
+
+## Image quality
+
+Shader selection is per-session and opt-in. Start with **FSRCNNX quality** (`Cmd+u`) for film/live-action. For anime, try modes A→B→C and keep the least aggressive mode that improves the source. Fast (`Alt+1/2/3`) is the M1 Pro default; HQ (`Shift+Alt+1/2/3`) costs more GPU. `Ctrl+u` clears all custom shaders. Use `Shift+i`, then page 2 in mpv stats to inspect shader timing and drop to fast/off if rendering misses frame deadlines.
+
+Pinned native IINA preferences enable the user config directory, 480px timeline thumbnails, a 1 GiB thumbnail cache, mounted-remote-drive thumbnails, and IINA's AVFoundation audio driver. AVFoundation is intentional on this machine: CoreAudio fails channel-layout initialization against the current multi/virtual-device topology, while AVFoundation initializes cleanly. Fullscreen-on-open stays off because IINA 1.5.0-beta1 can fail the AppKit fullscreen transition and leave the loaded player window inaccessible; use `f` after the window appears. Remote thumbnails can consume network/storage I/O; turn that preference off locally if a slow mount suffers.
+
+## Plugins
+
+| Plugin | Pin | Notes |
+| --- | --- | --- |
+| Online Media | 0.9.10 | Uses Homebrew `yt-dlp`; `yt-dlp` is updated by Homebrew |
+| OpenSubtitles | 0.9.6 | Login remains in Keychain/plugin preferences, not Git |
+| User Scripts | 0.9.3 | Installed officially; no scripts are forced by this rig |
+| IINA QoL | 4.1.0 | Tracked code/UI: cursor zoom, presets, rotation |
+| Bookmarks (dev) | 1.1.0 source build | Overlay hit-testing is visible-only; menus stay under IINA's first-level limit; native preference types and validated display/sort snapshots drive timeline/thumbnail/timestamp/view/sort, metadata, scratchpad, and opt-in quick-note behavior; primary + automatic backup share one serialized snapshot |
 
 ## Rules
 
 | Rule | Detail |
 | --- | --- |
-| Tap | Hammerspoon scroll tap defaults **on**; consumes only Command+Shift+scroll |
-| Cursor zoom | Player-space pointer from IINA mouse callbacks (Hammerspoon middle-mouse poke before F17–F20) or mpv `mouse-pos` with `hover === true`. Synthetic F-key origin is ignored. Missing pointer is fail-closed. Never call center-zoom “cursor zoom” |
+| Tap | Hammerspoon scroll tap defaults **on**; consumes only Command±Shift scroll (Command required, Shift optional; alt/ctrl/fn and unmodified scroll pass through) |
+| Cursor zoom | Player-space pointer from IINA mouse callbacks (Hammerspoon middle-mouse poke before F17–F20) or mpv `mouse-pos` with `hover === true`. Synthetic F-key origin is ignored. Missing pointer is fail-closed. Never call center-zoom “cursor zoom”. Pin IINA `middleClickAction` to **none (0)** — **4 is togglePIP** and turns that poke into Picture-in-Picture |
+| Shaders | No global chain. `shaders-pin.json` records GPL-3.0 GitHub sources + hashes; downloaded `.glsl` files stay untracked and every keymap reference must be pinned |
+| Official plugins | Only `iina/plugin-*` release assets in `official-plugins-pin.json`; hashes + manifests checked before install; runtime `.data` / `.preferences` preserved |
 | Apply | Exact-target `just iina-qol apply --apply` — not a full home/bootstrap apply |
-| Untracked | Overlay, history, plugin prefs, sibling plugins, logs, screenshots — dest paths in `.chezmoiignore` |
+| Untracked | Downloaded shader/plugin packages, overlay, history, plugin prefs, sibling plugins, logs, screenshots — dest paths in `.chezmoiignore` |
