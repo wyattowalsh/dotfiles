@@ -143,8 +143,8 @@ SAFETY MODEL
     prune root). Default cask inventory skips live apps already newer than the tap
     when compare succeeds; if python3 or brew info is unavailable the inventory is
     kept. Tokens in ~/.config/freshen/skip-casks or FRESHEN_SKIP_CASKS are never
-    cask-upgraded. Cask upgrades preflight sudo once so password prompts do
-    not corrupt progress output. storage-plan labels surfaces cache-prune / review /
+    cask-upgraded (case-insensitive). Cask upgrades preflight sudo once so
+    password prompts do not corrupt progress output. storage-plan labels surfaces cache-prune / review /
     report-only (named leaves: uv, npm npx, pnpm v11 store, OpenCode, CoreSimulator,
     CloudStorage) and may probe docker system df, nix store gc --dry-run, kopia
     repository status (no password on argv; stdin closed), kopia snapshot list
@@ -1542,17 +1542,17 @@ PY
             while IFS= read -r line || [[ -n "$line" ]]; do
                 line="${line%%#*}"
                 line="${${line##[[:space:]]#}%%[[:space:]]#}"
-                [[ -n "$line" ]] && skip+=("$line")
+                [[ -n "$line" ]] && skip+=("${(L)line}")
             done < "$file"
         fi
         if [[ -n "${FRESHEN_SKIP_CASKS:-}" ]]; then
             for tok in ${=FRESHEN_SKIP_CASKS//,/ }; do
-                [[ -n "$tok" ]] && skip+=("$tok")
+                [[ -n "$tok" ]] && skip+=("${(L)tok}")
             done
         fi
         (( ${#skip} > 0 )) || return 0
         for c in "${out_casks[@]}"; do
-            if (( ${skip[(Ie)$c]} )); then
+            if (( ${skip[(Ie)${(L)c}]} )); then
                 _casks_skipped_pinned+=("$c")
                 _log_phase casks "SKIP PINNED pkg=${c}"
             else

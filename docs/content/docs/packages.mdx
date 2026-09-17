@@ -47,6 +47,7 @@ Comment group headers in `rig/brew/Brewfile`:
 
 | Topic | Rule |
 | --- | --- |
+| Upgrades | `freshen` / `fr` is the upgrade operator (greedy casks, skip-casks pins, mas, caches). Do not ad-hoc `brew upgrade`. See [freshen](/docs/freshen). |
 | Docker | Primary is `cask "docker-desktop"`. `brew "colima"` is optional secondary — do not run both engines together. Formula `docker` stays in `exclude.txt`. |
 | Kopia | CLI is `kopia/test-builds/kopia` (nightly job). Keep the `kopia/test-builds` tap. `kopiaui` cask is manual restore only. rclone stays the Google Drive backend; `s5cmd` is high-throughput S3/local — do not retarget Kopia. |
 | VS Code | Extension lines are inventory only under `local/` — not tracked in the Brewfile. |

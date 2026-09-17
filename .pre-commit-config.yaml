@@ -66,7 +66,7 @@ repos:
         entry: just check-freshen
         language: system
         pass_filenames: false
-        files: ^(rig/home/dot_zsh/functions/(freshen|freshen\.VERSION|tests/freshen_test\.zsh|tests/cases/.*|tests/fixtures/.*)|checks/freshen-.*\.sh)$
+        files: ^(rig/home/dot_zsh/functions/(freshen|freshen\.VERSION|AGENTS\.md|tests/freshen_test\.zsh|tests/cases/.*|tests/fixtures/.*)|rig/home/private_dot_config/freshen/.*|checks/freshen-.*\.sh|docs/content/docs/freshen\.mdx)$
 
       - id: dotfiles-json
         name: dotfiles JSON validation

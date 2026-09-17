@@ -24,7 +24,7 @@ Version SSOT: `rig/home/dot_zsh/functions/freshen.VERSION` (run `./checks/freshe
 ## Safety invariants
 
 - Skip a cask whose live `CFBundleShortVersionString` is already newer than the tap version when compare succeeds; if python3 or brew info is unavailable, keep the inventory (do not silent-skip)
-- Skip cask tokens listed in `FRESHEN_SKIP_CASKS` (comma/space) or `$XDG_CONFIG_HOME/freshen/skip-casks` (Chezmoi: `private_dot_config/freshen/skip-casks`) so greedy upgrades cannot overwrite version pins
+- Skip cask tokens listed in `FRESHEN_SKIP_CASKS` (comma/space) or `$XDG_CONFIG_HOME/freshen/skip-casks` (Chezmoi: `private_dot_config/freshen/skip-casks`), compared case-insensitively, so greedy upgrades cannot overwrite version pins
 - `--dry-run` must not mutate Homebrew, mas, caches, or dev-prune targets
 - `--clean-only --dry-run` skips upgrade inventory and all mutations
 - Noninteractive mutations require `--yes`

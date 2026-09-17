@@ -31,7 +31,7 @@ just check-freshen
 | `-S` / `--storage-plan` | classified report only |
 | docker/gem prune | **opt-in** only |
 
-Default cask inventory still uses `--greedy`. Apps whose live version is already newer than Homebrew’s tap version are skipped so a greedy reinstall cannot downgrade them. Equal versions still upgrade. Tokens in `~/.config/freshen/skip-casks` or `FRESHEN_SKIP_CASKS` are dropped from cask upgrades (Spotify is pinned; see [Spotify](/docs/spotify)).
+Default cask inventory still uses `--greedy`. Apps whose live version is already newer than Homebrew’s tap version are skipped so a greedy reinstall cannot downgrade them. Equal versions still upgrade. Tokens in `~/.config/freshen/skip-casks` or `FRESHEN_SKIP_CASKS` are dropped from cask upgrades, case-insensitively (Spotify is pinned; see [Spotify](/docs/spotify)).
 
 ## Progress
 

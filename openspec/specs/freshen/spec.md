@@ -8,7 +8,7 @@
 
 ### Requirement: Skip-casks file and env
 
-Cask upgrades SHALL drop tokens listed in `$XDG_CONFIG_HOME/freshen/skip-casks` (fallback `~/.config/freshen/skip-casks`) or in `FRESHEN_SKIP_CASKS`. Missing skip files SHALL NOT fail freshen. Spotify is a pinned skip-casks token.
+Cask upgrades SHALL drop tokens listed in `$XDG_CONFIG_HOME/freshen/skip-casks` (fallback `~/.config/freshen/skip-casks`) or in `FRESHEN_SKIP_CASKS`, compared case-insensitively. Missing skip files SHALL NOT fail freshen. Spotify is a pinned skip-casks token.
 
 #### Scenario: Skip file drops a cask
 

@@ -52,3 +52,16 @@ test_cask_skip_pinned_dry_run() {
     assert_contains "$out" "Skipped (pinned)" "dry-run reports pinned skip"
     assert_not_contains "$TRACE_FILE" "brew upgrade" "dry-run does not upgrade skipped cask"
 }
+
+test_cask_skips_pinned_case_insensitive() {
+    setup_env cask-skip-pinned-case
+    export FRESHEN_SKIP_CASKS="Spotify"
+    export BREW_OUTDATED_FORMULAE=""
+    export BREW_OUTDATED_CASKS='spotify'
+    export BREW_CASK_INFO_JSON='{"casks":[]}'
+    local out="${TEST_ROOT}/out.txt"
+    run_freshen "$out" --yes --cask-only --no-mas --no-cleanup --no-cache --no-sudo-preflight --progress=plain --no-color
+    assert_status 0 $? "case-insensitive pinned skip exits 0"
+    assert_contains "$out" "Skipped (pinned)" "prints pinned skip heading"
+    assert_not_contains "$TRACE_FILE" "brew upgrade --cask" "does not upgrade Spotify vs spotify"
+}
