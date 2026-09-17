@@ -470,6 +470,7 @@ local -a watch=(
   _mtime_epoch _is_live_workspace_dir _print_backup_status _run_report_cmd
   _storage_is_absent_leaf _storage_skip_du _storage_inuse_leaf _storage_path_in_use
   _kopia_nightly_running _kopia_coverage_complete
+  _filter_casks_already_newer _filter_casks_pinned
   _live_enter _live_leave _live_begin _live_pause_for_prompt _live_resume _live_abort_dashboard
 )
 local name

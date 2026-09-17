@@ -13,6 +13,7 @@ just check-rig-ecosystem-assurance
 just check-ghostty
 just check-yazi-config
 just check-kopia-nightly
+just check-freshen
 just check-apple-text
 just check-iina-config
 just iina-qol
@@ -32,6 +33,7 @@ just docs-ci
 | `just check-ghostty` | Ghostty template/data/zsh/docs contracts plus isolated Chezmoi rendering and native parsing when Ghostty and Chezmoi are available; never applies config |
 | `just check-yazi-config` | Current fields, resolved plugin/flavor locks, dark/light theme mapping, Option DuckDB keys, and isolated native parsing when Yazi is available |
 | `just check-kopia-nightly` | Static runner/plist contract (cap in the runner, no launchd `TimeOut`; no live `kopia` / launchd) |
+| `just check-freshen` | Version SSOT, privacy/goldens, `zsh -n`, and `tests/freshen_test.zsh` (no live Homebrew/mas mutations) |
 | `just check-apple-text` | Canonical Text Replacement / Shortcuts registries plus offline merge harness (no Apple DB writes) |
 | `just check-iina-config` | IINA-QoL input profile, plugin schema, Hammerspoon syntax, chezmoiignore (no live IINA writes) |
 | `just iina-qol` | Preview / apply / doctor for the IINA QoL stack (dry-run unless `--apply`) |
@@ -63,7 +65,7 @@ Runs in this order:
 | `check-just-fmt` | `just --unstable --fmt --check` |
 | `check-mise-boundary` | no repo-root `mise.toml` / mise `[tasks]` |
 | `check-zsh` | `zsh -n`, dots ↔ home `cmp`, `checks/zsh-structure-test.sh`, `zsh-structure.sh`, Atuin init grep, `zsh-home-behavior-test.sh` |
-| `check-freshen` | freshen version SSOT + smoke tests |
+| `check-freshen` | Version SSOT, privacy/goldens, `zsh -n`, and `tests/freshen_test.zsh` (no live Homebrew/mas mutations) |
 | `check-json` | `jq empty` on tracked `*.json` |
 | `secrets-scan` | obvious secret-shaped values in tracked source |
 | `brew-exclude` | Brewfile vs `rig/brew/exclude.txt` (no Homebrew required) |

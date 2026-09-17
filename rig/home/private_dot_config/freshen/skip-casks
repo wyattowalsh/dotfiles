@@ -1,0 +1,3 @@
+# Cask tokens freshen must not greedy-upgrade (one token per line).
+# Spotify is pinned to the latest Spicetify-supported version.
+spotify
