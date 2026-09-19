@@ -41,6 +41,7 @@ just docs-ci
 | `just iina-qol` | Preview / apply / doctor for the IINA QoL stack (dry-run unless `--apply`) |
 | `just check-remote-access` | RustDesk-over-Tailscale runner contract (no live launchctl / TCC / brew services) |
 | `just remote-access` | Plan / install / enable / doctor / disable / rollback (mutating commands default to dry-run) |
+| `just check-spicetify` | Spotify pin + Spicetify apply runner/plist contract (no live Spotify / launchd) |
 | `just check-bats` | File-only Bats coverage when Bats is present; required in CI |
 
 ```mermaid
@@ -81,6 +82,7 @@ Runs in this order:
 | `check-apple-text` | Text Replacement registries + offline merge (no `TextReplacements.db`) |
 | `check-iina-config` | IINA-QoL profile, plugin schema, Hammerspoon syntax (no live IINA / Hammerspoon mutation) |
 | `check-remote-access` | RustDesk-over-Tailscale runner contract (no live launchctl / TCC) |
+| `check-spicetify` | Spotify pin + Spicetify apply runner contract (no live Spotify / launchd) |
 | `check-bats` | `checks/*.bats` when Bats is present; required in CI |
 | `check-chezmoi-ignore` | `.chezmoiignore` uses destination/target names |
 | `check-darwin-lock` | `flake.lock` JSON + recoverable nix-darwin pin |

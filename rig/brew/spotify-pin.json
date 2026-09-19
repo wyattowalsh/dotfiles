@@ -1,0 +1,11 @@
+{
+  "spicetify_cli": "2.44.0",
+  "spotify_supported_max": "1.2.96",
+  "spotify_pin": "1.2.96.518",
+  "spotify_fullversion": "1.2.96.518.g366879e1",
+  "darwin_arm64": {
+    "url": "https://loadspot.amd64fox1.workers.dev/download/spotify-autoupdate-1.2.96.518.g366879e1-arm64.tbz",
+    "size": 162874432,
+    "sha256": "d66b2cb5e08a833a44fabf547f9362287288e598bb97e67b060648ada19e8f9a"
+  }
+}

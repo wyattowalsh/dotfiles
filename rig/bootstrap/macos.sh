@@ -584,6 +584,16 @@ main() {
     log "Remote access is opt-in: just bootstrap --apply --with-remote-access (install only; never auto-enables)."
   fi
 
+  # Preview only. Live pin/apply is `just spicetify apply`, not bootstrap.
+  spicetify_src="$HOME_SOURCE/dot_local/bin/executable_spicetify-apply"
+  if [ -x "$spicetify_src" ]; then
+    export SPICETIFY_REPO="$REPO_ROOT"
+    run_or_print "Pin Spotify and apply Spicetify" "$spicetify_src" apply --dry-run
+    run_or_print "Install Spicetify apply LaunchAgent" "$spicetify_src" install --dry-run
+  else
+    log "Spicetify preview skipped (runner source missing)."
+  fi
+
   if [ "$APPLY" -eq 1 ]; then
     if command -v nix >/dev/null 2>&1; then
       run_or_print "Check nix-darwin flake" nix flake check --no-write-lock-file "$DARWIN_FLAKE"

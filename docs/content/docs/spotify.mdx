@@ -1,0 +1,38 @@
+---
+icon: spotify
+title: Spotify
+description: Pin the Spicetify-supported client and auto-apply.
+---
+
+**SSOT:** `rig/brew/spotify-pin.json` plus `rig/home/dot_local/bin/executable_spicetify-apply` (Chezmoi). Live Spicetify themes/apps stay untracked under `~/.config/spicetify`.
+
+```bash
+just check-spicetify
+just spicetify
+just spicetify apply --dry-run
+just spicetify apply
+just spicetify-install --dry-run
+just spicetify-install
+just spicetify doctor
+```
+
+`just spicetify` is preview. `apply` mutates Spotify.app and runs `spicetify backup apply`. Checks never write live Spotify or launchd state.
+
+| Path | Role |
+| --- | --- |
+| `rig/brew/spotify-pin.json` | Latest Spicetify-supported Spotify (version, URL, sha256) |
+| `rig/home/dot_local/bin/executable_spicetify-apply` | Pin, block updates, apply |
+| `…/com.wyattowalsh.spicetify-apply.plist.tmpl` | WatchPaths on `/Applications/Spotify.app` |
+| `private_dot_config/freshen/skip-casks` | Stop greedy `freshen` from upgrading past the pin |
+
+## Rules
+
+| Rule | Detail |
+| --- | --- |
+| Pin | Homebrew’s Spotify cask URL is unversioned. The runner installs the pin archive, not `SpotifyARM64.dmg` |
+| CLI | Homebrew `spicetify-cli` is SSOT. `~/.spicetify` is not on PATH |
+| Updates | `uchg` on the Update cache (same effect as `spicetify spotify-updates block`) |
+| Auto-apply | LaunchAgent runs `apply` at login and when Spotify.app changes. It does not launch Spotify |
+| Apply | Exact-target `just spicetify apply` then `just spicetify-install` — not a full home/bootstrap apply. Install writes the dest runner, pin, plist, and freshen skip-casks |
+
+When Spicetify adds a newer supported client, update `spotify-pin.json` (version, URL, size, sha256) and re-run `just spicetify apply`.

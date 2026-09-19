@@ -57,6 +57,13 @@
       "group": "operate"
     },
     {
+      "slug": "spotify",
+      "title": "Spotify",
+      "description": "Pin the Spicetify-supported client; apply is exact-target.",
+      "firstCommand": "just check-spicetify",
+      "group": "operate"
+    },
+    {
       "slug": "shell",
       "title": "Shell",
       "description": "Zsh structure + tools.",

@@ -1,0 +1,624 @@
+#!/usr/bin/env bash
+# Pin Spotify to the latest Spicetify-supported version, apply Spicetify, block updates.
+set -euo pipefail
+
+export PATH="/opt/homebrew/bin:/usr/bin:/bin${PATH:+:$PATH}"
+
+LABEL="com.wyattowalsh.spicetify-apply"
+PLIST_NAME="com.wyattowalsh.spicetify-apply.plist"
+DEST_RUNNER="${HOME}/.local/bin/spicetify-apply"
+PIN_DEST="${XDG_DATA_HOME:-$HOME/.local/share}/dotfiles/spotify-pin.json"
+LOG_DIR="${HOME}/Library/Logs/spicetify"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/spicetify"
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/spotify"
+REPO_RUNNER_REL="rig/home/dot_local/bin/executable_spicetify-apply"
+PIN_REL="rig/brew/spotify-pin.json"
+PLIST_REL="rig/home/Library/LaunchAgents/com.wyattowalsh.spicetify-apply.plist.tmpl"
+SKIP_REL="rig/home/private_dot_config/freshen/skip-casks"
+SPOTIFY_APP="${SPICETIFY_SPOTIFY_APP:-/Applications/Spotify.app}"
+UPDATE_DIR="${HOME}/Library/Application Support/Spotify/PersistentCache/Update"
+SKIP_DEST="${XDG_CONFIG_HOME:-$HOME/.config}/freshen/skip-casks"
+
+log() {
+  printf '[spicetify-apply] %s\n' "$*"
+}
+
+die() {
+  log "error: $*" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'USAGE'
+Usage: spicetify-apply [--dry-run]
+       spicetify-apply apply [--dry-run]
+       spicetify-apply install [--dry-run]
+       spicetify-apply doctor
+
+  (default)   Preview pin + apply + update-block (dry-run).
+  apply       Pin Spotify if needed, block updates, run spicetify backup apply.
+  install     Sync dest runner, pin, plist, skip-casks; bootstrap WatchPaths agent.
+  doctor      Check CLI PATH, live vs pin, update-block, and agent state.
+
+  SPICETIFY_REPO   repo root (required for install runner/pin sync).
+  SPICETIFY_PIN    override pin JSON path.
+USAGE
+}
+
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || die "missing command: $1"
+}
+
+gui_domain() {
+  printf 'gui/%s' "$(id -u)"
+}
+
+label_path() {
+  printf '%s/%s' "$(gui_domain)" "$1"
+}
+
+agent_loaded() {
+  launchctl print "$(label_path "$1")" >/dev/null 2>&1
+}
+
+file_sha256() {
+  /usr/bin/shasum -a 256 "$1" | awk '{print $1}'
+}
+
+file_size() {
+  /usr/bin/stat -f%z "$1"
+}
+
+sync_pin_dest() {
+  local root=""
+  root="$(repo_root)" || return 0
+  mkdir -p "$(dirname "$PIN_DEST")"
+  /bin/cp -f "${root}/${PIN_REL}" "$PIN_DEST"
+}
+
+sync_dest_runner() {
+  local root=""
+  root="$(repo_root)" || return 0
+  mkdir -p "$(dirname "$DEST_RUNNER")"
+  /bin/cp -f "${root}/${REPO_RUNNER_REL}" "$DEST_RUNNER"
+  /bin/chmod +x "$DEST_RUNNER"
+}
+
+render_plist() {
+  local src="$1"
+  local dest="$2"
+  python3 - "$src" "$dest" "$HOME" <<'PY'
+from pathlib import Path
+import sys
+
+src, dest, home = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+needle = "{{ .chezmoi.homeDir }}"
+text = src.read_text()
+if needle not in text:
+    raise SystemExit("plist template missing chezmoi.homeDir")
+dest.parent.mkdir(parents=True, exist_ok=True)
+dest.write_text(text.replace(needle, home))
+PY
+}
+
+ensure_skip_casks() {
+  local src="${1:-}"
+  mkdir -p "$(dirname "$SKIP_DEST")"
+  if [[ -f "$SKIP_DEST" ]]; then
+    if grep -qx 'spotify' "$SKIP_DEST"; then
+      return 0
+    fi
+    printf '\nspotify\n' >>"$SKIP_DEST"
+    return 0
+  fi
+  if [[ -n "$src" && -f "$src" ]]; then
+    /bin/cp -f "$src" "$SKIP_DEST"
+    return 0
+  fi
+  printf '%s\n' 'spotify' >"$SKIP_DEST"
+}
+
+repo_root() {
+  if [[ -n "${SPICETIFY_REPO:-}" && -f "${SPICETIFY_REPO}/${PIN_REL}" ]]; then
+    printf '%s\n' "${SPICETIFY_REPO}"
+    return 0
+  fi
+  return 1
+}
+
+pin_path() {
+  if [[ -n "${SPICETIFY_PIN:-}" && -f "${SPICETIFY_PIN}" ]]; then
+    printf '%s\n' "${SPICETIFY_PIN}"
+    return 0
+  fi
+  local root=""
+  if root="$(repo_root)"; then
+    printf '%s/%s\n' "$root" "$PIN_REL"
+    return 0
+  fi
+  if [[ -f "$PIN_DEST" ]]; then
+    printf '%s\n' "$PIN_DEST"
+    return 0
+  fi
+  return 1
+}
+
+read_pin() {
+  local path="$1"
+  python3 - "$path" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+data = json.loads(Path(sys.argv[1]).read_text())
+arm = data.get("darwin_arm64") or {}
+missing = [
+    key
+    for key in ("spotify_pin", "spotify_supported_max", "spotify_fullversion")
+    if not str(data.get(key) or "").strip()
+]
+for key in ("url", "sha256"):
+    if not str(arm.get(key) or "").strip():
+        missing.append(f"darwin_arm64.{key}")
+if missing:
+    print("invalid pin: missing " + ", ".join(missing), file=sys.stderr)
+    raise SystemExit(1)
+size = arm.get("size") or 0
+print(data["spotify_pin"])
+print(data["spotify_supported_max"])
+print(data["spotify_fullversion"])
+print(arm["url"])
+print(arm["sha256"])
+print(int(size))
+PY
+}
+
+live_spotify_version() {
+  local app="$SPOTIFY_APP"
+  local plist="$app/Contents/Info.plist"
+  if [[ ! -f "$plist" ]]; then
+    printf '%s\n' ""
+    return 0
+  fi
+  if command -v defaults >/dev/null 2>&1; then
+    defaults read "$app/Contents/Info" CFBundleShortVersionString 2>/dev/null || true
+    return 0
+  fi
+  python3 - "$plist" <<'PY' 2>/dev/null || true
+import plistlib
+import sys
+from pathlib import Path
+
+data = plistlib.loads(Path(sys.argv[1]).read_bytes())
+print(data.get("CFBundleShortVersionString") or "")
+PY
+}
+
+resolve_spicetify() {
+  local brew_bin="/opt/homebrew/bin/spicetify"
+  if [[ -x "$brew_bin" ]]; then
+    printf '%s\n' "$brew_bin"
+    return 0
+  fi
+  if command -v spicetify >/dev/null 2>&1; then
+    command -v spicetify
+    return 0
+  fi
+  return 1
+}
+
+updates_blocked() {
+  local flags=""
+  if [[ ! -d "$UPDATE_DIR" ]]; then
+    return 1
+  fi
+  flags="$(/bin/ls -ldO "$UPDATE_DIR" 2>/dev/null || true)"
+  printf '%s' "$flags" | grep -q 'uchg'
+}
+
+quit_spotify() {
+  if ! pgrep -x Spotify >/dev/null 2>&1; then
+    return 0
+  fi
+  log "quitting Spotify"
+  osascript -e 'tell application "Spotify" to quit' >/dev/null 2>&1 || true
+  local waited=0
+  while [[ "$waited" -lt 15 ]]; do
+    if ! pgrep -x Spotify >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  pkill -x Spotify >/dev/null 2>&1 || true
+}
+
+print_login_item_hint() {
+  cat <<'HINT'
+If the apply agent is not loaded, allow it under:
+  System Settings → General → Login Items & Extensions → Allow in the Background
+Then re-run: just spicetify-install
+HINT
+}
+
+cmd_preview() {
+  local pin live spicetify_bin=""
+  pin="$(pin_path)" || die "pin JSON missing; set SPICETIFY_REPO or SPICETIFY_PIN"
+  live="$(live_spotify_version)"
+  log "pin-file ${pin}"
+  log "spotify-app ${SPOTIFY_APP}"
+  log "live-version ${live:-missing}"
+  local pin_ver max_ver full url sha size
+  {
+    read -r pin_ver
+    read -r max_ver
+    read -r full
+    read -r url
+    read -r sha
+    read -r size
+  } < <(read_pin "$pin")
+  log "pin-version ${pin_ver} (supported max ${max_ver}, full ${full})"
+  log "pin-url ${url}"
+  log "pin-sha256 ${sha}"
+  log "pin-size ${size}"
+  if spicetify_bin="$(resolve_spicetify)"; then
+    log "spicetify ${spicetify_bin} ($("${spicetify_bin}" --version 2>/dev/null || echo unknown))"
+  else
+    log "spicetify missing"
+  fi
+  if updates_blocked; then
+    log "updates: blocked (uchg)"
+  else
+    log "updates: not blocked"
+  fi
+}
+
+ensure_brew_spicetify_link() {
+  local brew_bin="/opt/homebrew/bin/spicetify"
+  local shadow="${HOME}/.spicetify/spicetify"
+  [[ -x "$brew_bin" ]] || return 0
+  mkdir -p "${HOME}/.spicetify"
+  if [[ -e "$shadow" && ! -L "$shadow" ]]; then
+    mv "$shadow" "${shadow}.pre-brew"
+    log "moved shadowed CLI to ${shadow}.pre-brew"
+  fi
+  if [[ -L "$shadow" || ! -e "$shadow" ]]; then
+    ln -sfn "$brew_bin" "$shadow"
+  fi
+}
+
+install_pinned_spotify() {
+  local dry_run="$1"
+  local pin_ver="$2"
+  local url="$3"
+  local sha="$4"
+  local size="$5"
+  local archive
+  archive="${CACHE_DIR}/$(basename "${url%%\?*}")"
+  local extract=""
+
+  if [[ "$(uname -m)" != "arm64" ]]; then
+    die "pin installer is darwin_arm64-only"
+  fi
+
+  mkdir -p "$CACHE_DIR"
+  if [[ "$dry_run" -eq 1 ]]; then
+    log "dry-run: would download ${url} -> ${archive}"
+    log "dry-run: would replace ${SPOTIFY_APP}/Contents from archive"
+    return 0
+  fi
+
+  if [[ ! -f "$archive" ]] || [[ "$(file_sha256 "$archive")" != "$sha" ]]; then
+    log "downloading pinned Spotify ${pin_ver}"
+    require_cmd curl
+    curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 300 \
+      -o "${archive}.partial" "$url"
+    mv "${archive}.partial" "$archive"
+  fi
+  if [[ "$(file_size "$archive")" != "$size" ]]; then
+    die "download size mismatch for ${archive}"
+  fi
+  if [[ "$(file_sha256 "$archive")" != "$sha" ]]; then
+    die "download sha256 mismatch for ${archive}"
+  fi
+
+  quit_spotify
+  extract="$(mktemp -d "${TMPDIR:-/tmp}/spicetify-spotify.XXXXXX")"
+  tar -xjf "$archive" -C "$extract"
+  [[ -d "$extract/Contents" ]] || die "archive missing Contents/"
+  mkdir -p "$SPOTIFY_APP"
+  if [[ -d "${SPOTIFY_APP}/Contents" ]]; then
+    chflags -R nouchg "${SPOTIFY_APP}/Contents" >/dev/null 2>&1 || true
+  fi
+  rm -rf "${SPOTIFY_APP}/Contents"
+  ditto "$extract/Contents" "${SPOTIFY_APP}/Contents"
+  rm -rf "$extract"
+  xattr -dr com.apple.quarantine "$SPOTIFY_APP" >/dev/null 2>&1 || true
+
+  local live=""
+  live="$(live_spotify_version)"
+  if [[ "$live" != "$pin_ver" ]]; then
+    die "pin failed: live ${live:-missing} != ${pin_ver}"
+  fi
+  log "spotify pinned to ${live}"
+}
+
+block_updates() {
+  local dry_run="$1"
+  if [[ "$dry_run" -eq 1 ]]; then
+    log "dry-run: would block Spotify updates (uchg on Update dir)"
+    return 0
+  fi
+  mkdir -p "$UPDATE_DIR"
+  if updates_blocked; then
+    log "spotify updates already blocked"
+    return 0
+  fi
+  chflags uchg "$UPDATE_DIR"
+  updates_blocked || die "failed to block Spotify updates"
+  log "spotify updates blocked"
+}
+
+apply_spicetify() {
+  local dry_run="$1"
+  local freshly_pinned="$2"
+  local bin=""
+  bin="$(resolve_spicetify)" || die "spicetify CLI missing (brew install spicetify-cli)"
+  if [[ "$dry_run" -eq 1 ]]; then
+    if [[ "$freshly_pinned" -eq 1 ]]; then
+      log "dry-run: would ${bin} backup apply"
+    else
+      log "dry-run: would ${bin} apply"
+    fi
+    return 0
+  fi
+  ensure_brew_spicetify_link
+  "$bin" config spotify_path "${SPOTIFY_APP}/Contents/Resources" >/dev/null
+  if [[ "$freshly_pinned" -eq 1 ]]; then
+    if "$bin" backup apply; then
+      log "spicetify applied with ${bin} ($("$bin" --version))"
+      return 0
+    fi
+    return 1
+  fi
+  if "$bin" apply; then
+    log "spicetify applied with ${bin} ($("$bin" --version))"
+    return 0
+  fi
+  log "apply failed; trying backup apply"
+  if "$bin" backup apply; then
+    log "spicetify applied with ${bin} ($("$bin" --version))"
+    return 0
+  fi
+  return 1
+}
+
+cmd_apply() {
+  local dry_run="$1"
+  local pin pin_ver max_ver full url sha size live=""
+  pin="$(pin_path)" || die "pin JSON missing; set SPICETIFY_REPO or SPICETIFY_PIN"
+  {
+    read -r pin_ver
+    read -r max_ver
+    read -r full
+    read -r url
+    read -r sha
+    read -r size
+  } < <(read_pin "$pin")
+  live="$(live_spotify_version)"
+  log "apply dry-run=${dry_run} live=${live:-missing} pin=${pin_ver} max=${max_ver} full=${full}"
+
+  if [[ "$dry_run" -eq 0 ]]; then
+    mkdir -p "$LOG_DIR" "$STATE_DIR"
+    sync_pin_dest
+    sync_dest_runner
+    exec 9>"${STATE_DIR}/apply.lock"
+    if ! flock -w 600 9; then
+      die "timed out waiting for ${STATE_DIR}/apply.lock"
+    fi
+  fi
+
+  local freshly_pinned=0
+  if [[ "$live" != "$pin_ver" ]]; then
+    install_pinned_spotify "$dry_run" "$pin_ver" "$url" "$sha" "$size"
+    freshly_pinned=1
+  else
+    log "spotify already at pin ${pin_ver}"
+  fi
+  block_updates "$dry_run"
+  if ! apply_spicetify "$dry_run" "$freshly_pinned"; then
+    log "stale backup; reinstalling vanilla pin then backup apply"
+    install_pinned_spotify "$dry_run" "$pin_ver" "$url" "$sha" "$size"
+    apply_spicetify "$dry_run" 1 || die "spicetify backup apply failed after pin reinstall"
+  fi
+  if [[ "$dry_run" -eq 1 ]]; then
+    log "ok (dry-run)"
+  else
+    log "ok"
+  fi
+}
+
+cmd_install() {
+  local dry_run="$1"
+  local dest="${HOME}/Library/LaunchAgents/${PLIST_NAME}"
+  local src_runner=""
+  local src_pin=""
+  local src_plist=""
+  local src_skip=""
+  local root=""
+
+  if root="$(repo_root)"; then
+    src_runner="${root}/${REPO_RUNNER_REL}"
+    src_pin="${root}/${PIN_REL}"
+    src_plist="${root}/${PLIST_REL}"
+    src_skip="${root}/${SKIP_REL}"
+    if [[ "$dry_run" -eq 1 ]]; then
+      log "dry-run: would /bin/cp -f ${src_runner} ${DEST_RUNNER}"
+      log "dry-run: would /bin/cp -f ${src_pin} ${PIN_DEST}"
+      log "dry-run: would render dest plist from ${src_plist}"
+      log "dry-run: would ensure skip-casks ${SKIP_DEST}"
+    else
+      mkdir -p "$(dirname "${DEST_RUNNER}")" "$(dirname "${PIN_DEST}")" "$LOG_DIR"
+      /bin/cp -f "$src_runner" "$DEST_RUNNER"
+      /bin/chmod +x "$DEST_RUNNER"
+      /bin/cp -f "$src_pin" "$PIN_DEST"
+      render_plist "$src_plist" "$dest"
+      ensure_skip_casks "$src_skip"
+      log "synced dest runner, pin, plist, and skip-casks from repo source"
+    fi
+  elif [[ "$dry_run" -eq 1 ]]; then
+    log "dry-run: SPICETIFY_REPO unset or source missing; would skip dest runner sync"
+  fi
+
+  if [[ "$dry_run" -eq 1 ]]; then
+    log "dry-run: would bootstrap ${LABEL} from ${dest}"
+    return 0
+  fi
+
+  require_cmd launchctl
+  if [[ ! -f "$dest" ]]; then
+    die "dest plist missing (${dest}); set SPICETIFY_REPO or apply Chezmoi from rig/home first"
+  fi
+  mkdir -p "${HOME}/Library/LaunchAgents" "$LOG_DIR"
+
+  if agent_loaded "$LABEL"; then
+    launchctl bootout "$(label_path "$LABEL")" >/dev/null 2>&1 || true
+  fi
+  if ! launchctl bootstrap "$(gui_domain)" "$dest"; then
+    log "bootstrap failed for ${LABEL}"
+    print_login_item_hint
+    return 1
+  fi
+  launchctl enable "$(label_path "$LABEL")" >/dev/null 2>&1 || true
+  if agent_loaded "$LABEL"; then
+    log "loaded ${LABEL} (RunAtLoad=true; WatchPaths Spotify.app)"
+  else
+    log "${LABEL} not visible to launchctl after bootstrap"
+    print_login_item_hint
+    return 1
+  fi
+  return 0
+}
+
+cmd_doctor() {
+  local status=0
+  local dest="${HOME}/Library/LaunchAgents/${PLIST_NAME}"
+  local pin="" live="" bin="" brew_ver="" path_ver=""
+
+  if pin="$(pin_path)"; then
+    log "pin-file: ${pin}"
+  else
+    log "pin-file: missing"
+    status=1
+  fi
+
+  live="$(live_spotify_version)"
+  if [[ -n "$live" ]]; then
+    log "spotify live: ${live}"
+  else
+    log "spotify live: missing (${SPOTIFY_APP})"
+    status=1
+  fi
+  if [[ -n "$pin" && -n "$live" ]]; then
+    local pin_ver=""
+    pin_ver="$(read_pin "$pin" | head -n 1)"
+    if [[ "$live" != "$pin_ver" ]]; then
+      log "spotify pin mismatch: live ${live} != ${pin_ver}"
+      status=1
+    else
+      log "spotify pin: match ${pin_ver}"
+    fi
+  fi
+
+  if bin="$(resolve_spicetify)"; then
+    brew_ver="$("$bin" --version 2>/dev/null || true)"
+    log "spicetify brew-path: ${bin} (${brew_ver:-unknown})"
+  else
+    log "spicetify brew-path: missing"
+    status=1
+  fi
+  if command -v spicetify >/dev/null 2>&1; then
+    path_ver="$(spicetify --version 2>/dev/null || true)"
+    log "spicetify PATH: $(command -v spicetify) (${path_ver:-unknown})"
+    if [[ -n "$brew_ver" && -n "$path_ver" && "$path_ver" != "$brew_ver" ]]; then
+      log "spicetify PATH shadows brew (${path_ver} vs ${brew_ver})"
+      status=1
+    fi
+  fi
+
+  if updates_blocked; then
+    log "updates: blocked"
+  else
+    log "updates: not blocked"
+    status=1
+  fi
+
+  if [[ -f "$dest" ]]; then
+    log "apply plist: present"
+  else
+    log "apply plist: missing"
+    status=1
+  fi
+  if agent_loaded "$LABEL"; then
+    log "apply agent ${LABEL}: loaded"
+  else
+    log "apply agent ${LABEL}: not loaded"
+    print_login_item_hint
+    status=1
+  fi
+
+  if [[ -f "${DEST_RUNNER}" ]] && root="$(repo_root)"; then
+    local dest_hash src_hash
+    dest_hash="$(file_sha256 "${DEST_RUNNER}")"
+    src_hash="$(file_sha256 "${root}/${REPO_RUNNER_REL}")"
+    if [[ "${dest_hash}" == "${src_hash}" ]]; then
+      log "dest runner hash: match"
+    else
+      log "dest runner hash: MISMATCH (run just spicetify-install)"
+      status=1
+    fi
+  fi
+
+  return "$status"
+}
+
+DRY_RUN=0
+CMD=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    apply | install | doctor | preview)
+      if [[ -n "$CMD" ]]; then
+        die "multiple subcommands: $CMD and $1"
+      fi
+      CMD="$1"
+      shift
+      ;;
+    --dry-run)
+      DRY_RUN=1
+      shift
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      printf 'spicetify-apply: unknown argument: %s\n' "$1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+CMD="${CMD:-preview}"
+
+case "$CMD" in
+  preview)
+    cmd_preview
+    log "ok (preview)"
+    ;;
+  apply) cmd_apply "$DRY_RUN" ;;
+  install) cmd_install "$DRY_RUN" ;;
+  doctor) cmd_doctor ;;
+  *) die "unknown subcommand $CMD" ;;
+esac

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.wyattowalsh.spicetify-apply</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{{ .chezmoi.homeDir }}/.local/bin/spicetify-apply</string>
+    <string>apply</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>{{ .chezmoi.homeDir }}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>{{ .chezmoi.homeDir }}</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>WatchPaths</key>
+  <array>
+    <string>/Applications/Spotify.app</string>
+  </array>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>LimitLoadToSessionType</key>
+  <string>Aqua</string>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>{{ .chezmoi.homeDir }}/Library/Logs/spicetify/apply.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>{{ .chezmoi.homeDir }}/Library/Logs/spicetify/apply.err.log</string>
+</dict>
+</plist>
