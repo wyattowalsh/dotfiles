@@ -488,6 +488,30 @@ ensure_command_plan() {
   fi
 }
 
+# Repair group/world-writable zsh completion dirs (Homebrew share/ is often 0775).
+# Dry-run prints planned chmod; apply chmods then re-audits.
+normalize_completion_dir_perms() {
+  if ! command -v zsh >/dev/null 2>&1; then
+    debug "zsh not on PATH; skip completion directory audit"
+    return 0
+  fi
+
+  local dir
+  while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    run_or_print "chmod go-w completion dir: $dir" chmod go-w "$dir"
+  done < <(zsh -c 'autoload -Uz compaudit; compaudit' 2>/dev/null || true)
+
+  if [ "$APPLY" -eq 1 ]; then
+    local leftover
+    leftover="$(zsh -c 'autoload -Uz compaudit; compaudit' 2>/dev/null || true)"
+    if [ -n "$leftover" ]; then
+      printf 'Completion directories still insecure after chmod go-w:\n%s\n' "$leftover" >&2
+      return 1
+    fi
+  fi
+}
+
 main() {
   parse_args "$@"
   require_macos
@@ -520,6 +544,7 @@ main() {
 
   ensure_oh_my_zsh_and_p10k
   brew_bundle_install_or_check
+  normalize_completion_dir_perms
 
   if [ "$APPLY" -eq 1 ]; then
     link_root_dotfiles

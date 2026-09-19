@@ -30,7 +30,7 @@ just docs-ci
 
 | Focused gate | Contract |
 | --- | --- |
-| `just check-zsh` | zsh syntax/mirror parity, exact plugin/history/load ordering, tracked pnpm completion, `fkill` PID safety, and activation-only `layout_uv` fixtures |
+| `just check-zsh` | zsh syntax/mirror parity, exact plugin/history/load ordering, tracked pnpm completion, `fkill` PID safety, activation-only `layout_uv` fixtures, and Darwin `compaudit` |
 | `just check-rig-ecosystem-assurance` | Agent Deck/tmux ownership, nbdime provider and Git wiring, no unapproved `dft`/difftastic wiring, and no G4 macOS defaults |
 | `just check-ghostty` | Ghostty template/data/zsh/docs contracts plus isolated Chezmoi rendering and native parsing when Ghostty and Chezmoi are available; never applies config |
 | `just check-yazi-config` | Current fields, resolved plugin/flavor locks, dark/light theme mapping, Option DuckDB keys, and isolated native parsing when Yazi is available |
@@ -68,7 +68,7 @@ Runs in this order:
 | `check-shell` | `bash -n` + `shellcheck` + `shfmt -d` on `shell_files` (required in CI) |
 | `check-just-fmt` | `just --unstable --fmt --check` |
 | `check-mise-boundary` | no repo-root `mise.toml` / mise `[tasks]` |
-| `check-zsh` | `zsh -n`, dots ↔ home `cmp`, `checks/zsh-structure-test.sh`, `zsh-structure.sh`, Atuin init grep, `zsh-home-behavior-test.sh` |
+| `check-zsh` | `zsh -n`, dots ↔ home `cmp`, `checks/zsh-structure-test.sh`, `zsh-structure.sh`, Atuin init grep, `zsh-home-behavior-test.sh`, Darwin `checks/zsh-compaudit.sh` |
 | `check-freshen` | Version SSOT, privacy/goldens, `zsh -n`, and `tests/freshen_test.zsh` (no live Homebrew/mas mutations) |
 | `check-json` | `jq empty` on tracked `*.json` |
 | `secrets-scan` | obvious secret-shaped values in tracked source |
@@ -101,6 +101,6 @@ Runs in this order:
 | `hooks-run` | `pre-commit run --all-files` |
 | `hooks-update` | `pre-commit autoupdate` |
 
-`just docs-ci` is what GitHub CI runs for the site (`pnpm install --frozen-lockfile`). Local-only: `just check-zsh-smoke`. Optional when tools exist: `just brew-check`, `just darwin-check`, `just home-diff`.
+`just docs-ci` is what GitHub CI runs for the site (`pnpm install --frozen-lockfile`). Local-only: `just check-zsh-smoke`, `just zsh-time`. Optional when tools exist: `just brew-check`, `just darwin-check`, `just home-diff`.
 
 Full recipe list: `just --list`.

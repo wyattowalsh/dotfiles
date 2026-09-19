@@ -2,7 +2,7 @@
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
-shell_files := "setup.sh rig/bootstrap/macos.sh rig/bootstrap/linux.sh rig/bootstrap/dev-env.sh checks/apple-text-test.sh checks/apple-text.sh checks/apps-manual-inventory.sh checks/brew-exclude-check.sh checks/chezmoi-ignore.sh checks/config-dirs-inventory.sh checks/darwin-lock.sh checks/docs-css-health.sh checks/docs-hub-parity.sh checks/docs-sensitive.sh checks/freshen-smoke.sh checks/freshen-version.sh checks/freshen-privacy.sh checks/ghostty.sh checks/iina-config.sh checks/iina-qol.sh checks/kopia-nightly.sh checks/linux-dev-env-rc.sh checks/mise-boundary.sh checks/remote-access.sh checks/rig-ecosystem-assurance.sh checks/secrets-scan.sh checks/shell-files-sync.sh checks/smoke.sh checks/stale-path-freeze.sh checks/validate-json.sh checks/yazi-config.sh checks/zsh-alias-docs.sh checks/zsh-alias-usage.sh checks/zsh-home-behavior-test.sh checks/zsh-inventory.sh checks/zsh-structure.sh checks/zsh-structure-test.sh checks/zsh-smoke-interactive.sh checks/zsh-rollback-live.sh rig/home/dot_local/bin/executable_kopia-nightly rig/home/dot_local/bin/executable_remote-access rig/home/private_dot_config/direnv/lib/layout_uv.sh"
+shell_files := "setup.sh rig/bootstrap/macos.sh rig/bootstrap/linux.sh rig/bootstrap/dev-env.sh checks/apple-text-test.sh checks/apple-text.sh checks/apps-manual-inventory.sh checks/brew-exclude-check.sh checks/chezmoi-ignore.sh checks/config-dirs-inventory.sh checks/darwin-lock.sh checks/docs-css-health.sh checks/docs-hub-parity.sh checks/docs-sensitive.sh checks/freshen-smoke.sh checks/freshen-version.sh checks/freshen-privacy.sh checks/ghostty.sh checks/iina-config.sh checks/iina-qol.sh checks/kopia-nightly.sh checks/linux-dev-env-rc.sh checks/mise-boundary.sh checks/remote-access.sh checks/rig-ecosystem-assurance.sh checks/secrets-scan.sh checks/shell-files-sync.sh checks/smoke.sh checks/stale-path-freeze.sh checks/validate-json.sh checks/yazi-config.sh checks/zsh-alias-docs.sh checks/zsh-alias-usage.sh checks/zsh-compaudit.sh checks/zsh-home-behavior-test.sh checks/zsh-startup-time.sh checks/zsh-inventory.sh checks/zsh-structure.sh checks/zsh-structure-test.sh checks/zsh-smoke-interactive.sh checks/zsh-rollback-live.sh rig/home/dot_local/bin/executable_kopia-nightly rig/home/dot_local/bin/executable_remote-access rig/home/private_dot_config/direnv/lib/layout_uv.sh"
 
 # List available recipes (default).
 default:
@@ -118,10 +118,15 @@ check-zsh:
     ./checks/zsh-structure-test.sh
     ./checks/zsh-structure.sh rig/dots/zshrc all
     ./checks/zsh-home-behavior-test.sh
+    ./checks/zsh-compaudit.sh
 
 # Local-only interactive zsh smoke (uv/pnpm/pipx/mise/zoxide).
 check-zsh-smoke:
     ./checks/zsh-smoke-interactive.sh
+
+# Report-only interactive zsh startup time (min/median/max). Never a CI gate.
+zsh-time *RUNS:
+    ./checks/zsh-startup-time.sh {{ RUNS }}
 
 # Local-only: alias names vs HISTFILE tokens → local/zsh-alias-usage.txt.
 zsh-alias-usage:
