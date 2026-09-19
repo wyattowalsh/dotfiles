@@ -17,6 +17,8 @@ just check-freshen
 just check-apple-text
 just check-iina-config
 just iina-qol
+just check-remote-access
+just remote-access
 just check-bats
 just fmt-shell      # shfmt -w (preview: just check-shell)
 just smoke          # non-destructive runtime
@@ -37,6 +39,8 @@ just docs-ci
 | `just check-apple-text` | Canonical Text Replacement / Shortcuts registries plus offline merge harness (no Apple DB writes) |
 | `just check-iina-config` | IINA-QoL input profile, plugin schema, Hammerspoon syntax, chezmoiignore (no live IINA writes) |
 | `just iina-qol` | Preview / apply / doctor for the IINA QoL stack (dry-run unless `--apply`) |
+| `just check-remote-access` | RustDesk-over-Tailscale runner contract (no live launchctl / TCC / brew services) |
+| `just remote-access` | Plan / install / enable / doctor / disable / rollback (mutating commands default to dry-run) |
 | `just check-bats` | File-only Bats coverage when Bats is present; required in CI |
 
 ```mermaid
@@ -76,11 +80,12 @@ Runs in this order:
 | `check-kopia-nightly` | headless Kopia runner contract (no live `kopia` / launchd) |
 | `check-apple-text` | Text Replacement registries + offline merge (no `TextReplacements.db`) |
 | `check-iina-config` | IINA-QoL profile, plugin schema, Hammerspoon syntax (no live IINA / Hammerspoon mutation) |
+| `check-remote-access` | RustDesk-over-Tailscale runner contract (no live launchctl / TCC) |
 | `check-bats` | `checks/*.bats` when Bats is present; required in CI |
 | `check-chezmoi-ignore` | `.chezmoiignore` uses destination/target names |
 | `check-darwin-lock` | `flake.lock` JSON + recoverable nix-darwin pin |
 | `check-linux-dev-env-rc` | Linux `run_dev_env` exit-status capture (no `$HOME` mutation) |
-| `check-shell-files` | justfile `shell_files` matches tracked `*.sh` + Kopia runner |
+| `check-shell-files` | justfile `shell_files` matches tracked `*.sh` + Kopia and remote-access runners |
 
 ## Docs / hooks (not inside `just check`)
 

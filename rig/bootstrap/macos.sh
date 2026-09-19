@@ -7,6 +7,7 @@ APPLY=0
 NO_UPGRADE=0
 WITH_DEV_ENV=0
 REQUIRE_DEV_ENV=0
+WITH_REMOTE_ACCESS=0
 DRY_RUN_FAILED=0
 SUDO_KEEPALIVE_PID=""
 LOCK_FILE="${XDG_RUNTIME_DIR:-$HOME/.cache}/dotfiles/macos-bootstrap.lock"
@@ -25,14 +26,15 @@ DARWIN_HOST="${DARWIN_HOST:-w4w-mbp}"
 
 usage() {
   cat <<'USAGE'
-Usage: rig/bootstrap/macos.sh [--dry-run] [--apply] [--verbose] [--no-upgrade] [--with-dev-env] [--require-dev-env]
+Usage: rig/bootstrap/macos.sh [--dry-run] [--apply] [--verbose] [--no-upgrade] [--with-dev-env] [--require-dev-env] [--with-remote-access]
 
-  --dry-run          Print planned macOS bootstrap actions without mutating state.
-  --apply            Permit mutating setup actions.
-  --verbose          Print additional diagnostics.
-  --no-upgrade       Pass --no-upgrade to brew bundle install (safer first restore).
-  --with-dev-env     Also run the portable agent-stack installer (just bootstrap-dev).
-  --require-dev-env  Fail if --with-dev-env is set and the agent-stack installer fails.
+  --dry-run              Print planned macOS bootstrap actions without mutating state.
+  --apply                Permit mutating setup actions.
+  --verbose              Print additional diagnostics.
+  --no-upgrade           Pass --no-upgrade to brew bundle install (safer first restore).
+  --with-dev-env         Also run the portable agent-stack installer (just bootstrap-dev).
+  --require-dev-env      Fail if --with-dev-env is set and the agent-stack installer fails.
+  --with-remote-access   Install Tailscale/RustDesk packages and dest runner. Never enables unattended access.
 USAGE
 }
 
@@ -258,6 +260,9 @@ parse_args() {
       --require-dev-env)
         REQUIRE_DEV_ENV=1
         WITH_DEV_ENV=1
+        ;;
+      --with-remote-access)
+        WITH_REMOTE_ACCESS=1
         ;;
       -h | --help)
         usage
@@ -535,6 +540,23 @@ main() {
     fi
   else
     log "Kopia nightly install skipped (non-Darwin or runner source missing)."
+  fi
+
+  remote_access_src="$HOME_SOURCE/dot_local/bin/executable_remote-access"
+  if [ "$WITH_REMOTE_ACCESS" -eq 1 ]; then
+    if [ -x "$remote_access_src" ]; then
+      export REMOTE_ACCESS_REPO="$REPO_ROOT"
+      if [ "$APPLY" -eq 1 ]; then
+        run_or_print "Install remote-access packages (not enabled)" "$remote_access_src" install --apply
+      else
+        run_or_print "Preview remote-access packages (not enabled)" "$remote_access_src" install --dry-run
+      fi
+      log "Remote access stays off until you explicitly enable it (just remote-access)."
+    else
+      log "Remote-access install skipped (runner source missing)."
+    fi
+  else
+    log "Remote access is opt-in: just bootstrap --apply --with-remote-access (install only; never auto-enables)."
   fi
 
   if [ "$APPLY" -eq 1 ]; then

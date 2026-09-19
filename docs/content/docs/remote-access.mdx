@@ -1,0 +1,144 @@
+---
+icon: remote-access
+title: Remote access
+description: iPhone RustDesk over Tailscale to this Mac. Opt-in, never auto-enabled.
+---
+
+Free personal tailnet plus the ordinary RustDesk macOS client. Direct IP through Tailscale. No RustDesk Server, hbbs/hbbr, Headscale, Funnel, or paid infrastructure.
+
+```bash
+just remote-access                 # plan (read-only)
+just remote-access install --dry-run
+just remote-access install --apply
+just remote-access enable --dry-run
+just remote-access enable --apply
+just remote-access doctor
+just remote-access disable --apply
+just remote-access rollback --apply
+just check-remote-access           # static; no live launchctl/TCC
+```
+
+`just remote-access*` always runs the **repo source**. Launchd never runs this script. Dest runner `$HOME/.local/bin/remote-access` is a copy for PATH use.
+
+Generic `just bootstrap --apply` and Chezmoi apply **do not** enable unattended access. Pass `--with-remote-access` only to install packages.
+
+## Sources (verified 2026-09-05)
+
+| Topic | URL |
+| --- | --- |
+| Tailscale + RustDesk | https://tailscale.com/docs/solutions/access-remote-desktops-with-rustdesk |
+| macOS Tailscale variants | https://tailscale.com/docs/concepts/macos-variants |
+| Tailscale CLI | https://tailscale.com/docs/reference/tailscale-cli |
+| `tailscaled` on macOS | https://github.com/tailscale/tailscale/wiki/Tailscaled-on-macOS |
+| RustDesk macOS client | https://rustdesk.com/docs/en/client/mac/ |
+| RustDesk client | https://rustdesk.com/docs/en/client/ |
+| Advanced settings | https://rustdesk.com/docs/en/self-host/client-configuration/advanced-settings/ |
+| Vendor service plists | https://github.com/rustdesk/rustdesk/wiki/macOS-Auto%E2%80%90Start-Service-Setup-(for-Remote---MDM-Deployment) |
+| Homebrew `rustdesk` cask | https://formulae.brew.sh/cask/rustdesk |
+| Homebrew `tailscale` formula | https://formulae.brew.sh/formula/tailscale |
+| Homebrew `tailscale-app` cask | https://formulae.brew.sh/cask/tailscale-app |
+| FileVault | https://support.apple.com/guide/deployment/intro-to-filevault-dep82064ec40/web |
+
+Current packages: Tailscale formula **1.102.3**, RustDesk cask **1.4.9**. Use current stable unless a disclosed beta-OS exception is required.
+
+## Lifecycle
+
+This host already declared `brew "tailscale"`. The runner **reuses that formula**. It does not install `cask "tailscale-app"` next to it.
+
+| Piece | Owner | Why |
+| --- | --- | --- |
+| Tailscale | `sudo brew services start tailscale` (current Homebrew label `sh.brew.tailscale`) | Single lifecycle. Formula `tailscaled` can run at LoginWindow after FileVault unlock. Do not also run `tailscaled install-system-daemon`. |
+| RustDesk | Vendor `com.carriez.RustDesk_service` (root daemon) + `com.carriez.RustDesk_server` (user agent, LoginWindow + Aqua) | Official 1.4.9 templates. macOS `--install-service` only **checks** plists; it does not install. |
+| This repo | `just remote-access` | Packages, nonsecret option merge, enable/disable intent. No homemade `open`+KeepAlive watchdog. No `.zshrc` startup. |
+
+If a GUI Tailscale.app is already present, the runner preserves it and does not start a second daemon. That GUI variant does **not** run before login.
+
+## Setup
+
+1. `just remote-access` — confirm backend `brew-formula-tailscaled` and that no GUI app is competing.
+2. `just remote-access install --apply` — cask `rustdesk` if missing; dest runner; **does not** enable the listener.
+3. Log the Mac into the existing personal tailnet: `sudo tailscale up` then `sudo tailscale set --operator=$USER`. Do not pass `--reset`, do not rotate node keys, do not enable SSH / Funnel / Serve / subnet routes / exit nodes.
+4. Open RustDesk. Settings → Security: enable **Direct IP access**, set a **unique permanent password** in the app UI, set approval to **password only**. Never put the password in chat, git, logs, or argv.
+5. Sign the iPhone into the **same** tailnet and leave it online once so `enable` can see exactly one iOS peer. If several phones exist: `just remote-access enable --apply --peer <hostname>`.
+6. `just remote-access enable --apply` — starts brew `tailscale` if needed, merges nonsecret keys, installs vendor plists, persists `intent=enabled`.
+7. Grant **Screen Recording**, **Accessibility**, and **Input Monitoring** (RustDesk docs: Input Monitoring is required on newer macOS). The runner opens System Settings when a TTY is present; it never edits TCC.
+
+Disable later with `just remote-access disable --apply`. That stops RustDesk autostart and keeps Tailscale running.
+
+## iPhone
+
+- Tailscale: [App Store](https://apps.apple.com/us/app/tailscale/id1470499037)
+- RustDesk: [App Store](https://apps.apple.com/us/app/rustdesk-remote-desktop/id1581225015)
+
+On the phone: join the same tailnet, enable the VPN, put the Mac's Tailscale IPv4 (from `just remote-access doctor` / `tailscale ip -4`) in RustDesk's Remote ID box, then enter the password in the app. Do not use the numeric RustDesk ID for this workflow.
+
+`doctor` prints listener and startup state; it does not print the password or peer allowlist addresses.
+
+## Startup boundaries
+
+| Situation | Tailscale (`tailscaled` formula) | RustDesk vendor agent |
+| --- | --- | --- |
+| Unlocked Aqua session | Yes, if brew service loaded | Yes (`--server`) |
+| Locked session, user still logged in | Yes | Yes, if the agent stayed loaded |
+| Logged out (LoginWindow, FileVault already unlocked) | Yes (plist includes LoginWindow/System) | Agent `LimitLoadToSessionType` includes LoginWindow |
+| After reboot, before FileVault unlock | **No** | **No** |
+| After FileVault unlock, before login | Documented for `tailscaled`; less tested than the GUI | Vendor agent is supposed to load at LoginWindow |
+
+Apple silicon + recent macOS can unlock FileVault over SSH when Remote Login is on. This feature **does not** turn Remote Login on. Do not assume the Mac is reachable before protected storage is available.
+
+macOS 27 beta: treat LoginWindow/pre-login behavior as **unverified** until you test a reboot with an out-of-band recovery path.
+
+## Encryption and exposure
+
+Tailscale encrypts transport, including DERP relay fallback. RustDesk may still label a **direct-IP** session as unencrypted at the RustDesk layer. That label is not a claim about Tailscale. It also does **not** apply to a raw LAN or public-IP listener.
+
+The RustDesk process listens on the configured direct-access port (upstream default **21118**; `doctor` checks the live port). A `100.x` address is not Tailscale authentication by itself. Enable refuses an empty whitelist (`allow-all`). Access control is: tailnet membership + the selected iPhone allowlist + the permanent password. Tailscale ACLs are not rewritten.
+
+LAN discovery is turned off when enabling. The stock client may still contact public ID/rendezvous servers. Direct-IP success does not prove those calls stopped. Do not fake custom server endpoints.
+
+## Power
+
+Display sleep is not system sleep. This feature does not change `pmset`. There is no `caffeinate` loop. Closed-lid reachability and Wake-on-LAN over Tailscale are **unclaimed**.
+
+## Manual gates
+
+| Gate | Who |
+| --- | --- |
+| Tailscale login in a browser | Operator |
+| RustDesk permanent password in the app UI | Operator |
+| Screen Recording / Accessibility / Input Monitoring | Operator |
+| iPhone App Store install | Operator (cannot be approved from the Mac) |
+| Reboot / logout tests | Only with explicit approval and a recovery plan |
+
+## Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| `failed to connect to local Tailscale service` | `brew services info tailscale`; `sudo brew services start tailscale` |
+| Two Tailscale variants | Do not run GUI app + brew `tailscaled` together |
+| NordVPN (or other VPN) running | Left running; it may interfere with `utun`. Do not disable it from this feature |
+| Service loaded, no control | Permissions; `stop-service` leftover; `just remote-access doctor` |
+| Direct IP refused | Confirm `direct-server` and the live port; whitelist must be the phone's Tailscale IPs |
+| `enable` pending peer | Bring the phone online, or pass `--peer` |
+
+## Updates
+
+`brew upgrade tailscale` keeps the brew service unit. Re-run `just remote-access doctor` after upgrades. Do not silently replace a working GUI install. RustDesk cask upgrades may need the vendor plists reinstalled (`enable --apply` is idempotent and does not rotate the password).
+
+## Disable / rollback
+
+```bash
+just remote-access disable --apply
+just remote-access rollback --apply
+```
+
+Disable stops the RustDesk listener/autostart and persists disabled intent (survives install re-entry). Rollback restores the previous nonsecret options backup when it does not conflict with later operator edits, and removes **owned** vendor plists. It does not delete RustDesk.app, Tailscale identity, or the password.
+
+## Human acceptance
+
+1. iPhone on cellular (Wi-Fi off), Tailscale VPN on, connect to the Mac Tailscale IP, confirm desktop + input + clipboard.
+2. Disconnect, lock the Mac, reconnect.
+3. Restart recovery only with explicit approval.
+4. From another owned LAN device **not** on the tailnet, confirm the listener is not a usable unauthenticated path.
+
+A local socket or localhost connect is **not** proof of iPhone-over-cellular success.

@@ -1,0 +1,8 @@
+rendezvous_server = 'rs-ny.rustdesk.com'
+nat_type = 1
+serial = 0
+
+[options]
+keep-me = 'yes'
+enable-file-transfer = 'Y'
+direct-server = 'N'

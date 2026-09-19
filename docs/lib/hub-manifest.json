@@ -50,6 +50,13 @@
       "group": "operate"
     },
     {
+      "slug": "remote-access",
+      "title": "Remote",
+      "description": "iPhone RustDesk over Tailscale; opt-in, never auto-enabled.",
+      "firstCommand": "just remote-access",
+      "group": "operate"
+    },
+    {
       "slug": "shell",
       "title": "Shell",
       "description": "Zsh structure + tools.",

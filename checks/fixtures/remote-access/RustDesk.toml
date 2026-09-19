@@ -1,0 +1,4 @@
+id = 'placeholder-id'
+password = ''
+salt = 'not-a-secret-fixture'
+key_confirmed = true

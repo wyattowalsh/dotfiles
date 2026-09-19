@@ -1,0 +1,1265 @@
+#!/usr/bin/env bash
+# Opt-in RustDesk-over-Tailscale remote access for macOS.
+# Native vendor services only. No shell-rc startup. No password argv.
+set -euo pipefail
+export PYTHONDONTWRITEBYTECODE=1
+
+# launchd PATH is often just /usr/bin:/bin. Prefer an explicit test PATH when
+# set; otherwise append Homebrew so mocks at the front of PATH still win.
+if [[ -n "${REMOTE_ACCESS_PATH:-}" ]]; then
+  export PATH="$REMOTE_ACCESS_PATH"
+else
+  case ":${PATH:-}:" in
+    *:/opt/homebrew/bin:*) ;;
+    *) export PATH="${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}:/opt/homebrew/bin" ;;
+  esac
+fi
+
+LABEL_TS="sh.brew.tailscale"
+RD_APP_NAME="RustDesk"
+RD_FULL_NAME="com.carriez.RustDesk"
+RD_BUNDLE_ID="com.carriez.rustdesk"
+RD_DAEMON_LABEL="${RD_FULL_NAME}_service"
+RD_AGENT_LABEL="${RD_FULL_NAME}_server"
+RD_APP="/Applications/RustDesk.app"
+RD_BIN="${RD_APP}/Contents/MacOS/RustDesk"
+DEST_RUNNER="${HOME}/.local/bin/remote-access"
+REPO_RUNNER_REL="rig/home/dot_local/bin/executable_remote-access"
+DEFAULT_PORT="21118"
+MANAGED_KEYS="direct-server direct-access-port enable-keyboard enable-clipboard enable-file-transfer enable-tunnel enable-terminal allow-remote-config-modification enable-record-session enable-audio enable-lan-discovery approve-mode verification-method whitelist"
+
+log() {
+  printf '[remote-access] %s\n' "$*"
+}
+
+die() {
+  log "error: $*" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'USAGE'
+Usage: remote-access [plan]
+       remote-access install --dry-run|--apply
+       remote-access enable --dry-run|--apply [--peer <hostname>]
+       remote-access doctor
+       remote-access disable --dry-run|--apply
+       remote-access rollback --dry-run|--apply
+
+  plan       Read-only inventory, selected backend, intended changes, gates.
+  install    Targeted packages and dest runner. Does not enable unattended access.
+  enable     Start Tailscale brew service, merge nonsecret RustDesk keys, install
+             vendor LaunchDaemon/Agent, persist enabled intent.
+  doctor     Read-only diagnostics. Exit 0 ok, 1 broken, 3 unsupported, 4 pending.
+  disable    Stop RustDesk autostart/listener and persist disabled intent.
+  rollback   Restore feature-owned RustDesk settings/plists. Leaves the app.
+
+Mutating commands require --apply and refuse --dry-run combined with --apply.
+Password is never accepted as an argument or environment value; set it in the
+RustDesk Security UI. Tailscale identity is reused, never reset.
+USAGE
+}
+
+uname_s() {
+  printf '%s\n' "${REMOTE_ACCESS_UNAME:-$(uname -s)}"
+}
+
+is_darwin() {
+  [[ "$(uname_s)" == "Darwin" ]]
+}
+
+state_dir() {
+  if [[ -n "${REMOTE_ACCESS_STATE_DIR:-}" ]]; then
+    printf '%s\n' "${REMOTE_ACCESS_STATE_DIR}"
+    return 0
+  fi
+  printf '%s\n' "${HOME}/.local/state/dotfiles/remote-access"
+}
+
+state_file() {
+  printf '%s/state.json\n' "$(state_dir)"
+}
+
+lock_dir() {
+  printf '%s/lock.d\n' "$(state_dir)"
+}
+
+rd_user_pref() {
+  printf '%s/Library/Preferences/%s\n' "${HOME}" "${RD_FULL_NAME}"
+}
+
+rd_toml2() {
+  printf '%s/%s2.toml\n' "$(rd_user_pref)" "${RD_APP_NAME}"
+}
+
+rd_toml() {
+  printf '%s/%s.toml\n' "$(rd_user_pref)" "${RD_APP_NAME}"
+}
+
+sudo_bin() {
+  if [[ -n "${REMOTE_ACCESS_SUDO:-}" ]]; then
+    printf '%s\n' "${REMOTE_ACCESS_SUDO}"
+    return 0
+  fi
+  command -v sudo
+}
+
+repo_root() {
+  if [[ -n "${REMOTE_ACCESS_REPO:-}" && -f "${REMOTE_ACCESS_REPO}/${REPO_RUNNER_REL}" ]]; then
+    printf '%s\n' "${REMOTE_ACCESS_REPO}"
+    return 0
+  fi
+  return 1
+}
+
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || die "missing command: $1"
+}
+
+acquire_lock() {
+  local dir pid=""
+  dir="$(lock_dir)"
+  mkdir -p "$(state_dir)"
+  if mkdir "$dir" 2>/dev/null; then
+    printf '%s\n' "$$" >"${dir}/pid"
+    return 0
+  fi
+  pid="$(cat "${dir}/pid" 2>/dev/null || true)"
+  # ps -p treats a live pid as held even when kill -0 is EPERM (pid 1).
+  if [[ -n "$pid" ]] && ps -p "$pid" >/dev/null 2>&1; then
+    die "another remote-access process holds $(lock_dir)"
+  fi
+  rm -rf "$dir"
+  if mkdir "$dir" 2>/dev/null; then
+    printf '%s\n' "$$" >"${dir}/pid"
+    return 0
+  fi
+  die "another remote-access process holds $(lock_dir)"
+}
+
+release_lock() {
+  local dir pid=""
+  dir="$(lock_dir)"
+  pid="$(cat "${dir}/pid" 2>/dev/null || true)"
+  if [[ "$pid" == "$$" ]]; then
+    rm -rf "$dir"
+  fi
+}
+
+atomic_write() {
+  local dest="$1"
+  local dir base tmp
+  dir="$(dirname "$dest")"
+  base="$(basename "$dest")"
+  mkdir -p "$dir"
+  tmp="${dir}/.${base}.tmp.$$"
+  cat >"$tmp"
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$tmp" <<'PY' || true
+import os, sys
+path = sys.argv[1]
+fd = os.open(path, os.O_RDONLY)
+try:
+    os.fsync(fd)
+finally:
+    os.close(fd)
+PY
+  fi
+  mv -f "$tmp" "$dest"
+}
+
+run_sudo() {
+  local sudo_path
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    printf '[remote-access] dry-run: sudo'
+    printf ' %q' "$@"
+    printf '\n'
+    return 0
+  fi
+  sudo_path="$(sudo_bin)" || die "sudo is required for $*"
+  "$sudo_path" "$@"
+}
+
+refuse_secrets() {
+  if [[ -n "${REMOTE_ACCESS_PASSWORD:-}" || -n "${RUSTDESK_PASSWORD:-}" ]]; then
+    die "password environment variables are refused; set the permanent password in the RustDesk Security UI"
+  fi
+}
+
+python_merge_options() {
+  require_cmd python3
+  local toml="$1"
+  shift
+  MANAGED_TOML="$toml" python3 - "$@" <<'PY'
+import os, re, sys, tempfile
+
+path = os.environ["MANAGED_TOML"]
+updates = {}
+argv = sys.argv[1:]
+i = 0
+while i < len(argv):
+    if argv[i] == "--set" and i + 2 < len(argv):
+        updates[argv[i + 1]] = argv[i + 2]
+        i += 3
+        continue
+    if argv[i] == "--drop" and i + 1 < len(argv):
+        updates[argv[i + 1]] = None
+        i += 2
+        continue
+    sys.exit("usage: --set KEY VALUE | --drop KEY")
+
+text = ""
+if os.path.isfile(path):
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+
+lines = text.splitlines()
+out = []
+in_options = False
+seen = set()
+replaced = set()
+i = 0
+while i < len(lines):
+    line = lines[i]
+    stripped = line.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        if in_options:
+            for key, value in updates.items():
+                if key not in replaced and value is not None:
+                    out.append(f"{key} = '{value}'")
+                    replaced.add(key)
+        in_options = stripped.lower() == "[options]"
+        out.append(line)
+        i += 1
+        continue
+    if in_options:
+        match = re.match(r"^([A-Za-z0-9_-]+)\s*=\s*(.*)$", stripped)
+        if match:
+            key = match.group(1)
+            if key in updates:
+                value = updates[key]
+                replaced.add(key)
+                if value is not None:
+                    out.append(f"{key} = '{value}'")
+                i += 1
+                continue
+            seen.add(key)
+    out.append(line)
+    i += 1
+
+if in_options:
+    for key, value in updates.items():
+        if key not in replaced and value is not None:
+            out.append(f"{key} = '{value}'")
+            replaced.add(key)
+elif updates:
+    pending = [(key, value) for key, value in updates.items() if value is not None]
+    if pending:
+        if out and out[-1].strip() != "":
+            out.append("")
+        out.append("[options]")
+        for key, value in pending:
+            out.append(f"{key} = '{value}'")
+
+body = "\n".join(out)
+if body and not body.endswith("\n"):
+    body += "\n"
+
+directory = os.path.dirname(path) or "."
+fd, tmp = tempfile.mkstemp(prefix=".%s." % os.path.basename(path), dir=directory, text=True)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(body)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp, path)
+except Exception:
+    try:
+        os.unlink(tmp)
+    except OSError:
+        pass
+    raise
+PY
+}
+
+restore_managed_from_backup() {
+  local backup="$1"
+  local dest="$2"
+  local key val
+  local -a args
+  args=()
+  for key in $MANAGED_KEYS; do
+    val="$(python_read_option "$backup" "$key" || true)"
+    if [[ -n "$val" ]]; then
+      args+=(--set "$key" "$val")
+    else
+      args+=(--drop "$key")
+    fi
+  done
+  if [[ "${#args[@]}" -eq 0 ]]; then
+    return 0
+  fi
+  python_merge_options "$dest" "${args[@]}"
+}
+
+python_read_option() {
+  require_cmd python3
+  local toml="$1"
+  local key="$2"
+  python3 - "$toml" "$key" <<'PY'
+import re, sys
+path, key = sys.argv[1], sys.argv[2]
+try:
+    text = open(path, encoding="utf-8").read()
+except OSError:
+    sys.exit(0)
+in_options = False
+for line in text.splitlines():
+    stripped = line.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        in_options = stripped.lower() == "[options]"
+        continue
+    if not in_options:
+        continue
+    match = re.match(r"^([A-Za-z0-9_-]+)\s*=\s*(.*)$", stripped)
+    if not match or match.group(1) != key:
+        continue
+    raw = match.group(2).strip()
+    if len(raw) >= 2 and raw[0] in "'\"" and raw[-1] == raw[0]:
+        raw = raw[1:-1]
+    print(raw)
+    break
+PY
+}
+
+password_present() {
+  local toml
+  toml="$(rd_toml)"
+  [[ -f "$toml" ]] || return 1
+  python3 - "$toml" <<'PY'
+import re, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+in_options = False
+for line in text.splitlines():
+    stripped = line.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        in_options = True
+        continue
+    if in_options:
+        continue
+    match = re.match(r"^password\s*=\s*(.*)$", stripped)
+    if not match:
+        continue
+    raw = match.group(1).strip()
+    if len(raw) >= 2 and raw[0] in "'\"" and raw[-1] == raw[0]:
+        raw = raw[1:-1]
+    sys.exit(0 if raw else 1)
+sys.exit(1)
+PY
+}
+
+state_get() {
+  local key="$1"
+  local file
+  file="$(state_file)"
+  [[ -f "$file" ]] || return 0
+  python3 - "$file" "$key" <<'PY'
+import json, sys
+path, key = sys.argv[1], sys.argv[2]
+try:
+    data = json.load(open(path, encoding="utf-8"))
+except Exception:
+    sys.exit(0)
+cur = data
+for part in key.split("."):
+    if not isinstance(cur, dict) or part not in cur:
+        sys.exit(0)
+    cur = cur[part]
+if isinstance(cur, bool):
+    print("true" if cur else "false")
+elif cur is None:
+    pass
+else:
+    print(cur)
+PY
+}
+
+state_set() {
+  if [[ "${DRY_RUN:-0}" -eq 1 ]]; then
+    return 0
+  fi
+  require_cmd python3
+  local file dest tmp
+  file="$(state_file)"
+  mkdir -p "$(state_dir)"
+  STATE_FILE="$file" python3 - "$@" <<'PY'
+import json, os, sys, tempfile
+path = os.environ["STATE_FILE"]
+data = {}
+if os.path.isfile(path):
+    try:
+        data = json.load(open(path, encoding="utf-8"))
+    except Exception:
+        data = {}
+if not isinstance(data, dict):
+    data = {}
+argv = sys.argv[1:]
+i = 0
+while i < len(argv):
+    if argv[i] == "--set" and i + 2 < len(argv):
+        key, value = argv[i + 1], argv[i + 2]
+        cur = data
+        parts = key.split(".")
+        for part in parts[:-1]:
+            nxt = cur.get(part)
+            if not isinstance(nxt, dict):
+                nxt = {}
+                cur[part] = nxt
+            cur = nxt
+        if value == "true":
+            parsed = True
+        elif value == "false":
+            parsed = False
+        else:
+            parsed = value
+        cur[parts[-1]] = parsed
+        i += 3
+        continue
+    sys.exit("state_set usage: --set KEY VALUE")
+directory = os.path.dirname(path) or "."
+fd, tmp = tempfile.mkstemp(prefix=".state.", dir=directory, text=True)
+with os.fdopen(fd, "w", encoding="utf-8") as handle:
+    json.dump(data, handle, indent=2, sort_keys=True)
+    handle.write("\n")
+    handle.flush()
+    os.fsync(handle.fileno())
+os.replace(tmp, path)
+PY
+}
+
+backup_toml() {
+  local src dest
+  src="$(rd_toml2)"
+  [[ -f "$src" ]] || return 0
+  dest="$(state_dir)/backups/RustDesk2.toml.$(date +%Y%m%dT%H%M%S)"
+  mkdir -p "$(dirname "$dest")"
+  cp -p "$src" "$dest"
+  state_set --set backup.toml2 "$dest"
+  log "backed up nonsecret options to state backups/"
+}
+
+gui_tailscale_present() {
+  [[ -d "${REMOTE_ACCESS_TS_APP:-/Applications/Tailscale.app}" ]]
+}
+
+formula_tailscale_present() {
+  command -v tailscale >/dev/null 2>&1 && command -v tailscaled >/dev/null 2>&1
+}
+
+rustdesk_cask_present() {
+  [[ -d "$RD_APP" && -x "$RD_BIN" ]]
+}
+
+ts_status_line() {
+  if ! command -v tailscale >/dev/null 2>&1; then
+    printf 'missing\n'
+    return 0
+  fi
+  local err="" rc=0
+  err="$(tailscale status 2>&1)" || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
+    printf 'up\n'
+  elif printf '%s' "$err" | grep -qi 'failed to connect'; then
+    printf 'daemon-down\n'
+  elif printf '%s' "$err" | grep -qi 'logged out'; then
+    printf 'logged-out\n'
+  else
+    printf 'error\n'
+  fi
+}
+
+summarize_tailscale_json() {
+  if ! command -v tailscale >/dev/null 2>&1; then
+    return 0
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    return 0
+  fi
+  python3 - <<'PY' || true
+import json, subprocess, sys
+try:
+    raw = subprocess.check_output(["tailscale", "status", "--json"], stderr=subprocess.DEVNULL, timeout=8)
+    data = json.loads(raw)
+except Exception:
+    sys.exit(0)
+self = data.get("Self") or {}
+print("backend=%s" % (data.get("BackendState") or "unknown"))
+print("online=%s" % ("true" if self.get("Online") else "false"))
+print("hostname=%s" % (self.get("HostName") or ""))
+ips = self.get("TailscaleIPs") or []
+v4 = [a for a in ips if "." in a and ":" not in a]
+v6 = [a for a in ips if ":" in a]
+print("self_v4=%s" % (v4[0] if v4 else ""))
+print("self_v6=%s" % (v6[0] if v6 else ""))
+peers = data.get("Peer") or {}
+iphones = []
+for peer in peers.values():
+    osname = (peer.get("OS") or "").lower()
+    host = peer.get("HostName") or ""
+    dns = peer.get("DNSName") or ""
+    blob = " ".join([osname, host.lower(), dns.lower()])
+    if "iphone" in blob or osname in ("ios", "iphone os", "ipados"):
+        addrs = peer.get("TailscaleIPs") or []
+        iphones.append((host, addrs, peer.get("Online")))
+print("peer_count=%d" % len(peers))
+print("iphone_count=%d" % len(iphones))
+if len(iphones) == 1:
+    host, addrs, online = iphones[0]
+    print("iphone_host=%s" % host)
+    print("iphone_online=%s" % ("true" if online else "false"))
+    v4 = [a for a in addrs if "." in a and ":" not in a]
+    v6 = [a for a in addrs if ":" in a]
+    print("iphone_v4=%s" % (v4[0] if v4 else ""))
+    print("iphone_v6=%s" % (v6[0] if v6 else ""))
+PY
+}
+
+select_peer_ips() {
+  local want="$1"
+  local host="" v4="" v6="" line rc=0
+  SELECTED_PEER_HOST=""
+  SELECTED_PEER_V4=""
+  SELECTED_PEER_V6=""
+  if ! command -v tailscale >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1; then
+    return 1
+  fi
+  while IFS= read -r line; do
+    case "$line" in
+      rc=*) rc="${line#rc=}" ;;
+      host=*) host="${line#host=}" ;;
+      v4=*) v4="${line#v4=}" ;;
+      v6=*) v6="${line#v6=}" ;;
+    esac
+  done <<<"$(
+    WANT="$want" python3 - <<'PY' || true
+import json, os, subprocess, sys
+want = (os.environ.get("WANT") or "").lower()
+try:
+    raw = subprocess.check_output(["tailscale", "status", "--json"], stderr=subprocess.DEVNULL, timeout=8)
+    data = json.loads(raw)
+except Exception:
+    print("rc=1")
+    sys.exit(0)
+if (data.get("BackendState") or "") != "Running":
+    print("rc=1")
+    sys.exit(0)
+matches = []
+for peer in (data.get("Peer") or {}).values():
+    osname = (peer.get("OS") or "").lower()
+    host = peer.get("HostName") or ""
+    dns = peer.get("DNSName") or ""
+    blob = " ".join([osname, host.lower(), dns.lower()])
+    is_phone = "iphone" in blob or osname in ("ios", "iphone os", "ipados")
+    if want:
+        if want not in host.lower() and want not in dns.lower():
+            continue
+    elif not is_phone:
+        continue
+    addrs = peer.get("TailscaleIPs") or []
+    v4 = [a for a in addrs if "." in a and ":" not in a]
+    v6 = [a for a in addrs if ":" in a]
+    matches.append((host, v4[0] if v4 else "", v6[0] if v6 else ""))
+print("count=%d" % len(matches))
+if not want and len(matches) != 1:
+    print("rc=2")
+    sys.exit(0)
+if not matches:
+    print("rc=1")
+    sys.exit(0)
+host, v4, v6 = matches[0]
+print("host=%s" % host)
+print("v4=%s" % v4)
+print("v6=%s" % v6)
+print("rc=0")
+PY
+  )"
+  if [[ "$rc" != "0" ]]; then
+    return "$rc"
+  fi
+  if [[ -z "$v4" && -z "$v6" ]]; then
+    return 1
+  fi
+  SELECTED_PEER_HOST="$host"
+  SELECTED_PEER_V4="$v4"
+  SELECTED_PEER_V6="$v6"
+  return 0
+}
+
+whitelist_value() {
+  local parts=""
+  if [[ -n "${SELECTED_PEER_V4:-}" ]]; then
+    parts="${SELECTED_PEER_V4}"
+  fi
+  if [[ -n "${SELECTED_PEER_V6:-}" ]]; then
+    if [[ -n "$parts" ]]; then
+      parts="${parts},${SELECTED_PEER_V6}"
+    else
+      parts="${SELECTED_PEER_V6}"
+    fi
+  fi
+  [[ -n "$parts" ]] || return 1
+  printf '%s\n' "$parts"
+}
+
+competing_vpn() {
+  if pgrep -x NordVPN >/dev/null 2>&1; then
+    printf 'NordVPN\n'
+  fi
+}
+
+plist_daemon_body() {
+  cat <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+    <dict>
+        <key>Label</key>
+        <string>com.carriez.RustDesk_service</string>
+	<key>AssociatedBundleIdentifiers</key>
+	<string>com.carriez.rustdesk</string>
+        <key>KeepAlive</key>
+        <true/>
+        <key>ThrottleInterval</key>
+        <integer>1</integer>
+        <key>ProgramArguments</key>
+        <array>
+        <string>/bin/sh</string>
+        <string>-c</string>
+        <string>/Applications/RustDesk.app/Contents/MacOS/service</string>
+        </array>
+        <key>RunAtLoad</key>
+        <true/>
+        <key>WorkingDirectory</key>
+        <string>/Applications/RustDesk.app/Contents/MacOS/</string>
+        <key>StandardErrorPath</key>
+        <string>/tmp/rustdesk_service.err</string>
+        <key>StandardOutPath</key>
+        <string>/tmp/rustdesk_service.out</string>
+    </dict>
+</plist>
+PLIST
+}
+
+plist_agent_body() {
+  cat <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+    <dict>
+        <key>Label</key>
+        <string>com.carriez.RustDesk_server</string>
+	<key>AssociatedBundleIdentifiers</key>
+	<string>com.carriez.rustdesk</string>
+        <key>LimitLoadToSessionType</key>
+        <array>
+          <string>LoginWindow</string>
+          <string>Aqua</string>
+        </array>
+        <key>KeepAlive</key>
+        <dict>
+            <key>SuccessfulExit</key>
+            <false/>
+            <key>AfterInitialDemand</key>
+            <false/>
+        </dict>
+        <key>ThrottleInterval</key>
+        <integer>1</integer>
+        <key>RunAtLoad</key>
+        <true/>
+        <key>ProgramArguments</key>
+        <array>
+            <string>/Applications/RustDesk.app/Contents/MacOS/RustDesk</string>
+            <string>--server</string>
+        </array>
+        <key>WorkingDirectory</key>
+        <string>/Applications/RustDesk.app/Contents/MacOS/</string>
+        <key>ProcessType</key>
+        <string>Interactive</string>
+    </dict>
+</plist>
+PLIST
+}
+
+write_vendor_plists() {
+  local daemon_path="/Library/LaunchDaemons/${RD_DAEMON_LABEL}.plist"
+  local agent_path="/Library/LaunchAgents/${RD_AGENT_LABEL}.plist"
+  local tmp_d tmp_a
+  tmp_d="$(state_dir)/daemon.plist"
+  tmp_a="$(state_dir)/agent.plist"
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    log "dry-run: would install ${daemon_path} and ${agent_path} from vendor 1.4.9 templates"
+    return 0
+  fi
+  plist_daemon_body | atomic_write "$tmp_d"
+  plist_agent_body | atomic_write "$tmp_a"
+  if grep -Eiq 'password|--password' "$tmp_d" "$tmp_a"; then
+    die "refusing to install plists that mention a password"
+  fi
+  run_sudo /bin/cp -f "$tmp_d" "$daemon_path"
+  run_sudo /bin/cp -f "$tmp_a" "$agent_path"
+  run_sudo /usr/sbin/chown 0:0 "$daemon_path" "$agent_path"
+  run_sudo /bin/chmod 644 "$daemon_path" "$agent_path"
+  run_sudo launchctl bootout "system/${RD_DAEMON_LABEL}" >/dev/null 2>&1 || true
+  run_sudo launchctl bootstrap system "$daemon_path"
+  run_sudo launchctl enable "system/${RD_DAEMON_LABEL}" >/dev/null 2>&1 || true
+  run_sudo launchctl bootout "gui/$(id -u)/${RD_AGENT_LABEL}" >/dev/null 2>&1 || true
+  run_sudo launchctl bootstrap "gui/$(id -u)" "$agent_path" >/dev/null 2>&1 || true
+  run_sudo launchctl enable "gui/$(id -u)/${RD_AGENT_LABEL}" >/dev/null 2>&1 || true
+  state_set --set owned.rustdesk_plists true
+}
+
+remove_vendor_plists() {
+  local daemon_path="/Library/LaunchDaemons/${RD_DAEMON_LABEL}.plist"
+  local agent_path="/Library/LaunchAgents/${RD_AGENT_LABEL}.plist"
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    log "dry-run: would bootout and remove vendor RustDesk plists"
+    return 0
+  fi
+  run_sudo launchctl bootout "system/${RD_DAEMON_LABEL}" >/dev/null 2>&1 || true
+  run_sudo launchctl bootout "gui/$(id -u)/${RD_AGENT_LABEL}" >/dev/null 2>&1 || true
+  if [[ "$(state_get owned.rustdesk_plists)" == "true" ]]; then
+    run_sudo rm -f "$daemon_path" "$agent_path"
+  else
+    log "plist removal skipped (not owned by this feature)"
+  fi
+}
+
+sync_dest_runner() {
+  local src=""
+  if src="$(repo_root)"; then
+    src="${src}/${REPO_RUNNER_REL}"
+  else
+    src=""
+  fi
+  if [[ -z "$src" || ! -f "$src" ]]; then
+    log "repo source missing; skip dest runner sync"
+    return 0
+  fi
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    log "dry-run: would /bin/cp -f ${src} ${DEST_RUNNER}"
+    return 0
+  fi
+  mkdir -p "$(dirname "${DEST_RUNNER}")"
+  /bin/cp -f "$src" "$DEST_RUNNER"
+  /bin/chmod +x "$DEST_RUNNER"
+  log "synced dest runner"
+}
+
+install_rustdesk_cask() {
+  if rustdesk_cask_present; then
+    log "RustDesk.app already present"
+    return 0
+  fi
+  require_cmd brew
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    log "dry-run: would brew install --cask rustdesk"
+    return 0
+  fi
+  brew install --cask rustdesk
+  state_set --set owned.rustdesk_cask true
+}
+
+ensure_tailscale_backend() {
+  if gui_tailscale_present; then
+    log "Tailscale.app present — preserving GUI variant; will not start brew services"
+    state_set --set backend gui-app
+    return 0
+  fi
+  if ! formula_tailscale_present; then
+    require_cmd brew
+    if [[ "${DRY_RUN}" -eq 1 ]]; then
+      log "dry-run: would brew install tailscale"
+      return 0
+    fi
+    brew install tailscale
+  fi
+  state_set --set backend brew-formula-tailscaled
+}
+
+start_tailscale_service() {
+  if gui_tailscale_present; then
+    log "GUI Tailscale variant in use; not registering Homebrew service"
+    return 0
+  fi
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    log "dry-run: would sudo brew services start tailscale"
+    return 0
+  fi
+  local was
+  was="$(ts_status_line)"
+  if [[ "$was" == "up" || "$was" == "error" || "$was" == "logged-out" ]]; then
+    state_set --set owned.tailscale_started_by_us false
+    log "tailscaled already reachable; leaving lifecycle owner in place"
+    return 0
+  fi
+  require_cmd brew
+  run_sudo brew services start tailscale
+  state_set --set owned.tailscale_started_by_us true
+  local i=0
+  local max="${REMOTE_ACCESS_TS_WAIT:-20}"
+  while [[ "$i" -lt "$max" ]]; do
+    if [[ "$(ts_status_line)" != "daemon-down" ]]; then
+      break
+    fi
+    sleep 1
+    i=$((i + 1))
+  done
+}
+
+configure_tailscale_operator() {
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    log "dry-run: would tailscale set --operator=$(id -un) (no identity reset)"
+    return 0
+  fi
+  if [[ "$(ts_status_line)" == "daemon-down" ]]; then
+    log "tailscaled not up yet; operator remains a pending gate"
+    return 0
+  fi
+  if tailscale set --operator="$(id -un)"; then
+    log "set tailscale operator to $(id -un)"
+  else
+    log "tailscale set --operator needs login first"
+  fi
+}
+
+merge_rustdesk_options() {
+  local port whitelist
+  port="${REMOTE_ACCESS_PORT:-$DEFAULT_PORT}"
+  whitelist="$(whitelist_value)" || die "refusing to enable without a selected iPhone Tailscale address (not allow-all)"
+  if [[ "$whitelist" == "," || -z "$whitelist" ]]; then
+    die "refusing allow-all whitelist"
+  fi
+  mkdir -p "$(rd_user_pref)"
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    log "dry-run: would merge nonsecret RustDesk options (direct IP, keyboard, clipboard, password approve, lan-discovery off, whitelist=selected-peer)"
+    return 0
+  fi
+  backup_toml
+  python_merge_options "$(rd_toml2)" \
+    --set direct-server Y \
+    --set direct-access-port "$port" \
+    --set enable-keyboard Y \
+    --set enable-clipboard Y \
+    --set enable-file-transfer N \
+    --set enable-tunnel N \
+    --set enable-terminal N \
+    --set allow-remote-config-modification N \
+    --set enable-record-session N \
+    --set enable-audio Y \
+    --set enable-lan-discovery N \
+    --set approve-mode password \
+    --set verification-method use-permanent-password \
+    --set whitelist "$whitelist"
+  state_set --set owned.toml2 true --set peer.hostname "${SELECTED_PEER_HOST:-}" --set last.port "$port"
+  log "merged nonsecret RustDesk options"
+}
+
+open_permission_surfaces() {
+  if [[ "${REMOTE_ACCESS_SKIP_OPEN:-}" == "1" ]]; then
+    return 0
+  fi
+  if [[ ! -t 0 ]]; then
+    log "no TTY: open RustDesk → Settings → Security, then System Settings → Privacy & Security"
+    return 0
+  fi
+  if [[ -d "$RD_APP" ]]; then
+    open -a "$RD_APP_NAME" >/dev/null 2>&1 || true
+  fi
+  open "x-apple.systempreferences:com.apple.preference.security" >/dev/null 2>&1 || true
+}
+
+print_inventory() {
+  log "host: $(uname_s) $(uname -m 2>/dev/null || true)"
+  if is_darwin; then
+    sw_vers 2>/dev/null | while IFS= read -r line; do
+      log "macos: $line"
+    done
+  fi
+  log "FileVault: $(fdesetup status 2>/dev/null || echo unknown)"
+  if gui_tailscale_present; then
+    log "Tailscale variant: GUI app present (will not migrate)"
+  elif formula_tailscale_present; then
+    log "Tailscale variant: Homebrew formula $(tailscale version 2>/dev/null | head -n 1)"
+  else
+    log "Tailscale variant: not installed"
+  fi
+  log "tailscale daemon: $(ts_status_line)"
+  log "RustDesk app: $(rustdesk_cask_present && echo present || echo missing)"
+  log "intent: $(state_get intent || echo unset)"
+  local vpn
+  vpn="$(competing_vpn || true)"
+  if [[ -n "$vpn" ]]; then
+    log "competing VPN process: $vpn (left running)"
+  fi
+  summarize_tailscale_json | while IFS= read -r line; do
+    case "$line" in
+      iphone_v4=* | iphone_v6=* | self_v4=* | self_v6=*)
+        log "net: ${line%%=*}=<redacted-in-plan>"
+        ;;
+      *)
+        log "net: $line"
+        ;;
+    esac
+  done
+}
+
+pending_gates() {
+  local gates=""
+  if ! is_darwin; then
+    printf 'unsupported-platform\n'
+    return 0
+  fi
+  if gui_tailscale_present && formula_tailscale_present; then
+    gates="${gates}tailscale-variant-conflict "
+  fi
+  local ts_line backend=""
+  ts_line="$(ts_status_line)"
+  case "$ts_line" in
+    daemon-down) gates="${gates}tailscale-daemon " ;;
+    missing) gates="${gates}tailscale-missing " ;;
+    logged-out) gates="${gates}tailscale-login " ;;
+  esac
+  backend="$(summarize_tailscale_json | awk -F= '/^backend=/{print $2}')"
+  if [[ "$backend" == "NeedsLogin" || -z "$backend" || "$backend" == "Stopped" ]]; then
+    if [[ "$ts_line" == "up" || "$ts_line" == "error" ]]; then
+      gates="${gates}tailscale-login "
+    fi
+  fi
+  if ! rustdesk_cask_present; then
+    gates="${gates}rustdesk-app "
+  fi
+  if ! password_present; then
+    gates="${gates}rustdesk-password-ui "
+  fi
+  if [[ "$(state_get peer.hostname)" == "" ]]; then
+    if ! select_peer_ips "${PEER:-}" 2>/dev/null; then
+      gates="${gates}iphone-peer "
+    fi
+  fi
+  gates="${gates}screen-recording-unknown accessibility-unknown input-monitoring-unknown"
+  printf '%s\n' "$gates"
+}
+
+cmd_plan() {
+  print_inventory
+  if gui_tailscale_present; then
+    log "backend: preserving existing GUI Tailscale.app (does not run before login; no brew service)"
+  else
+    log "backend: Homebrew formula tailscaled via sudo brew services (Brewfile SSOT; do not also install the upstream macOS system daemon)"
+  fi
+  log "rustdesk lifecycle: vendor LaunchDaemon ${RD_DAEMON_LABEL} + LaunchAgent ${RD_AGENT_LABEL} (bundle ${RD_BUNDLE_ID}; official 1.4.9 templates). --install-service on macOS only checks plists; it does not install."
+  log "tailscale brew label: ${LABEL_TS} (formula backend only)"
+  log "intended: iPhone RustDesk -> Tailscale -> Mac direct-IP listener (default port ${DEFAULT_PORT})"
+  log "will not: self-hosted ID/relay servers, Funnel, Serve, subnet router, exit node, Tailscale SSH, UPnP, MDM, TCC edits, password argv"
+  log "startup: tailscaled can run at LoginWindow after FileVault unlock; not before FileVault unlock"
+  log "bootstrap: packages only with --with-remote-access; never auto-enable"
+  log "pending: $(pending_gates)"
+}
+
+cmd_install() {
+  if ! is_darwin; then
+    die "install is macOS-only"
+  fi
+  ensure_tailscale_backend
+  install_rustdesk_cask
+  sync_dest_runner
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    log "dry-run: would persist intent=installed (not enabled)"
+    return 0
+  fi
+  if [[ "$(state_get intent)" == "disabled" ]]; then
+    log "intent remains disabled; install does not re-enable"
+    return 0
+  fi
+  state_set --set intent installed --set feature rustdesk-tailscale
+  log "installed packages/artifacts; unattended access is still off until enable --apply"
+}
+
+cmd_enable() {
+  if ! is_darwin; then
+    die "enable is macOS-only"
+  fi
+  if [[ "$(state_get intent)" == "disabled" && "${DRY_RUN}" -eq 0 ]]; then
+    log "re-enabling after explicit disable --apply"
+  fi
+  ensure_tailscale_backend
+  if gui_tailscale_present; then
+    log "preserving GUI Tailscale; not starting brew services (GUI variant does not run before login)"
+  else
+    start_tailscale_service
+    configure_tailscale_operator
+  fi
+  if [[ "${DRY_RUN}" -eq 0 && "$(ts_status_line)" != "up" ]]; then
+    log "tailscale is not logged in. In Terminal: sudo tailscale up"
+    log "then: sudo tailscale set --operator=$(id -un)"
+    log "then re-run: just remote-access enable --apply"
+    exit 4
+  fi
+  if [[ "${DRY_RUN}" -eq 0 ]]; then
+    if ! rustdesk_cask_present; then
+      log "RustDesk.app missing; run: just remote-access install --apply"
+      exit 4
+    fi
+    if ! select_peer_ips "${PEER:-}"; then
+      local rc=$?
+      if [[ "$rc" -eq 2 ]]; then
+        log "iPhone peer is ambiguous or missing. Re-run with --peer <hostname> after the phone is on the tailnet."
+      else
+        log "no iPhone Tailscale address found; refusing allow-all"
+      fi
+      exit 4
+    fi
+    merge_rustdesk_options
+    if ! password_present; then
+      open_permission_surfaces
+      log "permanent password is not set. In RustDesk: Settings → Security → set a unique permanent password, approval = password only."
+      log "then re-run: just remote-access enable --apply"
+      exit 4
+    fi
+    write_vendor_plists
+    open_permission_surfaces
+    state_set --set intent enabled
+    log "enabled. Grant Screen Recording, Accessibility, and Input Monitoring if prompted."
+  else
+    if gui_tailscale_present; then
+      log "dry-run: would preserve GUI Tailscale, merge options, install vendor plists, persist enabled"
+    else
+      log "dry-run: would start brew tailscale, merge options, install vendor plists, persist enabled"
+    fi
+    log "dry-run: would not set or rotate a password"
+  fi
+}
+
+cmd_disable() {
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    log "dry-run: would bootout RustDesk vendor services and persist intent=disabled"
+    log "dry-run: would leave Tailscale running"
+    return 0
+  fi
+  run_sudo launchctl bootout "system/${RD_DAEMON_LABEL}" >/dev/null 2>&1 || true
+  run_sudo launchctl bootout "gui/$(id -u)/${RD_AGENT_LABEL}" >/dev/null 2>&1 || true
+  if rustdesk_cask_present; then
+    python_merge_options "$(rd_toml2)" --set stop-service Y || true
+  fi
+  state_set --set intent disabled
+  log "disabled. Tailscale was left running."
+}
+
+cmd_rollback() {
+  local backup
+  backup="$(state_get backup.toml2)"
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    log "dry-run: would restore options backup if unchanged, remove owned plists, persist intent=rolled-back"
+    return 0
+  fi
+  if [[ -n "$backup" && -f "$backup" && -f "$(rd_toml2)" ]]; then
+    local current_white backup_white
+    current_white="$(python_read_option "$(rd_toml2)" whitelist || true)"
+    backup_white="$(python_read_option "$backup" whitelist || true)"
+    local last_host
+    last_host="$(state_get peer.hostname)"
+    if [[ -n "$current_white" && -n "$backup_white" && "$current_white" != "$backup_white" && -n "$last_host" ]]; then
+      log "conflict: whitelist changed since install; not overwriting. Disable instead or restore manually from state backups/"
+    else
+      restore_managed_from_backup "$backup" "$(rd_toml2)"
+      log "restored previous nonsecret options (unknown keys preserved)"
+    fi
+  fi
+  if [[ "$(state_get owned.rustdesk_plists)" == "true" ]]; then
+    remove_vendor_plists
+    state_set --set owned.rustdesk_plists false
+  fi
+  if [[ "$(state_get owned.tailscale_started_by_us)" == "true" ]]; then
+    log "leaving Tailscale brew service running (shared identity); stop with: sudo brew services stop tailscale"
+  fi
+  state_set --set intent rolled-back
+  log "rollback complete. RustDesk.app and Tailscale identity were kept."
+}
+
+cmd_doctor() {
+  local rc=0
+  if ! is_darwin; then
+    log "status: unsupported"
+    return 3
+  fi
+  print_inventory
+  local intent
+  intent="$(state_get intent || true)"
+  log "configured: intent=${intent:-unset} backend=$(state_get backend || echo unknown)"
+  local ts
+  ts="$(ts_status_line)"
+  log "running: tailscale=${ts}"
+  if pgrep -x RustDesk >/dev/null 2>&1 || pgrep -f "${RD_BIN} --server" >/dev/null 2>&1; then
+    log "running: rustdesk=yes"
+  else
+    log "running: rustdesk=no"
+  fi
+  local port
+  port="$(python_read_option "$(rd_toml2)" direct-access-port 2>/dev/null || true)"
+  port="${port:-$DEFAULT_PORT}"
+  if command -v lsof >/dev/null 2>&1; then
+    if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+      log "verified: listener on ${port} (process ownership via lsof; not proof of iPhone path)"
+    else
+      log "verified: no listener on ${port}"
+      if [[ "$intent" == "enabled" ]]; then
+        rc=1
+      fi
+    fi
+  else
+    log "verified: lsof missing; listener unknown"
+  fi
+  if [[ -f "/Library/LaunchDaemons/${RD_DAEMON_LABEL}.plist" ]]; then
+    log "startup: vendor daemon plist present"
+  else
+    log "startup: vendor daemon plist absent"
+  fi
+  if password_present; then
+    log "auth: permanent password is set (value not printed)"
+  else
+    log "auth: permanent password missing (native UI gate)"
+    if [[ "$intent" == "enabled" ]]; then
+      rc=4
+    fi
+  fi
+  local white
+  white="$(python_read_option "$(rd_toml2)" whitelist 2>/dev/null || true)"
+  if [[ -z "$white" || "$white" == "," ]]; then
+    log "access: whitelist unset (would be allow-all — enable refuses this)"
+    if [[ "$intent" == "enabled" ]]; then
+      rc=1
+    fi
+  else
+    log "access: whitelist configured (addresses not printed)"
+  fi
+  log "permissions: Screen Recording / Accessibility / Input Monitoring are unknown unless granted in System Settings (TCC not probed)"
+  log "exposure: listener is not Tailscale-authenticated by itself; enforcement is the RustDesk whitelist plus tailnet membership"
+  log "rendezvous: LAN discovery is set off when enabled; the stock client may still contact public ID servers. Direct IP does not prove those calls stopped."
+  log "encryption: Tailscale transport is encrypted (including DERP relay). RustDesk may label a direct-IP session as unencrypted at its own layer."
+  log "sleep: display sleep is separate from system sleep; no power policy was changed"
+  log "FileVault: processes are not reachable before unlock"
+  if [[ "$intent" == "disabled" || "$intent" == "rolled-back" ]]; then
+    log "status: disabled-intent honored"
+    return 0
+  fi
+  local gates
+  gates="$(pending_gates)"
+  if [[ -n "$gates" && "$intent" != "enabled" ]]; then
+    log "pending: $gates"
+    return 4
+  fi
+  return "$rc"
+}
+
+main() {
+  : "${HOME:?HOME is unset}"
+  refuse_secrets
+  RD_APP="${REMOTE_ACCESS_RD_APP:-/Applications/RustDesk.app}"
+  RD_BIN="${RD_APP}/Contents/MacOS/RustDesk"
+  DRY_RUN=0
+  APPLY=0
+  PEER="${REMOTE_ACCESS_PEER:-}"
+  local mode="plan"
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      -h | --help)
+        usage
+        return 0
+        ;;
+    esac
+  done
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      plan)
+        mode="plan"
+        shift
+        ;;
+      install)
+        mode="install"
+        shift
+        ;;
+      enable)
+        mode="enable"
+        shift
+        ;;
+      doctor)
+        mode="doctor"
+        shift
+        ;;
+      disable)
+        mode="disable"
+        shift
+        ;;
+      rollback)
+        mode="rollback"
+        shift
+        ;;
+      --dry-run)
+        DRY_RUN=1
+        shift
+        ;;
+      --apply)
+        APPLY=1
+        shift
+        ;;
+      --peer)
+        [[ $# -ge 2 ]] || die "--peer requires a hostname"
+        PEER="$2"
+        shift 2
+        ;;
+      --password | -p)
+        die "password flags are refused; use the RustDesk Security UI"
+        ;;
+      -h | --help)
+        usage
+        return 0
+        ;;
+      *)
+        die "unknown argument: $1"
+        ;;
+    esac
+  done
+  if [[ "$DRY_RUN" -eq 1 && "$APPLY" -eq 1 ]]; then
+    printf '%s\n' '--dry-run and --apply cannot be used together.' >&2
+    usage >&2
+    exit 2
+  fi
+  case "$mode" in
+    install | enable | disable | rollback)
+      if [[ "$APPLY" -eq 0 && "$DRY_RUN" -eq 0 ]]; then
+        DRY_RUN=1
+        log "mutating command defaulted to --dry-run (pass --apply to change the Mac)"
+      fi
+      ;;
+  esac
+  if [[ "$mode" != "plan" && "$mode" != "doctor" && "$DRY_RUN" -eq 0 ]]; then
+    acquire_lock
+    trap release_lock EXIT
+  fi
+  if ! is_darwin && [[ "$mode" != "plan" && "$mode" != "doctor" ]]; then
+    log "unsupported on $(uname_s)"
+    exit 3
+  fi
+  case "$mode" in
+    plan) cmd_plan ;;
+    install) cmd_install ;;
+    enable) cmd_enable ;;
+    doctor) cmd_doctor ;;
+    disable) cmd_disable ;;
+    rollback) cmd_rollback ;;
+    *) die "unknown mode: $mode" ;;
+  esac
+}
+
+main "$@"
