@@ -1,84 +1,70 @@
 ---
 icon: iina
 title: IINA
-description: Curated player profile, cursor zoom, pinned shaders and plugins.
+description: Native input controls, optional pinned shaders and plugins, and a reviewed QoL migration.
 ---
 
-**SSOT:** `rig/home/dot_hammerspoon/`, `rig/home/Library/Application Support/com.colliderli.iina/`, and `rig/home/private_dot_config/iina-mpv/` (Chezmoi). Runtime histories/preferences and downloaded third-party assets stay untracked.
+**Desired state:** `rig/home/Library/Application Support/com.colliderli.iina/input_conf/IINA-Native.conf`, `rig/home/private_dot_config/iina-mpv/`, and the IINA defaults in `rig/darwin/modules/macos-defaults.nix`. The old QoL profile, custom plugin, and Hammerspoon bridge have been retired from repository source **and from the named live paths** by the approved native migration. Do not run a whole-home Chezmoi apply, bootstrap apply, or darwin switch as a substitute for this exact-target workflow.
 
 ```bash
 just check-iina-config
-just iina-qol preview
-just iina-qol apply --apply
-just iina-qol doctor
+just iina-native preview         # read-only: review exact copy, backup, and removal targets
+just iina-native doctor          # read-only readiness: exits nonzero while identity/preferences block apply
+just iina-native snapshot        # dry-run preview; no backup is created
+just iina-qol preview            # retired runner; apply is disabled
 
-just iina-shaders preview
-just iina-shaders install --apply
-just iina-shaders doctor
-
-just iina-plugins preview
-just iina-plugins install --apply
-just iina-plugins doctor
+just iina-shaders preview        # pin review; no download
+just iina-plugins preview        # three pinned official plugins, not full inventory
 ```
 
-All three workflows are dry-run unless `--apply`. `iina-qol` writes tracked files and native preferences; the shader/plugin installers download only pinned GitHub release assets, verify SHA-256 and archive structure, then keep timestamped backups for `restore --apply`. Quit IINA before installing/restoring plugins.
+**Live migration applied on 2026-09-29.** The reviewed v2 snapshot is under `~/.local/state/dotfiles/iina-native/20260929T132259Z.Mz4G6f` (private `0700`; complete and clean after apply). `just iina-native apply --backup <reviewed-snapshot-path> --apply` remains the destructive path for a future fresh migration and requires its own reviewed snapshot and approval. It backs up named targets, switches the active profile, and retires only the old QoL profile, plugin, and Hammerspoon bridge. Quit IINA first. Before apply, the runner requires horizontal and vertical scroll actions to already be `3`, the user-defined mpv config option to be enabled, and its directory to point at the managed mpv path; it refuses rather than silently rewriting those preferences. `doctor` reports its script-checkable prerequisites read-only; a zero exit is not approval or evidence of beta2 UI/hardware behavior or a reviewed backup. It also requires positive identity for the exact live QoL bundle. The live `Info.json` is a permissions array (`["show-osd"]`), not an identifier-bearing object; the runner instead accepts only its exact observed manifest bytes (or the exact historical source manifest) **and all five non-private code/UI files** (`main.js`, `lib/zoom.js`, `lib/settings.js`, `help.html`, `preferences.html`) match SHA-256 fingerprints independently verified against the previously tracked QoL source. This is provenance for the bundled code, not an assertion about private runtime state or beta2 behavior. A mismatched file blocks removal; the directory name alone never suffices. Validate preferences and other desired defaults in the IINA UI or a separately reviewed nix-darwin change first. The approved migration used `snapshot --apply` to copy the named targets, then `apply --backup <reviewed-snapshot-path> --apply` after the snapshot and exact paths were reviewed. The live native profile and mpv files match repository source; the retired QoL paths and marked loader are absent. Real native-profile and physical-wheel acceptance remains pending; a green `doctor` reports stored settings and file state, not observed beta2 behavior. For any future migration, the backup-only action and apply remain separate approval decisions. Apply now refuses an omitted snapshot or any live target, active-profile preference, or source file that differs from that reviewed snapshot; it never silently substitutes another backup. The v2 snapshot records a per-file SHA-256 manifest and refuses an incomplete, dirty or tampered snapshot. Mutating snapshot/apply/restore actions take an exclusive operation lock shared with the optional installers (plus a native-state lock); a prior interrupted operation's `.dirty` marker blocks new mutation pending inspection. A separately approved restore first snapshots the then-current named targets and attempts recovery from that rescue on failure; the runner ignores a second INT/TERM while its recovery handler runs, but a hard kill, power loss, or failed copy still requires inspection of both snapshots rather than a blind retry. After a migration, restore requires its exact snapshot:
 
-| Path | Role |
+```bash
+just iina-native snapshot --apply                                  # backup only; requires its own approval
+just iina-native apply --backup <reviewed-snapshot-path> --apply    # separate migration approval
+just iina-native restore --backup <reviewed-snapshot-path>         # dry-run
+just iina-native restore --backup <reviewed-snapshot-path> --apply # separate restore approval
+```
+
+The old `iina-qol` backup format is not automatically interpreted by the new runner. Review any legacy snapshot manually before restoring it; the retired runner deliberately cannot apply or write arbitrary paths from it. Sibling plugins, global plugin `.data`/`.preferences`, histories, logs, screenshots, and downloaded shaders remain local and outside source control.
+
+## Native profile
+
+`IINA-Native.conf` keeps direct mpv/IINA actions. The installed 1.5.0-beta2 app and its real hardware behavior still need visual acceptance **after the applied migration**. Numeric scroll values below describe the current desired state; they are not a guarantee across IINA versions.
+
+| Input | Intended direct action |
 | --- | --- |
-| `rig/home/dot_hammerspoon/` | Thin `init.lua` loader + `iina_qol` modules |
-| `…/input_conf/IINA-QoL.conf` | Curated input profile |
-| `…/plugins/IINA-QoL.iinaplugin/` | Plugin code/UI (`show-osd` only) |
-| `…/official-plugins-pin.json` | Official IINA plugin release versions + hashes (packages untracked) |
-| `private_dot_config/iina-mpv/mpv.conf` | IINA's user-defined mpv config root (no shader forced globally) |
-| `private_dot_config/iina-mpv/shaders-pin.json` | Anime4K + FSRCNNX release/file hashes (GPL shaders untracked) |
+| `a` / Left · `d` / Right | Seek ±10 seconds; Shift seeks ±5 exact; Cmd+Shift seeks ±1 exact |
+| Unmodified vertical/horizontal wheel | Pan via `WHEEL_*` mpv bindings when IINA forwards scroll to mpv (actions 3/3); confirm both axes in beta2 |
+| `[` `]` · `{` `}` · Backspace | Adjust or reset speed; wheel is not a speed shortcut |
+| `o` · Shift+`o` · Ctrl+`p` | Time/percent OSD, media title, playlist shuffle |
+| Ctrl+`1…8` | Deliberate brightness/contrast/gamma/saturation changes; plain digits are ignored |
+| `s` · `l` | Screenshot and A–B loop |
+| Cmd+`u` · Shift+Cmd+`u` · Ctrl+`u` | Opt-in FSRCNNX quality/fast and custom-shader off |
+| Alt+`1/2/3` · Shift+Alt+`1/2/3` | Opt-in Anime4K fast/HQ modes A/B/C |
 
-Enable in IINA → Plugins: `com.wyattowalsh.iina-qol`. The official Online Media, OpenSubtitles, and User Scripts plugins are pinned by `official-plugins-pin.json`. `plugin-more-seeking` is deliberately omitted because the curated profile already owns 10/5/1-second and chapter seeking.
+**Not native in this migration:** pointer-anchored Cmd+scroll zoom, zoom presets, plugin reset/rotation menus, synthetic middle-mouse/F15–F20 bridge and its fail-closed cursor behavior. They are not silently mapped to center-zoom. The root `cursor-actions.md` is a future **standalone plugin handoff**, not an installed feature.
 
-## Gestures
+`mpv.conf` stays minimal with no global shader chain. `shaders-pin.json` records Anime4K and FSRCNNX source/tag/file SHA-256; GPL `.glsl` files are downloaded outside Git only by a separately approved `just iina-shaders install --apply`. `just iina-shaders doctor` checks local assets; `restore --apply` is another separately reviewed action. Both optional installers now take the shared operation lock, require IINA quit before mutating, limit archive resource usage, verify a per-file SHA-256 manifest for a completed local snapshot before restore, and keep a checked pre-restore rescue of their managed targets for error recovery. This detects accidental backup drift, not a same-user adversary able to edit both a snapshot and its unsigned manifest; a second INT/TERM is ignored during recovery, while a hard kill, power loss, or failed copy can still require manual inspection of a dirty rescue. If shaders miss frame deadlines, use mpv stats (`Shift+i`, page 2), choose a fast chain, or clear shaders with Ctrl+`u`.
 
-| Input | Action |
-| --- | --- |
-| Cmd+scroll (⇧ optional) | Zoom **at the pointer**. Hold **Command**. First gesture focuses that player |
-| Unmodified scroll | **Pan** the picture (both axes). Speed is `[` `]` `{` `}` Backspace, not the wheel |
-| Horizontal scroll | Pan (no longer seek — use arrows / `a` `d`) |
-| `a` / Left · `d` / Right | Seek ±10s |
-| Shift + those keys | Seek ±5s exact |
-| Cmd+Shift + those keys | Seek ±1s exact |
-| `o` · `Shift+o` | OSD time/percent · media title |
-| `Ctrl+p` | Shuffle playlist |
-| `Ctrl+1…8` | Brightness / contrast / gamma / saturation ±5 (deliberate image adjust; plain digits stay ignored) |
-| `Cmd+u` · `Shift+Cmd+u` · `Ctrl+u` | FSRCNNX quality · fast · shaders off |
-| `Alt+1/2/3` | Anime4K fast modes A / B / C |
-| `Shift+Alt+1/2/3` | Anime4K HQ modes A / B / C |
-| `Shift+Cmd+1/2/3` | Jump to zoom preset (100 / 200 / 400%, editable in plugin prefs) |
-| `Shift+Cmd+=/-/0` | Zoom in / out / reset (also resets rotation) |
-| `Cmd+r` | Rotate video 90° steps |
-| `s` | Screenshot (save, copy, subs, preview) |
-| `l` | A-B loop |
+Current desired IINA preferences include user-defined mpv config, screenshot options, thumbnails, AVFoundation audio, fullscreen-on-open off, and scroll pass-through. Historical CoreAudio/fullscreen observations came from earlier beta testing. Recheck audio-device topology, fullscreen behavior, remote-thumbnail I/O and the meaning of scroll actions in **1.5.0-beta2** before deciding whether each setting remains worthwhile.
 
-## Image quality
+## Plugins: preserve the whole installed collection
 
-Shader selection is per-session and opt-in. Start with **FSRCNNX quality** (`Cmd+u`) for film/live-action. For anime, try modes A→B→C and keep the least aggressive mode that improves the source. Fast (`Alt+1/2/3`) is the M1 Pro default; HQ (`Shift+Alt+1/2/3`) costs more GPU. `Ctrl+u` clears all custom shaders. Use `Shift+i`, then page 2 in mpv stats to inspect shader timing and drop to fast/off if rendering misses frame deadlines.
+`official-plugins-pin.json` manages **only** these three release targets; `just iina-plugins preview` is not an inventory of every plugin. Installation downloads executable plugin packages from the pinned IINA release URLs, verifies exact repository/package/version associations, bounded archive size/member counts and release metadata (`Info.json` may be a permission list with the version in `package.json`), and requires IINA to be quit and explicit `install --apply`. The read-only `just iina-plugins doctor` currently matches the three live package versions to their pins; it does not assess their configuration or behavior. Do not enable User Scripts or copy OpenSubtitles credentials as part of this migration.
 
-Pinned native IINA preferences enable the user config directory, 480px timeline thumbnails, a 1 GiB thumbnail cache, mounted-remote-drive thumbnails, and IINA's AVFoundation audio driver. AVFoundation is intentional on this machine: CoreAudio fails channel-layout initialization against the current multi/virtual-device topology, while AVFoundation initializes cleanly. Fullscreen-on-open stays off because IINA 1.5.0-beta1 can fail the AppKit fullscreen transition and leave the loaded player window inaccessible; use `f` after the window appears. Remote thumbnails can consume network/storage I/O; turn that preference off locally if a slow mount suffers.
-
-## Plugins
-
-| Plugin | Pin | Notes |
+| Plugin | Tracked pin | Ownership / configuration boundary |
 | --- | --- | --- |
-| Online Media | 0.9.10 | Uses Homebrew `yt-dlp`; `yt-dlp` is updated by Homebrew |
-| OpenSubtitles | 0.9.6 | Login remains in Keychain/plugin preferences, not Git |
-| User Scripts | 0.9.3 | Installed officially; no scripts are forced by this rig |
-| IINA QoL | 4.1.0 | Tracked code/UI: cursor zoom, presets, rotation |
-| Bookmarks (dev) | 1.1.0 source build | Overlay hit-testing is visible-only; menus stay under IINA's first-level limit; native preference types and validated display/sort snapshots drive timeline/thumbnail/timestamp/view/sort, metadata, scratchpad, and opt-in quick-note behavior; primary + automatic backup share one serialized snapshot |
+| Online Media (`io.iina.ytdl`) | 0.9.10 | Pinned official release; verify `yt-dlp` integration on the local app before tuning |
+| OpenSubtitles (`io.iina.opensub`) | 0.9.6 | Pinned official release; account/session state stays in Keychain or plugin-local preferences |
+| User Scripts (`io.iina.user-script`) | 0.9.3 | Pinned official release; no user script is forced by this rig |
+| File Viewer · Clickable Subtitles · Thumbnail · AirPlay · Cinema Mode | None in this repo | Independently installed bundles; preserve each and its private state. No provenance, enabled-state, or tuning claim follows from name alone |
+| Bookmarks development build | Not pinned here | Treat as a separate developer plugin with its own source and tests; do not equate it with a published release or retire it with QoL |
 
-## Rules
+**Per-plugin tuning review (pending documentation access):** for each bundle, verify its actual identifier, source/version, enabled state, declared capabilities, configuration UI, update mechanism and documented non-secret options. Then test overlap in input keys, overlays, subtitle handling, network use, file access and performance with a real video. Change one plugin setting at a time with an export/rollback path. The available read-only manifest inventory does **not** establish per-plugin optimal settings, and a follow-up documentation lookup was denied; those recommendations remain blocked rather than guessed. Do not check plugin `.data`, `.preferences`, tokens or local inventory into Git.
 
-| Rule | Detail |
-| --- | --- |
-| Tap | Hammerspoon scroll tap defaults **on**; consumes only Command±Shift scroll (Command required, Shift optional; alt/ctrl/fn and unmodified scroll pass through) |
-| Cursor zoom | Player-space pointer from IINA mouse callbacks (Hammerspoon middle-mouse poke before F17–F20) or mpv `mouse-pos` with `hover === true`. Synthetic F-key origin is ignored. Missing pointer is fail-closed. Never call center-zoom “cursor zoom”. Pin IINA `middleClickAction` to **none (0)** — **4 is togglePIP** and turns that poke into Picture-in-Picture |
-| Shaders | No global chain. `shaders-pin.json` records GPL-3.0 GitHub sources + hashes; downloaded `.glsl` files stay untracked and every keymap reference must be pinned |
-| Official plugins | Only `iina/plugin-*` release assets in `official-plugins-pin.json`; hashes + manifests checked before install; runtime `.data` / `.preferences` preserved |
-| Apply | Exact-target `just iina-qol apply --apply` — not a full home/bootstrap apply |
-| Untracked | Downloaded shader/plugin packages, overlay, history, plugin prefs, sibling plugins, logs, screenshots — dest paths in `.chezmoiignore` |
+## Acceptance and security
+
+Keep the signed beta if it remains stable on this Mac. IINA's current stable [1.4.4 release](https://github.com/iina/iina/releases/tag/v1.4.4) fixed [GHSA-w5xh-98j7-jp5q](https://github.com/iina/iina/security/advisories/GHSA-w5xh-98j7-jp5q) affecting older `iina://` URL handling; continue rejecting untrusted protocol prompts. [IINA's downloads](https://iina.io/download/) distinguish stable and beta, while [plugin documentation](https://docs.iina.io/pages/dev-guide.html) describes plugin capabilities. The separate [mpv manual](https://mpv.io/manual/master/#configuration-files) is reference material, not proof of IINA beta integration.
+
+Post-migration acceptance is still pending: use a visible beta2 player to test profile selection, seeking, both wheel axes and modifier pass-through, screenshots/subtitles, A–B loop, opt-in shaders/off and timing, thumbnails, audio/fullscreen, responsiveness and preservation of all other plugins and credentials. Confirm the retired QoL plugin and event tap no longer load. If an acceptance check fails, stop and review the exact migration snapshot before restore; do not claim the deferred cursor actions are working.

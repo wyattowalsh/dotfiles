@@ -1,64 +1,59 @@
 # desktop-media-controls Specification
 
 ## Purpose
-TBD - created by archiving change iina-power-user-controls. Update Purpose after archive.
+
+Define the native-first IINA desired state and the safety boundary for retiring the former QoL implementation. The exact-target migration was applied on the live Mac on 2026-09-29; physical IINA 1.5.0-beta2 acceptance remains pending.
+
 ## Requirements
-### Requirement: Chord-only cursor zoom
-The Hammerspoon bridge SHALL consume only the exact Command+Shift scroll chord, scoped to IINA player windows, and SHALL send direction-only private F-keys. The plugin SHALL read mpv `mouse-pos`/`hover` in player space before changing geometry.
 
-#### Scenario: Chord zoom
-- **WHEN** Command+Shift+scroll occurs over a visible IINA player
-- **THEN** the bridge focuses that window on the first zoom gesture and the plugin zooms at the pointer
+### Requirement: Native input profile
 
-#### Scenario: Plain scroll remains native
-- **WHEN** unmodified vertical or horizontal scroll occurs over IINA
-- **THEN** vertical scroll changes playback speed at IINA's moderate step, horizontal scroll seeks, and the bridge does not consume the gesture
+The repository SHALL provide `IINA-Native.conf` with direct IINA/mpv bindings for three seek magnitudes, OSD and playlist controls, deliberate image adjustments, pan on both wheel axes when IINA forwards wheel events, and opt-in shader selection. It SHALL NOT bind private F-key bridge actions or represent pointer-anchored zoom as a native capability.
 
-### Requirement: Seek tiers
-The `IINA-QoL` input profile SHALL bind Left/a to -10s and Right/d to +10s. Shift on either pair SHALL seek ±5s exact. Command+Shift on either pair SHALL seek ±1s exact.
+#### Scenario: Seek tiers
+- **WHEN** an operator uses Left/a or Right/d unmodified, with Shift, or with Command+Shift
+- **THEN** the profile seeks ±10s, ±5s exact, or ±1s exact, respectively
 
-#### Scenario: Three seek magnitudes
-- **WHEN** an operator uses arrows or a/d with no modifier, Shift, or Command+Shift
-- **THEN** seeks are ±10s, ±5s exact, and ±1s exact respectively
+#### Scenario: Wheel acceptance boundary
+- **WHEN** the IINA horizontal and vertical scroll preferences are stored as `3`
+- **THEN** the runner reports those stored values, but physical forwarding, panning, and modifier pass-through remain pending real IINA 1.5.0-beta2 testing
 
-### Requirement: Zoom bounds
-Zoom SHALL stay between 100% and 1000% with a soft 100% detent and SHALL never shrink below the fitted view. Command+Shift+0 and the plugin reset key SHALL restore 100% zoom and centered pan. Newly loaded files SHALL start at 100% centered; zoom and pan SHALL NOT carry into the next item.
+### Requirement: Direct mpv configuration
 
-#### Scenario: Reset and file boundary
-- **WHEN** the operator resets zoom or loads a new file
-- **THEN** the view is 100% zoom and centered
+The repository SHALL provide a minimal managed `iina-mpv/mpv.conf` without a global shader chain and a pin manifest for optional Anime4K and FSRCNNX assets. The native migration SHALL preserve any separately downloaded shader assets. Shader installation and restore SHALL each require a separately reviewed action.
 
-### Requirement: No center-zoom fallback
-The plugin SHALL fail closed when hover/`mouse-pos` cannot anchor. Center-zoom SHALL never be shipped or documented as cursor zoom.
+#### Scenario: Optional assets
+- **WHEN** an operator previews or validates shader pins
+- **THEN** no download, install, or live IINA configuration change occurs
 
-#### Scenario: Unproven cursor
-- **WHEN** cursor-at-pointer cannot be proven on the installed IINA/mpv
-- **THEN** the live tap stays off and the profile does not fall back to center-zoom
+### Requirement: Exact-target QoL retirement
 
-### Requirement: Tap default off
-Tracked Hammerspoon source SHALL default the scroll tap off. One serialized edit MAY enable it only after live cursor-zoom acceptance.
+The repository SHALL NOT deploy the old `IINA-QoL.conf`, custom QoL plugin, or Hammerspoon bridge as desired state. The live migration SHALL require an explicit `--apply`, IINA quit, verified native preference preconditions, positive identity evidence for the exact live QoL bundle, and a complete, separately inspectable backup before it changes any named target. A separately approved `snapshot --apply` SHALL create the reviewable backup without changing live targets; a later, separately approved `apply --backup PATH --apply` SHALL reject omitted or stale reviewed snapshots rather than silently creating or substituting one. The live migration passed its separate snapshot and apply approvals on 2026-09-29; physical beta2 acceptance of the retained native controls remains a separate post-migration gate. It SHALL refuse ambiguous identity, symlinks, dirty or incomplete snapshots, concurrent runner mutations, and uncertain recovery rather than removing a bundle by directory name alone. It SHALL NOT modify sibling plugins, global plugin `.data`/`.preferences`, or downloaded shaders.
 
-#### Scenario: Source default
-- **WHEN** `just check-iina-config` inspects Hammerspoon sources
-- **THEN** it asserts the tap default is off
+#### Scenario: Read-only preflight
+- **WHEN** an operator runs preview, doctor, or apply without `--apply`
+- **THEN** no target, preference, or backup state is changed and all exact migration targets are disclosed
 
-### Requirement: Plugin show-osd only
-The plugin SHALL request only `show-osd`. It SHALL NOT request network, filesystem, shell, overlay, or alert permission.
+#### Scenario: Identity unavailable
+- **WHEN** the live QoL `Info.json` is a permissions list and any of the five non-private code/UI files fails an independently verified historical-source SHA-256 fingerprint
+- **THEN** the live removal lane remains blocked even if its directory is named `IINA-QoL.iinaplugin`
 
-#### Scenario: Permission surface
-- **WHEN** `just check-iina-config` validates plugin schema
-- **THEN** declared permissions are `show-osd` only
+#### Scenario: Separate restore decision
+- **WHEN** an apply fails or an operator considers restoring a migration snapshot
+- **THEN** the runner exposes the exact backup and rollback path; no later live restore is inferred to be authorized by migration approval
 
-### Requirement: No history tracking
-Chezmoi SHALL track the unpacked plugin code/UI, `IINA-QoL.conf`, and Hammerspoon modules only. It SHALL NOT track sibling plugins, `.data`, `.preferences`, logs, histories, or screenshots.
+### Requirement: Cursor actions remain deferred
 
-#### Scenario: Tracked plugin surface
-- **WHEN** chezmoiignore and source layout are validated
-- **THEN** history and preference dumps are excluded from desired-state
+Pointer-anchored zoom, pointer presets, reset and plugin rotation menus SHALL NOT be claimed as native or deployed by this migration. The root `cursor-actions.md` SHALL remain a design-only handoff for a separate decision; absent trustworthy player-space cursor evidence, no center-zoom fallback SHALL be described as cursor zoom.
 
-### Requirement: Checks never mutate live apps
-`just check-iina-config` and its Bats suite SHALL validate the input profile, plugin schema, Hammerspoon syntax, and chezmoiignore targets without writing live IINA or Hammerspoon state.
+#### Scenario: Native acceptance
+- **WHEN** the operator accepts native playback with real media and hardware in IINA 1.5.0-beta2
+- **THEN** acceptance covers only observed native controls; deferred cursor features remain unimplemented
 
-#### Scenario: Offline check
-- **WHEN** CI or an operator runs `just check-iina-config`
-- **THEN** the command does not mutate running IINA or Hammerspoon configuration
+### Requirement: Plugin and private-state boundaries
+
+Only three explicitly pinned official plugin targets MAY be managed by the optional installer; other installed and developer plugins are independent and SHALL be preserved. Plugin preferences, credentials, histories, logs and screenshots SHALL stay outside source control. Per-plugin tuning recommendations SHALL remain blocked without supporting evidence.
+
+#### Scenario: Offline source checks
+- **WHEN** `just check-iina-config` and its disposable-root Bats suite run
+- **THEN** they validate the native source, target boundaries and safety behavior without mutating a running IINA or Hammerspoon instance

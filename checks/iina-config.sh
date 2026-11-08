@@ -1,424 +1,99 @@
 #!/usr/bin/env bash
-# Deterministic IINA QoL desired-state checks; never writes live IINA/Hammerspoon.
+# Static native IINA configuration contracts; never writes live state.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-HOME_ROOT="${IINA_QOL_HOME_ROOT:-$ROOT/rig/home}"
-HS_DIR="$HOME_ROOT/dot_hammerspoon"
-IINA_SUPPORT="$HOME_ROOT/Library/Application Support/com.colliderli.iina"
-PLUGIN="$IINA_SUPPORT/plugins/IINA-QoL.iinaplugin"
-CONF="$IINA_SUPPORT/input_conf/IINA-QoL.conf"
-MPV_CONFIG="$HOME_ROOT/private_dot_config/iina-mpv/mpv.conf"
+HOME_ROOT="${IINA_NATIVE_SOURCE:-$ROOT/rig/home}"
+SUPPORT="$HOME_ROOT/Library/Application Support/com.colliderli.iina"
+PROFILE="$SUPPORT/input_conf/IINA-Native.conf"
+MPV="$HOME_ROOT/private_dot_config/iina-mpv/mpv.conf"
 SHADER_PIN="$HOME_ROOT/private_dot_config/iina-mpv/shaders-pin.json"
-OFFICIAL_PLUGIN_PIN="$IINA_SUPPORT/official-plugins-pin.json"
-SHADER_INSTALLER="$ROOT/checks/iina-shaders.sh"
-PLUGIN_INSTALLER="$ROOT/checks/iina-plugins.sh"
-ZOOM_PY="$ROOT/checks/iina_zoom.py"
-INFO_JSON="$PLUGIN/Info.json"
-
+OFFICIAL_PIN="$SUPPORT/official-plugins-pin.json"
+IGNORE="$ROOT/rig/home/.chezmoiignore"
+DEFAULTS="$ROOT/rig/darwin/modules/macos-defaults.nix"
+RUNNER="$ROOT/checks/iina-native.sh"
 fail=0
 
-fail_msg() {
+bad() {
   printf 'iina-config: %s\n' "$*" >&2
   fail=1
 }
+require() { [[ -f "$1" ]] || bad "missing $1"; }
+for path in "$PROFILE" "$MPV" "$SHADER_PIN" "$OFFICIAL_PIN" "$IGNORE" "$DEFAULTS" "$RUNNER" "$ROOT/checks/iina-shaders.sh" "$ROOT/checks/iina-plugins.sh"; do
+  require "$path"
+done
 
-require_file() {
-  local path="$1"
-  if [[ ! -f "$path" ]]; then
-    fail_msg "missing ${path#"$ROOT"/}"
-    return 1
-  fi
-  return 0
-}
+if [[ -e "$SUPPORT/input_conf/IINA-QoL.conf" ]]; then
+  bad 'retired QoL input profile source must be absent'
+fi
+if [[ -d "$SUPPORT/plugins/IINA-QoL.iinaplugin" ]] && [[ -n "$(find "$SUPPORT/plugins/IINA-QoL.iinaplugin" -type f -print -quit)" ]]; then
+  bad 'retired custom QoL plugin source must be absent'
+fi
+if [[ -d "$HOME_ROOT/dot_hammerspoon" ]] && [[ -n "$(find "$HOME_ROOT/dot_hammerspoon" -type f \( -name 'iina_qol*' -o -name 'init.lua' \) -print -quit)" ]]; then
+  bad 'retired QoL Hammerspoon bridge source must be absent'
+fi
 
-require_chezmoiignore() {
-  local ignore="$ROOT/rig/home/.chezmoiignore"
-  require_file "$ignore" || return 0
-  local needle
-  for needle in \
-    '.hammerspoon/AGENTS.md' \
-    '.config/iina-mpv/AGENTS.md' \
-    '.config/iina-mpv/shaders' \
-    'Library/Application Support/com.colliderli.iina/official-plugins-pin.json' \
-    'Library/Application Support/com.colliderli.iina/plugins/IINA-QoL.iinaplugin/AGENTS.md' \
-    'Library/Application Support/com.colliderli.iina/plugins/.data' \
-    'Library/Application Support/com.colliderli.iina/plugins/.preferences' \
-    'Library/Application Support/com.colliderli.iina/history.plist' \
-    'Library/Application Support/com.colliderli.iina/watch_later' \
-    'Library/Application Support/com.colliderli.iina/screenshots'; do
-    if ! rg -qxF -- "$needle" "$ignore"; then
-      fail_msg "chezmoiignore must list dest path ${needle}"
-    fi
+if [[ -f "$PROFILE" ]]; then
+  for needle in 'seek -10' 'relative+exact' 'screenshot video' 'ab-loop' 'show-text' 'playlist-shuffle' 'WHEEL_UP' 'video-pan-y' 'change-list glsl-shaders clr' 'FSRCNNX_x2_16-0-4-1.glsl' 'Anime4K_Restore_CNN_M.glsl'; do
+    rg -F -q "$needle" "$PROFILE" || bad "native profile missing $needle"
   done
-}
-
-require_canonical_hs_markers() {
-  local init="$HS_DIR/init.lua"
-  if [[ ! -f "$init" ]]; then
-    return 0
-  fi
-  if [[ "$HS_DIR" == "$ROOT/rig/home/dot_hammerspoon" ]]; then
-    if ! rg -qxF -- '-- >>> IINA QOL >>>' "$init" || ! rg -qxF -- '-- <<< IINA QOL <<<' "$init"; then
-      fail_msg 'tracked init.lua must use canonical IINA QOL markers'
-    fi
-  fi
-}
-
-hs_lua_files=()
-collect_hs_lua() {
-  hs_lua_files=()
-  if [[ ! -d "$HS_DIR" ]]; then
-    return 0
-  fi
-  while IFS= read -r f; do
-    [[ -n "$f" ]] || continue
-    hs_lua_files+=("$f")
-  done < <(find "$HS_DIR" -type f -name '*.lua' | LC_ALL=C sort)
-}
-
-require_hs_layout() {
-  require_file "$HS_DIR/init.lua" || true
-  require_file "$HS_DIR/iina_qol.lua" || true
-  if [[ -d "$HS_DIR/iina_qol" ]]; then
-    require_file "$HS_DIR/iina_qol/gesture.lua" || true
-    require_file "$HS_DIR/iina_qol/window.lua" || true
-  else
-    require_file "$HS_DIR/iina_qol_gesture.lua" || true
-    require_file "$HS_DIR/iina_qol_window.lua" || true
-  fi
-}
-
-validate_info_json() {
-  local path="$1"
-  if command -v python3 >/dev/null 2>&1; then
-    if ! python3 - "$path" <<'INFOJSON'
-import json
-import sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-try:
-    data = json.loads(path.read_text())
-except json.JSONDecodeError as exc:
-    print(f"invalid json: {exc}", file=sys.stderr)
-    raise SystemExit(1)
-
-errors = []
-if data.get("identifier") != "com.wyattowalsh.iina-qol":
-    errors.append("identifier must be com.wyattowalsh.iina-qol")
-if not str(data.get("version") or "").strip():
-    errors.append("version must be present")
-if data.get("permissions") != ["show-osd"]:
-    errors.append("permissions must be exactly [\"show-osd\"]")
-if errors:
-    print("; ".join(errors), file=sys.stderr)
-    raise SystemExit(1)
-INFOJSON
-    then
-      fail_msg "Info.json schema/permissions check failed"
-    fi
-    return
-  fi
-
-  if ! rg -q '"identifier"[[:space:]]*:[[:space:]]*"com.wyattowalsh.iina-qol"' "$path"; then
-    fail_msg 'Info.json identifier must be com.wyattowalsh.iina-qol'
-  fi
-  if ! rg -q '"version"[[:space:]]*:' "$path"; then
-    fail_msg 'Info.json version must be present'
-  fi
-  if ! rg -U -q '"permissions"[[:space:]]*:[[:space:]]*\[[[:space:]]*"show-osd"[[:space:]]*\]' "$path"; then
-    fail_msg 'Info.json permissions must be exactly show-osd'
-  fi
-}
-
-require_conf_needles() {
-  if ! rg -q 'seek[[:space:]]+-10' "$CONF"; then
-    fail_msg 'IINA-QoL.conf must contain seek -10'
-  fi
-  if ! rg -q 'seek[[:space:]]+10([^0-9]|$)' "$CONF"; then
-    fail_msg 'IINA-QoL.conf must contain seek 10'
-  fi
-  local needle
-  for needle in \
-    'relative+exact' \
-    'relative+keyframes' \
-    'screenshot video' \
-    'ab-loop' \
-    'show-text' \
-    'playlist-shuffle' \
-    'WHEEL_UP' \
-    'video-pan-y' \
-    'change-list glsl-shaders clr' \
-    'FSRCNNX_x2_16-0-4-1.glsl' \
-    'Anime4K_Restore_CNN_M.glsl'; do
-    if ! rg -F -q "$needle" "$CONF"; then
-      fail_msg "IINA-QoL.conf must contain ${needle}"
-    fi
+  for key in q Alt+s Ctrl+h 1; do
+    rg -q "^[[:space:]]*${key//+/\\+}[[:space:]]+ignore([[:space:]]|$)" "$PROFILE" || bad "native profile must ignore $key"
   done
+  if rg -q '^[[:space:]]*F(15|16|17|18|19|20)[[:space:]]|iina_qol|IINA-QoL|plugin zoom|Cmd\+scroll zooms' "$PROFILE"; then
+    bad 'native profile retains custom QoL/bridge dependency'
+  fi
+fi
+if [[ -f "$MPV" ]] && rg -q '^[[:space:]]*(glsl-shader|glsl-shaders|script)[[:space:]]*=' "$MPV"; then
+  bad 'mpv.conf must not force shaders or scripts globally'
+fi
+if [[ -f "$DEFAULTS" ]]; then
+  for needle in 'currentInputConfigName = "IINA-Native";' 'horizontalScrollAction = 3;' 'verticalScrollAction = 3;' 'middleClickAction = 0;'; do
+    rg -F -q "$needle" "$DEFAULTS" || bad "nix defaults missing $needle"
+  done
+fi
+if [[ -f "$RUNNER" ]]; then
+  for needle in 'currentInputConfigName' 'IINA-Native' 'iina-native-v2'; do
+    rg -F -q "$needle" "$RUNNER" || bad "native runner missing $needle"
+  done
+  bash -n "$RUNNER" || bad 'native runner has invalid bash syntax'
+fi
+if [[ -f "$IGNORE" ]]; then
+  for needle in '.config/iina-mpv/AGENTS.md' '.config/iina-mpv/shaders' 'Library/Application Support/com.colliderli.iina/official-plugins-pin.json' 'Library/Application Support/com.colliderli.iina/plugins/.data' 'Library/Application Support/com.colliderli.iina/plugins/.preferences' 'Library/Application Support/com.colliderli.iina/history.plist' 'Library/Application Support/com.colliderli.iina/watch_later' 'Library/Application Support/com.colliderli.iina/screenshots'; do
+    rg -qxF -- "$needle" "$IGNORE" || bad "chezmoiignore must list dest path $needle"
+  done
+fi
 
-  if ! rg -q '^[[:space:]]*1[[:space:]]+ignore([[:space:]]|$)' "$CONF"; then
-    fail_msg 'IINA-QoL.conf must ignore image-adjust key 1'
-  fi
-  if ! rg -q '^[[:space:]]*F17[[:space:]]+ignore([[:space:]]|$)' "$CONF"; then
-    fail_msg 'IINA-QoL.conf must ignore F17 (no center-zoom fallback)'
-  fi
-
-  if ! rg -q '^[[:space:]]*q[[:space:]]+ignore([[:space:]]|$)' "$CONF"; then
-    fail_msg 'IINA-QoL.conf must ignore q'
-  fi
-  if ! rg -q '^[[:space:]]*Alt\+s[[:space:]]+ignore([[:space:]]|$)' "$CONF"; then
-    fail_msg 'IINA-QoL.conf must ignore Alt+s'
-  fi
-  if ! rg -q '^[[:space:]]*Ctrl\+h[[:space:]]+ignore([[:space:]]|$)' "$CONF"; then
-    fail_msg 'IINA-QoL.conf must ignore Ctrl+h'
-  fi
-
-  if rg -q '(^|[[:space:]])(add|set)[[:space:]]+video-zoom([[:space:]]|$)' "$CONF"; then
-    fail_msg 'IINA-QoL.conf must not contain add/set video-zoom (no center-zoom fallback)'
-  fi
-}
-
-require_shader_contract() {
-  if [[ ! -f "$CONF" || ! -f "$SHADER_PIN" ]]; then
-    return 0
-  fi
-  if ! command -v python3 >/dev/null 2>&1; then
-    fail_msg 'python3 required for IINA shader binding/pin contract'
-    return 0
-  fi
-  if ! python3 - "$CONF" "$SHADER_PIN" <<'PY'
+if [[ -f "$PROFILE" && -f "$SHADER_PIN" ]]; then
+  if ! uv run python - "$PROFILE" "$SHADER_PIN" <<'PY'
 import json
 import re
 import sys
 from pathlib import Path
 
-conf = Path(sys.argv[1]).read_text()
-pin = json.load(open(sys.argv[2]))
+profile = Path(sys.argv[1]).read_text()
+pin = json.loads(Path(sys.argv[2]).read_text())
+assert isinstance(pin, dict) and pin.get("version") == 1
 pinned = set()
-for source in pin.get("sources", []):
-    entries = source.get("files", []) if source.get("id") == "anime4k" else source.get("assets", [])
-    pinned.update(entry.get("name") for entry in entries if isinstance(entry, dict))
-referenced = set(re.findall(r"~~/shaders/([A-Za-z0-9_.-]+\.glsl)", conf))
-errors = []
-if not referenced:
-    errors.append("input profile references no shaders")
-missing = sorted(referenced - pinned)
-unused = sorted(pinned - referenced)
-if missing:
-    errors.append("un-pinned shader references: " + ", ".join(missing))
-if unused:
-    errors.append("pinned shaders unused by input profile: " + ", ".join(unused))
-if errors:
-    print("; ".join(errors), file=sys.stderr)
-    raise SystemExit(1)
+for source in pin["sources"]:
+    for item in source["files"] if source["id"] == "anime4k" else source["assets"]:
+        pinned.add(item["name"])
+referenced = set(re.findall(r"~~/shaders/([A-Za-z0-9_.-]+\.glsl)", profile))
+assert referenced and referenced == pinned, f"shader refs: missing={referenced - pinned}, unused={pinned - referenced}"
 PY
   then
-    fail_msg 'IINA shader binding/pin contract failed'
+    bad 'native profile shader bindings do not match pin'
   fi
-}
-
-require_pin_previews() {
-  if [[ -x "$SHADER_INSTALLER" && -f "$SHADER_PIN" ]]; then
-    if ! IINA_SHADERS_PIN="$SHADER_PIN" IINA_SHADERS_DEST_ROOT="$HOME_ROOT/private_dot_config/iina-mpv/.check-dest" \
-      "$SHADER_INSTALLER" preview >/dev/null; then
-      fail_msg 'IINA shader pin/installer preview failed'
-    fi
-  fi
-  if [[ -x "$PLUGIN_INSTALLER" && -f "$OFFICIAL_PLUGIN_PIN" ]]; then
-    if ! IINA_PLUGINS_PIN="$OFFICIAL_PLUGIN_PIN" IINA_PLUGINS_DEST="$IINA_SUPPORT/.check-plugins" \
-      "$PLUGIN_INSTALLER" preview >/dev/null; then
-      fail_msg 'IINA official-plugin pin/installer preview failed'
-    fi
-  fi
-}
-
-require_hs_contracts() {
-  if [[ "${#hs_lua_files[@]}" -eq 0 ]]; then
-    fail_msg 'Hammerspoon lua files are missing'
-    return 0
-  fi
-
-  if ! rg -q 'DEFAULT_TAP_ENABLED[[:space:]]*=[[:space:]]*true|tapEnabled[[:space:]]*=[[:space:]]*true' "${hs_lua_files[@]}"; then
-    fail_msg 'Hammerspoon sources must default tap on (DEFAULT_TAP_ENABLED / tapEnabled = true)'
-  fi
-
-  if ! rg -q 'isZoomChord' "${hs_lua_files[@]}"; then
-    fail_msg 'Hammerspoon sources must gate zoom on isZoomChord (Command required, never unmodified scroll)'
-  fi
-  if ! rg -q 'checkKeyboardModifiers' "${hs_lua_files[@]}"; then
-    fail_msg 'Hammerspoon sources must merge checkKeyboardModifiers into the zoom chord (scroll NSEvents omit cmd)'
-  fi
-  if ! rg -q 'emitPan' "${hs_lua_files[@]}"; then
-    fail_msg 'Hammerspoon sources must pan on unmodified scroll over IINA (emitPan)'
-  fi
-  if ! rg -q 'allWindows' "${hs_lua_files[@]}"; then
-    fail_msg 'Hammerspoon window lookup must fall back to IINA allWindows (orderedWindows misses PiP)'
-  fi
-  if ! rg -q -i 'shift optional' "${hs_lua_files[@]}"; then
-    fail_msg 'Hammerspoon sources must document the Shift-optional zoom chord'
-  fi
-
-  if ! rg -q 'pokePointer' "${hs_lua_files[@]}"; then
-    fail_msg 'Hammerspoon sources must pokePointer before direction-only zoom keys'
-  fi
-  if ! rg -q 'otherMouseDown' "${hs_lua_files[@]}"; then
-    fail_msg 'Hammerspoon sources must post otherMouseDown as the pointer poke'
-  fi
-  if ! rg -q 'togglePIP' "${hs_lua_files[@]}"; then
-    fail_msg 'Hammerspoon sources must document that IINA middleClickAction 4 is togglePIP'
-  fi
-}
-
-require_middle_click_none() {
-  local qol="$ROOT/checks/iina-qol.sh"
-  local nix="$ROOT/rig/darwin/modules/macos-defaults.nix"
-  require_file "$qol" || return 0
-  if ! rg -F -q 'middleClickAction\tint\t0' "$qol"; then
-    fail_msg 'iina-qol DEFAULT_SPECS must pin middleClickAction 0 (none); 4 is togglePIP'
-  fi
-  if ! rg -F -q 'verticalScrollAction\tint\t3' "$qol"; then
-    fail_msg 'iina-qol DEFAULT_SPECS must pin verticalScrollAction 3 (passToMpv) so wheel pan bindings run'
-  fi
-  if ! rg -F -q 'horizontalScrollAction\tint\t3' "$qol"; then
-    fail_msg 'iina-qol DEFAULT_SPECS must pin horizontalScrollAction 3 (passToMpv) so wheel pan bindings run'
-  fi
-  if [[ -f "$nix" ]] && ! rg -q 'middleClickAction = 0;' "$nix"; then
-    fail_msg 'macos-defaults.nix must pin middleClickAction = 0 (none)'
-  fi
-}
-
-require_plugin_pointer_contract() {
-  if [[ ! -f "$PLUGIN/main.js" ]]; then
-    return 0
-  fi
-  if ! rg -q 'OTHER_MOUSE' "$PLUGIN/main.js"; then
-    fail_msg 'plugin main.js must listen for OTHER_MOUSE pointer pokes'
-  fi
-  if ! rg -q 'keysCarryDirectionOnly' "$PLUGIN/main.js"; then
-    fail_msg 'plugin main.js must treat F17–F20 as keysCarryDirectionOnly'
-  fi
-  if ! rg -q 'applyZoomPreset' "$PLUGIN/main.js"; then
-    fail_msg 'plugin main.js must expose applyZoomPreset (cursor-anchored zoom presets)'
-  fi
-  if ! rg -q 'rotateStep' "$PLUGIN/main.js"; then
-    fail_msg 'plugin main.js must expose rotateStep (video-rotate cycle)'
-  fi
-  if ! rg -F -q 'mpv.command("set", ["video-rotate"' "$PLUGIN/main.js"; then
-    fail_msg 'plugin rotation must use the supported mpv command API'
-  fi
-  if ! rg -q 'addSubMenuItem' "$PLUGIN/main.js"; then
-    fail_msg 'plugin controls must use a submenu (IINA first-level item limit)'
-  fi
-  if rg -q 'LEGACY_KEYS|preferences\.get\("minZoom"\)|preferences\.get\("maxZoom"\)' "$PLUGIN/main.js"; then
-    fail_msg 'plugin must not probe undefined legacy preference keys at runtime'
-  fi
-}
-
-run_node_checks() {
-  if ! command -v node >/dev/null 2>&1; then
-    printf 'iina-config: node unavailable; JS syntax/require checks skipped\n'
-    return 0
-  fi
-  if [[ -f "$PLUGIN/main.js" ]] && ! node --check "$PLUGIN/main.js"; then
-    fail_msg 'node --check failed for plugin main.js'
-  fi
-  if [[ -f "$PLUGIN/lib/zoom.js" ]]; then
-    if ! node --check "$PLUGIN/lib/zoom.js"; then
-      fail_msg 'node --check failed for lib/zoom.js'
-    elif ! (
-      cd "$PLUGIN"
-      node -e "const z=require('./lib/zoom.js'); const d={w:1920,h:1080,ml:0,mr:0,mt:0,mb:0}; if (z.cursorIsUsable({x:10,y:10}, d)) process.exit(2); if (!z.cursorIsUsable({x:10,y:10,hover:true}, d)) process.exit(3); if (z.cursorIsUsable({x:10,y:10,hover:false}, d)) process.exit(4); const n=z.stepZoom(Math.log2(1.10), -1, {minZoomPercent:100,maxZoomPercent:1000,detentPercent:105}); if (Math.abs(z.percentFromLog2(n)-100)>1e-6) process.exit(5); const L=z.alignAfterZoom(0,0.5,0,0,{x:200,y:200,hover:true},d); const R=z.alignAfterZoom(0,0.5,0,0,{x:1720,y:200,hover:true},d); if (!(L&&R&&L.alignX<0&&R.alignX>0)) process.exit(6); if (z.alignAfterZoom(0,0,0,0,{x:10,y:10,hover:true},d)!==null) process.exit(7); if (z.cursorIsUsable({x:0,y:0,hover:true}, d)) process.exit(8);"
-    ); then
-      fail_msg 'node require lib/zoom.js hover/detent smoke failed'
-    fi
-  fi
-  if [[ -f "$PLUGIN/lib/settings.js" ]]; then
-    if ! node --check "$PLUGIN/lib/settings.js"; then
-      fail_msg 'node --check failed for lib/settings.js'
-    elif ! (
-      cd "$PLUGIN"
-      node -e "const s=require('./lib/settings.js'); const m=s.migrate({schemaVersion:4}); if (m.settings.schemaVersion!==5) process.exit(2); if (m.settings.zoomPreset1!==100||m.settings.zoomPreset2!==200||m.settings.zoomPreset3!==400) process.exit(3); if (m.persist!==true) process.exit(4); const v=s.validate({zoomPreset2:5000}); if (v.zoomPreset2!==1000) process.exit(5); const f=s.migrate({schemaVersion:9}); if (f.reason!=='future'||f.persist!==false) process.exit(6);"
-    ); then
-      fail_msg 'node require lib/settings.js schema v5 preset migration smoke failed'
-    fi
-  fi
-}
-
-run_luac_checks() {
-  local path
-  if ! command -v luac >/dev/null 2>&1; then
-    printf 'iina-config: luac unavailable; Hammerspoon syntax checks skipped\n'
-    return 0
-  fi
-  for path in "${hs_lua_files[@]}"; do
-    if ! luac -p "$path"; then
-      fail_msg "luac -p failed for ${path#"$ROOT"/}"
-    fi
-  done
-}
-
-run_zoom_self_test() {
-  if [[ ! -f "$ZOOM_PY" ]]; then
-    return 0
-  fi
-  if command -v uv >/dev/null 2>&1; then
-    if ! uv run python "$ZOOM_PY" --self-test; then
-      fail_msg 'iina_zoom.py --self-test failed'
-    fi
-    return 0
-  fi
-  if command -v python3 >/dev/null 2>&1; then
-    if ! python3 "$ZOOM_PY" --self-test; then
-      fail_msg 'iina_zoom.py --self-test failed'
-    fi
-    return 0
-  fi
-  printf 'iina-config: python3/uv unavailable; zoom self-test skipped\n'
-}
-
-require_file "$INFO_JSON" || true
-require_file "$PLUGIN/main.js" || true
-require_file "$PLUGIN/lib/zoom.js" || true
-require_file "$PLUGIN/lib/settings.js" || true
-require_file "$CONF" || true
-require_file "$MPV_CONFIG" || true
-require_file "$SHADER_PIN" || true
-require_file "$OFFICIAL_PLUGIN_PIN" || true
-require_file "$SHADER_INSTALLER" || true
-require_file "$PLUGIN_INSTALLER" || true
-require_hs_layout
-collect_hs_lua
-
-if [[ -f "$INFO_JSON" ]]; then
-  validate_info_json "$INFO_JSON"
 fi
 
-if [[ -d "$PLUGIN" ]] && rg -F -q -e createServer -e WebSocket "$PLUGIN"; then
-  fail_msg 'plugin must not mention createServer/WebSocket'
+if [[ -f "$SHADER_PIN" ]] && ! IINA_SHADERS_PIN="$SHADER_PIN" IINA_SHADERS_DEST_ROOT="$HOME_ROOT/private_dot_config/iina-mpv/.check-dest" "$ROOT/checks/iina-shaders.sh" preview >/dev/null; then
+  bad 'shader installer preview/pin failed'
 fi
-
-if [[ -f "$CONF" ]]; then
-  require_conf_needles
+if [[ -f "$OFFICIAL_PIN" ]] && ! IINA_PLUGINS_PIN="$OFFICIAL_PIN" IINA_PLUGINS_DEST="$SUPPORT/.check-plugins" "$ROOT/checks/iina-plugins.sh" preview >/dev/null; then
+  bad 'official plugin installer preview/pin failed'
 fi
-require_shader_contract
-require_pin_previews
-
-if [[ -d "$HS_DIR" ]]; then
-  require_hs_contracts
-  run_luac_checks
-fi
-require_middle_click_none
-require_plugin_pointer_contract
-
-run_node_checks
-run_zoom_self_test
-require_chezmoiignore
-require_canonical_hs_markers
-
-if [[ "$fail" -ne 0 ]]; then
+[[ "$fail" -eq 0 ]] || {
   printf 'iina-config: FAIL\n' >&2
   exit 1
-fi
-
+}
 printf 'iina-config: ok\n'
