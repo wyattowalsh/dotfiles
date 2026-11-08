@@ -8,6 +8,7 @@ NO_UPGRADE=0
 WITH_DEV_ENV=0
 REQUIRE_DEV_ENV=0
 WITH_REMOTE_ACCESS=0
+WITH_MUSIC=0
 DRY_RUN_FAILED=0
 SUDO_KEEPALIVE_PID=""
 LOCK_FILE="${XDG_RUNTIME_DIR:-$HOME/.cache}/dotfiles/macos-bootstrap.lock"
@@ -26,7 +27,7 @@ DARWIN_HOST="${DARWIN_HOST:-w4w-mbp}"
 
 usage() {
   cat <<'USAGE'
-Usage: rig/bootstrap/macos.sh [--dry-run] [--apply] [--verbose] [--no-upgrade] [--with-dev-env] [--require-dev-env] [--with-remote-access]
+Usage: rig/bootstrap/macos.sh [--dry-run] [--apply] [--verbose] [--no-upgrade] [--with-dev-env] [--require-dev-env] [--with-remote-access] [--with-music]
 
   --dry-run              Print planned macOS bootstrap actions without mutating state.
   --apply                Permit mutating setup actions.
@@ -35,6 +36,7 @@ Usage: rig/bootstrap/macos.sh [--dry-run] [--apply] [--verbose] [--no-upgrade] [
   --with-dev-env         Also run the portable agent-stack installer (just bootstrap-dev).
   --require-dev-env      Fail if --with-dev-env is set and the agent-stack installer fails.
   --with-remote-access   Install Tailscale/RustDesk packages and dest runner. Never enables unattended access.
+  --with-music           Preview or install music ingest/likes runners (likes may fetch a pinned binary).
 USAGE
 }
 
@@ -263,6 +265,9 @@ parse_args() {
         ;;
       --with-remote-access)
         WITH_REMOTE_ACCESS=1
+        ;;
+      --with-music)
+        WITH_MUSIC=1
         ;;
       -h | --help)
         usage
@@ -517,6 +522,14 @@ main() {
   require_macos
   require_non_root
 
+  local kopia_nightly_src="$HOME_SOURCE/dot_local/bin/executable_kopia-nightly"
+  local mba_role_status=2
+  if [ -x "$kopia_nightly_src" ]; then
+    mba_role_status=0
+    "$kopia_nightly_src" __mba-role || mba_role_status=$?
+    [ "$mba_role_status" -le 1 ] || die "Cannot establish the native backup host role."
+  fi
+
   if [ "$APPLY" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
     log "No --apply supplied; defaulting to dry-run preview."
     DRY_RUN=1
@@ -556,15 +569,16 @@ main() {
     maybe_import_atuin_history
   fi
 
-  kopia_nightly_src="$HOME_SOURCE/dot_local/bin/executable_kopia-nightly"
-  if [ "$(uname -s)" = "Darwin" ] && [ -x "$kopia_nightly_src" ]; then
+  if [ "$mba_role_status" -eq 0 ]; then
+    log "Kopia nightly install skipped on the MBA (KopiaUI owns scheduling)."
+  elif [ "$mba_role_status" -eq 1 ] && [ -x "$kopia_nightly_src" ]; then
     if [ "$APPLY" -eq 1 ]; then
       KOPIA_NIGHTLY_REPO="$REPO_ROOT" run_or_print "Install Kopia nightly LaunchAgent" "$kopia_nightly_src" install
     else
       KOPIA_NIGHTLY_REPO="$REPO_ROOT" run_readonly "Preview Kopia nightly LaunchAgent" "$kopia_nightly_src" install --dry-run
     fi
   else
-    log "Kopia nightly install skipped (non-Darwin or runner source missing)."
+    log "Kopia nightly install skipped (runner source missing)."
   fi
 
   remote_access_src="$HOME_SOURCE/dot_local/bin/executable_remote-access"
@@ -582,6 +596,33 @@ main() {
     fi
   else
     log "Remote access is opt-in: just bootstrap --apply --with-remote-access (install only; never auto-enables)."
+  fi
+
+  music_ingest_src="$HOME_SOURCE/dot_local/bin/executable_music-ingest"
+  music_likes_src="$HOME_SOURCE/dot_local/bin/executable_music-likes"
+  if [ "$WITH_MUSIC" -eq 1 ]; then
+    if [ -x "$music_ingest_src" ]; then
+      export MUSIC_INGEST_REPO="$REPO_ROOT"
+      if [ "$APPLY" -eq 1 ]; then
+        run_or_print "Install music-ingest runner and LaunchAgents" "$music_ingest_src" install
+      else
+        run_readonly "Preview music-ingest install" "$music_ingest_src" install --dry-run
+      fi
+    else
+      log "Music-ingest install skipped (runner source missing)."
+    fi
+    if [ -x "$music_likes_src" ]; then
+      export MUSIC_LIKES_REPO="$REPO_ROOT"
+      if [ "$APPLY" -eq 1 ]; then
+        run_or_print "Install music-likes runner and LaunchAgent" "$music_likes_src" install
+      else
+        run_readonly "Preview music-likes install" "$music_likes_src" install --dry-run
+      fi
+    else
+      log "Music-likes install skipped (runner source missing)."
+    fi
+  else
+    log "Music install is opt-in: just bootstrap --apply --with-music."
   fi
 
   # Preview only. Live pin/apply is `just spicetify apply`, not bootstrap.
@@ -604,7 +645,9 @@ main() {
     run_readonly "Check nix-darwin flake" nix flake check --no-write-lock-file "$DARWIN_FLAKE"
   fi
 
-  if command -v darwin-rebuild >/dev/null 2>&1 || command -v nix >/dev/null 2>&1; then
+  if [ "$DARWIN_HOST" = "w4w-mbp" ] && [ "$mba_role_status" -ne 1 ]; then
+    log "MBP nix-darwin profile skipped (MBA or backup role probe unavailable)."
+  elif command -v darwin-rebuild >/dev/null 2>&1 || command -v nix >/dev/null 2>&1; then
     if [ "$APPLY" -eq 1 ]; then
       run_or_print "Apply nix-darwin system state" nix_darwin_command switch --flake "$DARWIN_FLAKE#$DARWIN_HOST"
     else

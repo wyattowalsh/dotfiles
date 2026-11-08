@@ -13,6 +13,7 @@
 - Group entries with comment headers; **no duplicate** brew/cask basenames (last path segment after `/`). Taps may share a name with a formula. mas vs cask overlap (e.g. WhatsApp) is allowed when dual-channel is intentional
 - `# trial-agent-deck` is the only tmux exception (Agent Deck backend). Ghostty owns daily splits.
 - `just` is the Brew-owned task runner; do not also install it via mise. `mise` is toolchain-only (no `[tasks]`).
+- `rig/brew/sockseek-pin.json` is a checksum-pinned non-Homebrew binary for the optional music-likes runner; it is not Homebrew-installed. Its installer must verify the SHA-256 checksum before use.
 - Docker primary is `cask "docker-desktop"`; do not re-add formula `docker` (excluded)
 - Only declare taps required by promoted packages. The sole test-build tap exception is `kopia/test-builds` (required for the kopia nightly CLI). Do not add other test-build taps
 - Document `restart_service` explicitly; keep DBs/cloud daemons stopped unless intentional

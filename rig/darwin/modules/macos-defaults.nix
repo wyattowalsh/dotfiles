@@ -54,13 +54,12 @@ in
         clipboardCheckInterval = 0.1;
       };
       "com.colliderli.iina" = {
-        currentInputConfigName = "IINA-QoL";
-        # 3 = passToMpv so WHEEL_* pan bindings in IINA-QoL.conf run.
-        # (1 = seek, 4 = playbackSpeed — those fight Cmd+scroll zoom / pan.)
+        currentInputConfigName = "IINA-Native";
+        # 3 = passToMpv so direct WHEEL_* pan bindings in IINA-Native.conf run.
+        # (1 = seek, 4 = playbackSpeed; both bypass the native pan bindings.)
         horizontalScrollAction = 3;
         verticalScrollAction = 3;
-        # 0 = none. Hammerspoon posts a middle-click poke before zoom F-keys;
-        # IINA 4 = togglePIP (live 1.5.0-beta1 default-was-none, this Mac was 4).
+        # 0 = none. This native profile does not depend on synthetic middle-click events.
         middleClickAction = 0;
         playbackSpeedScrollAmount = 3;
         screenshotSaveToFile = true;

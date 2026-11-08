@@ -2,7 +2,7 @@
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
-shell_files := "setup.sh rig/bootstrap/macos.sh rig/bootstrap/linux.sh rig/bootstrap/dev-env.sh checks/apple-text-test.sh checks/apple-text.sh checks/apps-manual-inventory.sh checks/brew-exclude-check.sh checks/chezmoi-ignore.sh checks/config-dirs-inventory.sh checks/darwin-lock.sh checks/docs-css-health.sh checks/docs-hub-parity.sh checks/docs-sensitive.sh checks/freshen-smoke.sh checks/freshen-version.sh checks/freshen-privacy.sh checks/ghostty.sh checks/iina-config.sh checks/iina-qol.sh checks/kopia-nightly.sh checks/linux-dev-env-rc.sh checks/mise-boundary.sh checks/remote-access.sh checks/spicetify.sh checks/rig-ecosystem-assurance.sh checks/secrets-scan.sh checks/shell-files-sync.sh checks/smoke.sh checks/stale-path-freeze.sh checks/validate-json.sh checks/yazi-config.sh checks/zsh-alias-docs.sh checks/zsh-alias-usage.sh checks/zsh-compaudit.sh checks/zsh-home-behavior-test.sh checks/zsh-startup-time.sh checks/zsh-inventory.sh checks/zsh-structure.sh checks/zsh-structure-test.sh checks/zsh-smoke-interactive.sh checks/zsh-rollback-live.sh rig/home/dot_local/bin/executable_kopia-nightly rig/home/dot_local/bin/executable_remote-access rig/home/private_dot_config/direnv/lib/layout_uv.sh"
+shell_files := "setup.sh rig/bootstrap/macos.sh rig/bootstrap/linux.sh rig/bootstrap/dev-env.sh checks/apple-text-test.sh checks/apple-text.sh checks/apps-manual-inventory.sh checks/brew-exclude-check.sh checks/chezmoi-ignore.sh checks/config-dirs-inventory.sh checks/darwin-lock.sh checks/docs-css-health.sh checks/docs-hub-parity.sh checks/docs-sensitive.sh checks/freshen-smoke.sh checks/freshen-version.sh checks/freshen-privacy.sh checks/ghostty.sh checks/iina-config.sh checks/iina-native.sh checks/iina-plugins.sh checks/iina-qol.sh checks/iina-shaders.sh checks/music-ingest.sh checks/music-likes.sh checks/kopia-nightly.sh checks/linux-dev-env-rc.sh checks/mise-boundary.sh checks/remote-access.sh checks/spicetify.sh checks/rig-ecosystem-assurance.sh checks/secrets-scan.sh checks/shell-files-sync.sh checks/smoke.sh checks/stale-path-freeze.sh checks/validate-json.sh checks/yazi-config.sh checks/zsh-alias-docs.sh checks/zsh-alias-usage.sh checks/zsh-compaudit.sh checks/zsh-home-behavior-test.sh checks/zsh-startup-time.sh checks/zsh-inventory.sh checks/zsh-structure.sh checks/zsh-structure-test.sh checks/zsh-smoke-interactive.sh checks/zsh-rollback-live.sh rig/home/dot_local/bin/executable_kopia-nightly rig/home/dot_local/bin/executable_remote-access rig/home/dot_local/bin/executable_music-ingest rig/home/dot_local/bin/executable_music-likes rig/home/private_dot_config/direnv/lib/layout_uv.sh"
 
 # List available recipes (default).
 default:
@@ -32,7 +32,7 @@ bootstrap-dev *ARGS:
     exec ./rig/bootstrap/dev-env.sh "${extra[@]}"
 
 # Run static validation.
-check: check-hooks check-shell check-just-fmt check-mise-boundary check-zsh check-freshen check-json secrets-scan brew-exclude check-rig-ecosystem-assurance check-ghostty check-yazi-config check-stale-paths check-kopia-nightly check-apple-text check-iina-config check-remote-access check-spicetify check-bats check-chezmoi-ignore check-darwin-lock check-linux-dev-env-rc check-shell-files
+check: check-hooks check-shell check-just-fmt check-mise-boundary check-zsh check-freshen check-json secrets-scan brew-exclude check-rig-ecosystem-assurance check-ghostty check-yazi-config check-stale-paths check-kopia-nightly check-apple-text check-iina-config check-mba-migration-policy check-music-ingest check-music-likes check-remote-access check-spicetify check-bats check-chezmoi-ignore check-darwin-lock check-linux-dev-env-rc check-shell-files
 
 # Run the validation suite used by CI.
 ci: check smoke docs-ci
@@ -178,16 +178,101 @@ check-apple-text:
     ./checks/apple-text-test.sh
 
 # Preview or stage Apple Text Replacement imports. Default is dry-run.
+[positional-arguments]
 apple-text *ARGS:
-    ./checks/apple-text.sh {{ ARGS }}
+    ./checks/apple-text.sh "$@"
 
-# Static IINA QoL plugin, input profile, and Hammerspoon contracts (no live writes).
+# Static native IINA profile, shader, and plugin pin contracts (no live writes).
 check-iina-config:
     ./checks/iina-config.sh
 
-# Preview or apply IINA QoL exact-target install. Default is dry-run.
+# Preview native IINA migration. Apply/restore require explicit --apply.
+[positional-arguments]
+iina-native *ARGS:
+    ./checks/iina-native.sh "$@"
+
+# Retired QoL runner: only preview/doctor; apply is disabled.
+[positional-arguments]
 iina-qol *ARGS:
-    ./checks/iina-qol.sh {{ ARGS }}
+    ./checks/iina-qol.sh "$@"
+
+# Preview pinned GPL shaders; install/restore require explicit --apply.
+[positional-arguments]
+iina-shaders *ARGS:
+    ./checks/iina-shaders.sh "$@"
+
+# Preview pinned official plugins; install/restore require explicit --apply.
+[positional-arguments]
+iina-plugins *ARGS:
+    ./checks/iina-plugins.sh "$@"
+
+# Nine offline MBA policy suites, including review-only offload manifests; no live host proof.
+check-mba-migration-policy:
+    UV_NO_PROJECT=1 PYTHONDONTWRITEBYTECODE=1 uv run --offline python -I ./checks/mba-capacity-budget-test.py
+    UV_NO_PROJECT=1 PYTHONDONTWRITEBYTECODE=1 uv run --offline python -I ./checks/mba-retained-inventory-test.py
+    UV_NO_PROJECT=1 PYTHONDONTWRITEBYTECODE=1 uv run --offline python -I ./checks/mba-offload-manifest-test.py
+    UV_NO_PROJECT=1 PYTHONDONTWRITEBYTECODE=1 uv run --offline python -I ./checks/mba-media-policy-test.py
+    UV_NO_PROJECT=1 PYTHONDONTWRITEBYTECODE=1 uv run --offline python -I ./checks/mba-media-census-test.py
+    UV_NO_PROJECT=1 PYTHONDONTWRITEBYTECODE=1 uv run --offline python -I ./checks/mba-media-stage-test.py
+    UV_NO_PROJECT=1 PYTHONDONTWRITEBYTECODE=1 uv run --offline python -I ./checks/mba-navidrome-guard-test.py
+    UV_NO_PROJECT=1 PYTHONDONTWRITEBYTECODE=1 uv run --offline python -I ./checks/mba-migration-receipts-test.py
+    UV_NO_PROJECT=1 PYTHONDONTWRITEBYTECODE=1 uv run --offline python -I ./checks/mba-resource-leases-test.py
+
+# Music ingest and likes contracts use only tracked source and sandbox fixtures.
+check-music-ingest:
+    ./checks/music-ingest.sh
+
+check-music-likes:
+    ./checks/music-likes.sh
+    UV_NO_PROJECT=1 PYTHONDONTWRITEBYTECODE=1 uv run --offline python -I ./checks/music-likes-match-playlist.py
+
+# Run the source ingest runner; default doctor is read-only.
+[positional-arguments]
+music-ingest *ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export MUSIC_INGEST_REPO="{{ justfile_directory() }}"
+    exec "{{ justfile_directory() }}/rig/home/dot_local/bin/executable_music-ingest" "$@"
+
+# Preview installation by default. Pass --apply to install only after review.
+[positional-arguments]
+music-ingest-install *ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export MUSIC_INGEST_REPO="{{ justfile_directory() }}"
+    case "${1:---dry-run}" in
+      --apply) [[ "$#" -eq 1 ]] || exit 2; exec "{{ justfile_directory() }}/rig/home/dot_local/bin/executable_music-ingest" install ;;
+      --dry-run) [[ "$#" -le 1 ]] || exit 2; exec "{{ justfile_directory() }}/rig/home/dot_local/bin/executable_music-ingest" install --dry-run ;;
+      *) printf 'music-ingest-install: use --dry-run or --apply\n' >&2; exit 2 ;;
+    esac
+
+# Run the source likes runner; default doctor is read-only.
+[positional-arguments]
+music-likes *ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export MUSIC_LIKES_REPO="{{ justfile_directory() }}"
+    exec "{{ justfile_directory() }}/rig/home/dot_local/bin/executable_music-likes" "$@"
+
+# Preview installation by default. Pass --apply to install only after review.
+[positional-arguments]
+music-likes-install *ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export MUSIC_LIKES_REPO="{{ justfile_directory() }}"
+    case "${1:---dry-run}" in
+      --apply) [[ "$#" -eq 1 ]] || exit 2; exec "{{ justfile_directory() }}/rig/home/dot_local/bin/executable_music-likes" install ;;
+      --dry-run) [[ "$#" -le 1 ]] || exit 2; exec "{{ justfile_directory() }}/rig/home/dot_local/bin/executable_music-likes" install --dry-run ;;
+      *) printf 'music-likes-install: use --dry-run or --apply\n' >&2; exit 2 ;;
+    esac
+
+# Read-only report over existing library files and the beets database.
+music-hygiene:
+    uv run python ./checks/music-reports.py hygiene
+
+# Write only a candidate CSV under Incoming/review; never alter audio.
+music-duplicates:
+    uv run python ./checks/music-reports.py duplicates # Incoming/review
 
 # Static contract for opt-in RustDesk-over-Tailscale (no live launchctl/TCC).
 check-remote-access:
@@ -234,7 +319,7 @@ check-darwin-lock:
 check-linux-dev-env-rc:
     ./checks/linux-dev-env-rc.sh
 
-# justfile shell_files must match tracked *.sh plus the kopia and remote-access runners.
+# justfile shell_files must match tracked *.sh plus explicitly managed home runners.
 check-shell-files:
     ./checks/shell-files-sync.sh
 

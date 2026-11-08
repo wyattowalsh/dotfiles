@@ -7,9 +7,12 @@
 
 # Local machine state and generated scratch data
 .DS_Store
+__pycache__/
+*.pyc
 .env
 .env.*
 !.env.example
+secrets.env
 *.pem
 id_rsa
 id_ed25519

@@ -26,6 +26,7 @@ Comment group headers in `rig/brew/Brewfile`:
 | `dev-languages / containers` | Languages, build tools, optional colima |
 | `ai-tools` | AI CLI tooling |
 | `media-cli` | Media conversion CLI |
+| `music` | Navidrome (service not auto-started), chromaprint, rsgain, aubio, mp3val, flac, libkeyfinder, Petrichor, and Syncthing app. sockseek is pinned and verified outside Homebrew by the opt-in likes installer. |
 | `data / db` | Database servers plus `xo/xo/usql` (source-built; needs current Xcode; GitHub release fallback). Track highlight in `~/.usqlrc` only — DSNs stay local. |
 | `security / RE` | Security and reverse-engineering CLI (includes `gitleaks`) |
 | `cloud CLIs` | Cloud vendor CLIs |
@@ -48,8 +49,9 @@ Comment group headers in `rig/brew/Brewfile`:
 | Topic | Rule |
 | --- | --- |
 | Upgrades | `freshen` / `fr` is the upgrade operator (greedy casks, skip-casks pins, mas, caches). Do not ad-hoc `brew upgrade`. See [freshen](/docs/freshen). |
-| Docker | Primary is `cask "docker-desktop"`. `brew "colima"` is optional secondary — do not run both engines together. Formula `docker` stays in `exclude.txt`. |
-| Kopia | CLI is `kopia/test-builds/kopia` (nightly job). Keep the `kopia/test-builds` tap. `kopiaui` cask is manual restore only. rclone stays the Google Drive backend; `s5cmd` is high-throughput S3/local — do not retarget Kopia. |
+| Docker | Primary is `cask "docker-desktop"` on the MBP rig. `brew "colima"` is optional secondary — do not run both engines together. Formula `docker` stays in `exclude.txt`. For the MBA migration this Brewfile is **intent, not an MBA installer**: retain existing CLI/auth, prove capacity, separately approve a signed fresh Apple Silicon Desktop with measured VM caps and disk placement, then verify a new engine over a pinned SSH context. Old-VM removal alone is not fresh-engine proof. |
+| Kopia | Retain the MBP's `kopia/test-builds/kopia` CLI, tap and 04:00 job; KopiaUI is its manual restore interface. On the MBA, KopiaUI owns the hourly policy and native login startup for its separate encrypted Drive repository. Do not install a second nightly scheduler or apply the MBP GUI-disable rule there. rclone stays the Google Drive backend; `s5cmd` is high-throughput S3/local — do not retarget Kopia. See [Backup](/docs/backup). |
+| Pueue | Keep the CLI installed with `restart_service: false`. The MBA music contract owns its isolated scheduler; Brew Bundle must not restart a retired MBP scheduler or create a second MBA owner. Existing MBP backup/workstation jobs are unaffected by this source policy. |
 | VS Code | Extension lines are inventory only under `local/` — not tracked in the Brewfile. |
 | Runners | `just` is the only task runner (Brew binary; do not install via mise). `mise` is toolchain shims only — no repo-root `mise.toml` and no mise `[tasks]`. `go-task` stays inventory leftover. direnv is env + `layout_uv`, not versions. |
 | HTTP | `curl` stays for scripts; `xh` is interactive HTTP. Do not `apt install yq` on Debian — that is a different binary. |

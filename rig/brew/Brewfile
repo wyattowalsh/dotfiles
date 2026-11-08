@@ -156,7 +156,8 @@ brew "code2prompt"
 brew "hf"
 brew "mcp-toolbox"
 brew "ollama"
-brew "pueue", restart_service: true
+# The guarded MBA contract owns the scheduler; Bundle must not restart MBP jobs.
+brew "pueue", restart_service: false
 brew "repomix"
 
 # media-cli
@@ -167,6 +168,18 @@ brew "imagemagick-full"
 brew "oxipng"
 brew "pngquant"
 brew "poppler"
+
+# music — keep services stopped until their own reviewed setup
+brew "navidrome", restart_service: false
+brew "chromaprint"
+brew "rsgain"
+brew "aubio"
+brew "mp3val"
+brew "flac"
+brew "libkeyfinder"
+# sockseek is checksum-pinned separately (rig/brew/sockseek-pin.json), not Homebrew.
+cask "petrichor"
+cask "syncthing-app"
 
 # data / db
 brew "anyquery"

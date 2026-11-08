@@ -70,6 +70,55 @@ Default and `--apply` do **not** start MCPHub. Pass `--mcphub` only when you wan
 
 Live skill installs and home projections are **off** unless you pass those flags.
 
+## Draw Things app using the MBA
+
+Use the model service's `native_offload_submit` tool to open a native-app session
+on the MBA. Supply a fresh request key, keep its returned job ID and have the
+operator confirm the private endpoint is ready before connecting. A running job
+alone does not prove readiness. The service owns the session's engine and network
+forward; it does not require a second Draw Things server.
+`model_profiles.native_offload` supplies the canonical configured host/port and
+TLS setting; its `configured` flag does not establish an active session.
+
+The managed standalone engine needs `--model-browser` and a process-local
+`CFFIXED_USER_HOME` set to its existing private `HOME`. Foundation's Documents
+path was verified beneath that service home; setting `HOME` alone is insufficient.
+Keep `<private-home>/Documents/Models` empty and private, and retain the existing
+catalog and weights in the external model directory. Do not copy catalogs into
+Documents or set the override globally. Preserve both settings when rebuilding
+the LaunchAgent; its older installation record is historical. Verify the remote
+catalog and a generated image separately.
+
+With Tailscale connected to the same private network, enter these settings in
+your Draw Things client's remote-server connection:
+
+| Setting | Value |
+| --- | --- |
+| Host | `wyatts-macbook-air-3.tail1ca50a.ts.net` |
+| Port | `7859` |
+| TLS | **Off**; Tailscale encrypts the private network connection |
+| SharedSecret | Leave empty; none is configured |
+
+Do not enter an MCPHub bearer token as SharedSecret. MCP credentials authorize
+the management tools; the app connects through Tailscale's device access rules.
+This guide applies to an authorized Draw Things client and does not imply the
+app is already installed on the MBP.
+
+Use the app normally while its session is active. Other model jobs report busy
+until you finish. If you need longer, extend the same job with `job_extend`.
+When finished, call `job_cancel` with the session's job ID and wait for confirmed
+cleanup. Closing the app alone does not end the reserved session. If cleanup is
+uncertain, keep the reported recovery state for reconciliation rather than
+starting another session.
+
+The private port is available only during the session. Ending it preserves the
+separate Soulseek HTTPS service on port `8443`; actual Soulseek use from the phone
+still needs its own acceptance check. Tool installation, an app connection and a
+successful image are separate verification steps.
+
+API and lifecycle details stay in the agents repository's
+[MCPHub documentation](https://github.com/wyattowalsh/agents/blob/main/docs/ai-tools/mcphub.md#draw-things-native-app-offload).
+
 ## Laptop vs Cloud MCP
 
 | Place | What this installer does |

@@ -50,6 +50,13 @@
       "group": "operate"
     },
     {
+      "slug": "music",
+      "title": "Music",
+      "description": "Library safety, ingest and Navidrome.",
+      "firstCommand": "just check-music-ingest",
+      "group": "operate"
+    },
+    {
       "slug": "remote-access",
       "title": "Remote",
       "description": "iPhone RustDesk over Tailscale; opt-in, never auto-enabled.",

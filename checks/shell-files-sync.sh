@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # just check-shell-files
-# Fail if justfile shell_files drifts from tracked *.sh plus the kopia and remote-access runners.
+# Fail if justfile shell_files drifts from tracked *.sh plus explicitly managed home runners.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -24,6 +24,8 @@ tracked="$(
   git -C "$REPO_DIR" ls-files -- '*.sh' \
     'rig/home/dot_local/bin/executable_kopia-nightly' \
     'rig/home/dot_local/bin/executable_remote-access' \
+    'rig/home/dot_local/bin/executable_music-ingest' \
+    'rig/home/dot_local/bin/executable_music-likes' \
     | LC_ALL=C sort -u
 )"
 

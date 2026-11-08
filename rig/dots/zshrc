@@ -146,7 +146,6 @@ path=(
   $HOME/dev/projects/agents/bin(N)
   $HOME/.cache/lm-studio/bin(N)
   $HOME/.cache/.bun/bin(N)
-  $HOME/.spicetify(N)
   ${HOMEBREW_PREFIX:+$HOMEBREW_PREFIX/opt/rustup/bin}
   ${HOMEBREW_PREFIX:+$HOMEBREW_PREFIX/bin}
   ${HOMEBREW_PREFIX:+$HOMEBREW_PREFIX/sbin}
@@ -340,3 +339,6 @@ typeset -ga ZSH_HIGHLIGHT_HIGHLIGHTERS=(main brackets)
 if [[ -n ${HOMEBREW_PREFIX:-} && -f "$HOMEBREW_PREFIX/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]]; then
   source "$HOMEBREW_PREFIX/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
 fi
+
+# Mole shell completion
+if output="$(mole completion zsh 2>/dev/null)"; then eval "$output"; fi

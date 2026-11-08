@@ -16,7 +16,14 @@ just check-kopia-nightly
 just check-freshen
 just check-apple-text
 just check-iina-config
-just iina-qol
+just check-mba-migration-policy
+just check-music-ingest
+just check-music-likes
+just music-hygiene      # read-only library inventory
+just music-duplicates   # writes only a review CSV, never audio
+just iina-native preview
+just iina-shaders preview
+just iina-plugins preview
 just check-remote-access
 just remote-access
 just check-bats
@@ -37,12 +44,19 @@ just docs-ci
 | `just check-kopia-nightly` | Static runner/plist contract (cap in the runner, no launchd `TimeOut`; no live `kopia` / launchd) |
 | `just check-freshen` | Version SSOT, privacy/goldens, `zsh -n`, and `tests/freshen_test.zsh` (no live Homebrew/mas mutations) |
 | `just check-apple-text` | Canonical Text Replacement / Shortcuts registries plus offline merge harness (no Apple DB writes) |
-| `just check-iina-config` | IINA-QoL input profile, plugin schema, Hammerspoon syntax, chezmoiignore (no live IINA writes) |
-| `just iina-qol` | Preview / apply / doctor for the IINA QoL stack (dry-run unless `--apply`) |
-| `just check-remote-access` | RustDesk-over-Tailscale runner contract (no live launchctl / TCC / brew services) |
+| `just check-iina-config` | Native IINA profile, shader/pin parity, retired QoL source and destination ignores (no live writes) |
+| `just check-mba-migration-policy` | Nine synthetic suites: v2/v3 APFS budgets, retained-root inventory, review-only offload manifests, media policy/census/stage/reader fixtures, assertion-only receipt joins and simulated resource leases; no live host, backup, authorization or cross-host coordinator proof |
+| `just check-music-ingest` / `just check-music-likes` | File-only music runner, LaunchAgent, pin, secret-boundary and workflow contracts; likes also tests playlist fallback/atomic publication with a synthetic library |
+| `just iina-native` | Preview-only by default; separate `apply --apply` migrates named QoL paths after explicit review and backup |
+| `just iina-shaders` | Preview optional GPL shader pin; `install --apply` and `restore --apply` are separate live actions |
+| `just iina-plugins` | Preview only the three pinned official releases; install/restore require IINA quit and `--apply` |
+| `just iina-qol` | Retired runner; apply and automatic legacy restore are disabled |
+| `just check-remote-access` | RustDesk-over-Tailscale source contract; Bats exercises owned launchd overrides and a synthetic reboot, never live launchctl/TCC or MBA control |
 | `just remote-access` | Plan / install / enable / doctor / disable / rollback (mutating commands default to dry-run) |
 | `just check-spicetify` | Spotify pin + Spicetify apply runner/plist contract (no live Spotify / launchd) |
 | `just check-bats` | File-only Bats coverage when Bats is present; required in CI |
+
+The migration receipt suite checks **supplied assertions**, not independently verified host evidence or user permission: even `verified` input yields only `matching_assertions` with `unverified` coverage. The lease suite simulates one global token across two host identities; it does not acquire a real cross-host lock. A crash, unknown owner or expiry alone cannot release a live operation, and a synthetic stop witness cannot prove that a real process stopped. The offload-manifest suite uses disposable synthetic roots only: private metadata output is not an atomic snapshot, backup, content verification, available capacity, reclaimable space, or permission to evict. An `UNKNOWN` after output creation may leave a private incomplete file; the scanner never auto-unlinks an exposed name that another process could replace. Only a complete receipt with a matching SHA-256 identifies a usable review manifest. Any later MBA-local inventory must preserve MCPHub, music services, Things, Draw Things, LM Studio, RustDesk, and their data/dependencies; a manually cleared space estimate still needs a fresh measured capacity and peak-budget check before deployment.
 
 ```mermaid
 flowchart LR
@@ -80,14 +94,16 @@ Runs in this order:
 | `check-stale-paths` | freeze on pre-`rig/` machine path contracts |
 | `check-kopia-nightly` | headless Kopia runner contract (no live `kopia` / launchd) |
 | `check-apple-text` | Text Replacement registries + offline merge (no `TextReplacements.db`) |
-| `check-iina-config` | IINA-QoL profile, plugin schema, Hammerspoon syntax (no live IINA / Hammerspoon mutation) |
+| `check-iina-config` | Native IINA profile, shader refs, optional installer pins and QoL-source retirement (no live mutation) |
+| `check-mba-migration-policy` | Nine synthetic suites: v2/v3 budget, retained-root inventory, private review-only offload manifest, global media policy, local-only census, fixture stage journal, reader guard, receipt assertion joins and lease simulation; no live host/media operation or distributed enforcement |
+| `check-music-ingest` / `check-music-likes` | Static source/recipe/bootstrap contracts plus synthetic likes-playlist safety; no live music mutation |
 | `check-remote-access` | RustDesk-over-Tailscale runner contract (no live launchctl / TCC) |
 | `check-spicetify` | Spotify pin + Spicetify apply runner contract (no live Spotify / launchd) |
 | `check-bats` | `checks/*.bats` when Bats is present; required in CI |
 | `check-chezmoi-ignore` | `.chezmoiignore` uses destination/target names |
 | `check-darwin-lock` | `flake.lock` JSON + recoverable nix-darwin pin |
 | `check-linux-dev-env-rc` | Linux `run_dev_env` exit-status capture (no `$HOME` mutation) |
-| `check-shell-files` | justfile `shell_files` matches tracked `*.sh` + Kopia and remote-access runners |
+| `check-shell-files` | justfile `shell_files` matches tracked `*.sh` + named home runners (untracked new IINA/music files stay a tracking-only blocker until reviewed for Git) |
 
 ## Docs / hooks (not inside `just check`)
 

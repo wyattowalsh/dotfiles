@@ -86,6 +86,7 @@ just zsh-alias-usage    # local HISTFILE tokens → local/zsh-alias-usage.txt
 | `timeout` alias | Guarded: `command -v gtimeout && alias timeout='gtimeout'` in `~/.zsh/aliases.zsh`. Unguarded `alias timeout=` in zshrc fails L0. |
 | nvm | Sourced if `$NVM_DIR/nvm.sh` exists (Linux bootstrap). |
 | mise | `mise activate zsh` when `mise` is on `PATH` (wins if both nvm and mise exist). |
+| Spicetify CLI | Homebrew owns the CLI; `~/.spicetify` is not added ahead of Homebrew on `PATH`. |
 | Linux OMZ plugins | `linux.sh` clones p10k, zsh-autosuggestions, and zsh-syntax-highlighting under `$ZSH_CUSTOM`. `zshrc` prefers Homebrew shares, then that custom path. macOS bootstrap does not clone the brew-managed plugins. |
 | Atuin | After first install, bootstrap imports zsh history only when `$XDG_DATA_HOME/atuin/history.db` is missing (`atuin import zsh`). Do not run that on every apply. |
 

@@ -40,6 +40,7 @@ flowchart TD
 | `--no-upgrade` | Pass `--no-upgrade` to `brew bundle install` (safer first restore). |
 | `--with-dev-env` | Also run `rig/bootstrap/dev-env.sh` in the same mode. Always adds `--skip-mcphub`. |
 | `--require-dev-env` | Implies `--with-dev-env`. Fail if the agent-stack installer fails. |
+| `--with-music` | Opt-in music-ingest and music-likes runner/LaunchAgent setup; dry-run previews both, apply can download checksum-pinned sockseek and install beets tooling. Review [Music](/docs/music) first. |
 
 `--dry-run` and `--apply` cannot be combined (exit 2). `--require-dev-env` without `--with-dev-env` still enables the agent-stack phase.
 
@@ -47,7 +48,7 @@ flowchart TD
 
 Preflight → sudo keepalive (apply) → Xcode CLT → brew / just / nix / chezmoi → OMZ + p10k → Brewfile → **symlinks from `rig/dots/`** → Chezmoi → **Kopia LaunchAgent** (when `rig/home/dot_local/bin/executable_kopia-nightly` exists) → nix-darwin → optional `dev-env.sh`.
 
-The Kopia phase is part of bootstrap when that source exists — not only `just kopia-nightly-install`. Dry-run previews `install --dry-run`; `--apply` runs `install`. Missing source skips the phase.
+Bootstrap includes the Kopia phase when the Nightly runner source is present. It previews `install --dry-run` in dry-run mode and runs `install` in apply mode. The named MBA account skips that phase because KopiaUI owns the hourly schedule. Bootstrap applies the MBP nix-darwin profile only after the role check rules out the MBA, since that profile would change the MBA’s hostname. Music ingest and likes setup remain opt-in via `--with-music`.
 
 nix-darwin: `macos.sh` prefers `darwin-rebuild` on `PATH`. Otherwise it reads `rig/darwin/flake.lock` with `jq` — `locked.owner` / `repo` / `rev`, or a **tarball** lock (`original.owner` / `repo` plus the SHA in `locked.url` `…/archive/<rev>.tar.gz`) — then `nix run github:…#darwin-rebuild`. `--apply` requires the lock file. Gate: `just check-darwin-lock`.
 
@@ -71,6 +72,6 @@ nix-darwin: `macos.sh` prefers `darwin-rebuild` on `PATH`. Otherwise it reads `r
 | Atuin | bootstrap runs `atuin import zsh` only if the history db is missing; Ctrl-R is Atuin (CTRL-T stays fzf) |
 | Agent Deck | trial only: `agent-deck` in Ghostty, `tmux -L agent-deck ls`. Do not run conductor setup. If `brew bundle` refuses the formula (Xcode vs SDK), install the GitHub `darwin_arm64` tarball to `~/.local/bin`. Uninstall: brew uninstall the formula + tap (or drop the local binary), then drop the isolated tmux socket. |
 
-Manual: App Store / vendor apps / AI auth. If the LaunchAgent phase was skipped (missing runner source), `just kopia-nightly-install` after apply.
+Complete App Store, vendor app, and AI authentication setup manually. On the MBP, use `just kopia-nightly-install` after apply if bootstrap skipped the phase because the runner source was missing.
 
 Agent stack (skills, hooks, MCPHub) is a **second** command: `just bootstrap-dev` (no args → `--dry-run`), then `--apply`. Optional `just bootstrap --apply --with-dev-env` runs it in the same mode and always `--skip-mcphub`. See [Promote](/docs/ssot-workflow), [Brew](/docs/packages), [Backup](/docs/backup), [AI](/docs/ai-harness).

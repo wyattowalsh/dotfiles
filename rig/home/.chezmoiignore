@@ -4,10 +4,29 @@
 .p10k.zsh
 # Repo agent contract; do not deploy to ~/AGENTS.md
 AGENTS.md
+# The paired Macs use the separate MBA music contract installer. Ignoring old
+# targets preserves retained rollback files; it never deletes installed state.
+{{ $host := index (splitList "." .chezmoi.hostname) 0 }}
+{{ $mbaRole := and (eq .chezmoi.os "darwin") (eq $host "MacBookAir") (eq .chezmoi.username "wyattwalsh") }}
+{{ if or $mbaRole (and (eq .chezmoi.os "darwin") (eq $host "w4w-mbp") (eq .chezmoi.username "ww")) }}
+Library/LaunchAgents/com.wyattowalsh.music-ingest.plist
+Library/LaunchAgents/com.wyattowalsh.music-likes.plist
+Library/LaunchAgents/com.wyattowalsh.navidrome.plist
+.config/navidrome/navidrome.toml
+{{ end }}
+{{ if $mbaRole }}
+# The MBA's existing KopiaUI scheduler owns scheduled backups.
+.local/bin/kopia-nightly
+Library/LaunchAgents/com.wyattowalsh.kopia-nightly.plist
+{{ end }}
 # Private myaddr overlay — live file only, never Chezmoi-apply from git
 .config/apple-text/expansions.local.json
 
-# IINA runtime (destination paths). Code/UI is tracked; data is not.
+# IINA native source and installer-only pin; downloaded assets stay local.
+.config/iina-mpv/AGENTS.md
+.config/iina-mpv/shaders
+Library/Application Support/com.colliderli.iina/official-plugins-pin.json
+# IINA runtime (destination paths); plugin data and unrelated bundles are not managed here.
 Library/Application Support/com.colliderli.iina/plugins/.data
 Library/Application Support/com.colliderli.iina/plugins/.preferences
 Library/Application Support/com.colliderli.iina/plugins/**/.data
