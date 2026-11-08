@@ -1,0 +1,16 @@
+{
+  "name": "chromaprint",
+  "version": "1.6.2",
+  "license": "MIT own source; LGPL 2.1 aggregate (see license_source)",
+  "release": "https://github.com/acoustid/chromaprint/releases/tag/v1.6.2",
+  "license_source": "https://github.com/acoustid/chromaprint/blob/v1.6.2/LICENSE.md",
+  "darwin_arm64": {
+    "url": "https://github.com/acoustid/chromaprint/releases/download/v1.6.2/chromaprint-fpcalc-1.6.2-macos-arm64.tar.gz",
+    "asset": "chromaprint-fpcalc-1.6.2-macos-arm64.tar.gz",
+    "bytes": 1322220,
+    "sha256": "f3bc56cb42d89a01237bb3f3629329e4ec75f7c1b0217acf6e9bf952ac47979b",
+    "binary_member": "chromaprint-fpcalc-1.6.2-macos-arm64/fpcalc",
+    "binary_bytes": 2579048,
+    "binary_sha256": "13be022e9c0a6dbae210afa7cc369bda5a088222d34222b1eccf28831bb7c9ef"
+  }
+}
