@@ -1,0 +1,10 @@
+{
+  "name": "sockseek",
+  "version": "3.0.6",
+  "darwin_arm64": {
+    "url": "https://github.com/fiso64/sockseek/releases/download/v3.0.6/sockseek_3.0.6_osx-arm64.tar.gz",
+    "asset": "sockseek_3.0.6_osx-arm64.tar.gz",
+    "size": 46829759,
+    "sha256": "b7b9602b3ea0d8724b2a4dd1370c97f2f1f7175f901e7088dad714352c4926d9"
+  }
+}

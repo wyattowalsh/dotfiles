@@ -1,0 +1,11 @@
+{
+  "name": "slskd",
+  "version": "0.26.2",
+  "license": "AGPL-3.0-only",
+  "release": "https://github.com/slskd/slskd/releases/tag/0.26.2",
+  "darwin_arm64": {
+    "url": "https://github.com/slskd/slskd/releases/download/0.26.2/slskd-0.26.2-osx-arm64.zip",
+    "asset": "slskd-0.26.2-osx-arm64.zip",
+    "sha256": "18d3ebf7760cd93296b61f640c87b383b41a142cd445a04a633d3b596313ef85"
+  }
+}
