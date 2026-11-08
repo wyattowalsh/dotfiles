@@ -82,6 +82,24 @@ if [[ -f "$RUNNER" ]]; then
   if ! grep -q 'unsupported on' "$RUNNER"; then
     fail_msg "mutating commands must reject non-Darwin with unsupported"
   fi
+  # shellcheck disable=SC2016 # literal source token, not a shell expansion
+  for invariant in 'guarded_off()' 'options_fingerprint()' 'claim_plist()' 'check_owned_plists()' 'off_plist_claim()' 'launchctl_disabled_status()' 'durable_disable_unit()' 'durable_disable_check_only()' 'restore_owned_launchd_override()' 'launchd.${name}.disable_pending' 'launchd.${name}.disabled_by_us' 'lifecycle_hold()' 'return 4 # REMOTE_ACCESS_SOURCE_HOLD' 'launchctl print-disabled "$domain"' 'enabled_readback()' 'off_listener_status()' 'peer.tailnet' 'peer.id' 'peer.hostname' 'plists.${name}.created' 'journal.phase' "set -C; /bin/cat"; do
+    if ! grep -Fq "$invariant" "$RUNNER"; then
+      fail_msg "runner missing fail-closed lifecycle invariant: $invariant"
+    fi
+  done
+  # shellcheck disable=SC2016 # literal source tokens must not expand
+  if ! grep -Fq 'enable | disable | rollback) lifecycle_hold || return $?' "$RUNNER"; then
+    fail_msg "source lifecycle apply must stop before lock or host mutation"
+  fi
+  # shellcheck disable=SC2016 # literal source token, not a variable expansion
+  if grep -Fq 'run_sudo rm -f "$path"' "$RUNNER"; then
+    fail_msg "runner must not automatically unlink a vendor plist"
+  fi
+  # shellcheck disable=SC2016 # literal source pattern must not expand
+  if grep -Fq '/bin/cp -f "$tmp_d"' "$RUNNER" || grep -Fq 'owned.rustdesk_plists true' "$RUNNER"; then
+    fail_msg "runner must not overwrite unclaimed plists or use blanket ownership"
+  fi
   if grep -Eq 'caffeinate|pmset' "$RUNNER"; then
     fail_msg "runner must not change power policy"
   fi

@@ -26,7 +26,7 @@ RD_BIN="${RD_APP}/Contents/MacOS/RustDesk"
 DEST_RUNNER="${HOME}/.local/bin/remote-access"
 REPO_RUNNER_REL="rig/home/dot_local/bin/executable_remote-access"
 DEFAULT_PORT="21118"
-MANAGED_KEYS="direct-server direct-access-port enable-keyboard enable-clipboard enable-file-transfer enable-tunnel enable-terminal allow-remote-config-modification enable-record-session enable-audio enable-lan-discovery approve-mode verification-method whitelist"
+MANAGED_KEYS="direct-server direct-access-port enable-keyboard enable-clipboard enable-file-transfer enable-tunnel enable-terminal allow-remote-config-modification enable-record-session enable-audio enable-lan-discovery approve-mode verification-method whitelist stop-service"
 
 log() {
   printf '[remote-access] %s\n' "$*"
@@ -116,24 +116,75 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "missing command: $1"
 }
 
+# A failed targeted ps lookup means either "absent" or an inspection error.
+# Only a successful, parseable all-process snapshot can prove a PID absent.
+lock_owner_status() {
+  local pid="$1" snapshot line row_pid row_stat
+  snapshot="$(ps -A -o pid=,stat= 2>/dev/null)" || {
+    printf 'unknown\n'
+    return
+  }
+  [[ -n "$snapshot" ]] || {
+    printf 'unknown\n'
+    return
+  }
+  while IFS= read -r line; do
+    if [[ ! "$line" =~ ^[[:space:]]*([0-9]+)[[:space:]]+([^[:space:]]+)[[:space:]]*$ ]]; then
+      printf 'unknown\n'
+      return
+    fi
+    row_pid="${BASH_REMATCH[1]}"
+    row_stat="${BASH_REMATCH[2]}"
+    if [[ "$row_pid" == "$pid" ]]; then
+      if [[ "$row_stat" == Z* ]]; then printf 'zombie\n'; else printf 'alive\n'; fi
+      return
+    fi
+  done <<<"$snapshot"
+  printf 'absent\n'
+}
+
 acquire_lock() {
-  local dir pid=""
+  local dir pid="" owner_state recovery
   dir="$(lock_dir)"
+  recovery="${dir}.recovery"
   mkdir -p "$(state_dir)"
+  [[ ! -e "$recovery" ]] || die "another remote-access process holds $(lock_dir) (recovery underway)"
   if mkdir "$dir" 2>/dev/null; then
     printf '%s\n' "$$" >"${dir}/pid"
     return 0
   fi
-  pid="$(cat "${dir}/pid" 2>/dev/null || true)"
-  # ps -p treats a live pid as held even when kill -0 is EPERM (pid 1).
-  if [[ -n "$pid" ]] && ps -p "$pid" >/dev/null 2>&1; then
-    die "another remote-access process holds $(lock_dir)"
+  # A missing/partial pid can be a live process between mkdir and its pid
+  # write. Never seize it; an operator must inspect that ambiguous lock.
+  [[ -f "${dir}/pid" && ! -L "${dir}/pid" ]] || die "another remote-access process holds $(lock_dir) (owner unknown)"
+  pid="$(cat "${dir}/pid")"
+  [[ "$pid" =~ ^[0-9]+$ ]] || die "another remote-access process holds $(lock_dir) (owner unknown)"
+  owner_state="$(lock_owner_status "$pid")"
+  case "$owner_state" in
+    absent | zombie) ;;
+    *) die "another remote-access process holds $(lock_dir) (owner ${owner_state})" ;;
+  esac
+  # Only one reaper may inspect and replace a stale lock. Other entrants
+  # refuse while recovery is present, even during the remove/mkdir gap.
+  mkdir "$recovery" 2>/dev/null || die "another remote-access process holds $(lock_dir) (recovery underway)"
+  if [[ "$(cat "${dir}/pid" 2>/dev/null || true)" != "$pid" ]]; then
+    rmdir "$recovery"
+    die "another remote-access process holds $(lock_dir) (owner changed)"
   fi
+  owner_state="$(lock_owner_status "$pid")"
+  case "$owner_state" in
+    absent | zombie) ;;
+    *)
+      rmdir "$recovery"
+      die "another remote-access process holds $(lock_dir) (owner ${owner_state})"
+      ;;
+  esac
   rm -rf "$dir"
   if mkdir "$dir" 2>/dev/null; then
     printf '%s\n' "$$" >"${dir}/pid"
+    rmdir "$recovery"
     return 0
   fi
+  rmdir "$recovery" || true
   die "another remote-access process holds $(lock_dir)"
 }
 
@@ -153,6 +204,7 @@ atomic_write() {
   base="$(basename "$dest")"
   mkdir -p "$dir"
   tmp="${dir}/.${base}.tmp.$$"
+  umask 077
   cat >"$tmp"
   if command -v python3 >/dev/null 2>&1; then
     python3 - "$tmp" <<'PY' || true
@@ -177,7 +229,11 @@ run_sudo() {
     return 0
   fi
   sudo_path="$(sudo_bin)" || die "sudo is required for $*"
-  "$sudo_path" "$@"
+  if [[ "${DOCTOR_READ_ONLY:-0}" -eq 1 ]]; then
+    "$sudo_path" -n "$@"
+  else
+    "$sudo_path" "$@"
+  fi
 }
 
 refuse_secrets() {
@@ -199,6 +255,8 @@ argv = sys.argv[1:]
 i = 0
 while i < len(argv):
     if argv[i] == "--set" and i + 2 < len(argv):
+        if any(c in argv[i + 2] for c in "'\r\n"):
+            sys.exit("unsafe: unsupported character in native option")
         updates[argv[i + 1]] = argv[i + 2]
         i += 3
         continue
@@ -282,24 +340,158 @@ except Exception:
 PY
 }
 
-restore_managed_from_backup() {
-  local backup="$1"
-  local dest="$2"
-  local key val
-  local -a args
-  args=()
-  for key in $MANAGED_KEYS; do
-    val="$(python_read_option "$backup" "$key" || true)"
-    if [[ -n "$val" ]]; then
-      args+=(--set "$key" "$val")
-    else
-      args+=(--drop "$key")
+# Hash only the managed option projection, not the whole vendor file. Unknown
+# operator keys are preserved. Duplicate managed keys make a readback ambiguous.
+options_fingerprint() {
+  python3 - "$(rd_toml2)" "$MANAGED_KEYS" <<'PY'
+import hashlib, json, os, re, sys
+path, keys = sys.argv[1], set(sys.argv[2].split())
+values = {}
+if os.path.lexists(path):
+    if not os.path.isfile(path) or os.path.islink(path):
+        sys.exit(1)
+    with open(path, encoding="utf-8") as handle:
+        lines = handle.read().splitlines()
+    in_options = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            in_options = stripped.lower() == "[options]"
+            continue
+        if in_options:
+            match = re.match(r"^([A-Za-z0-9_-]+)\s*=\s*(.*)$", stripped)
+            if match and match.group(1) in keys:
+                key = match.group(1)
+                if key in values:
+                    sys.exit(1)
+                values[key] = match.group(2).strip()
+print(hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest())
+PY
+}
+
+track_options() {
+  [[ "$(state_get options.tracked)" == "true" ]] && return 0
+  local src backup="" fingerprint
+  src="$(rd_toml2)"
+  mkdir -p "$(state_dir)/backups" "$(rd_user_pref)"
+  chmod 700 "$(state_dir)" "$(state_dir)/backups"
+  fingerprint="$(options_fingerprint)" || die "unsafe: cannot inspect native options"
+  if [[ -e "$src" ]]; then
+    backup="$(state_dir)/backups/RustDesk2.original"
+    if [[ -e "$backup" || -L "$backup" ]]; then
+      die "unsafe: unclaimed options backup exists"
     fi
-  done
-  if [[ "${#args[@]}" -eq 0 ]]; then
-    return 0
+    cp -p "$src" "$backup"
+    chmod 600 "$backup"
+    state_set --set options.created false --set backup.toml2 "$backup" --set backup.sha "$(shasum -a 256 "$backup" | cut -d ' ' -f 1)"
+  else
+    state_set --set options.created true
   fi
-  python_merge_options "$dest" "${args[@]}"
+  state_set --set options.expected "$fingerprint" --set options.tracked true
+}
+
+# Expected-next is journaled before the atomic TOML replacement. A process
+# killed after replacement but before the journal commit can be reconciled on
+# the next invocation; any third value is a conflict, never an overwrite.
+reconcile_options() {
+  [[ "$(state_get options.tracked)" == "true" ]] || return 0
+  local actual expected next
+  actual="$(options_fingerprint)" || return 1
+  expected="$(state_get options.expected)"
+  next="$(state_get options.next)"
+  if [[ -n "$next" && "$actual" == "$next" ]]; then
+    state_set --set options.expected "$next" --set options.next ""
+  elif [[ "$actual" == "$expected" ]]; then
+    [[ -z "$next" ]] || state_set --set options.next ""
+  else
+    return 1
+  fi
+}
+
+option_apply() {
+  local src preview next actual original_hash="missing" current_hash="missing"
+  track_options
+  reconcile_options || {
+    log "unsafe: operator-modified native options; refusing overwrite" >&2
+    return 1
+  }
+  src="$(rd_toml2)"
+  preview="$(mktemp "$(rd_user_pref)/.RustDesk2.toml.remote-access.XXXXXXXX")"
+  if [[ -f "$src" ]]; then
+    original_hash="$(shasum -a 256 "$src" | cut -d ' ' -f 1)"
+    cp -p "$src" "$preview"
+  else
+    : >"$preview"
+  fi
+  if ! python_merge_options "$preview" "$@"; then
+    rm -f "$preview"
+    return 1
+  fi
+  next="$(
+    python3 - "$preview" "$MANAGED_KEYS" <<'PY'
+import hashlib, json, re, sys
+keys = set(sys.argv[2].split()); values = {}; in_options = False
+for line in open(sys.argv[1], encoding='utf-8'):
+    line = line.strip()
+    if line.startswith('[') and line.endswith(']'):
+        in_options = line.lower() == '[options]'
+    elif in_options:
+        m = re.match(r'^([A-Za-z0-9_-]+)\s*=\s*(.*)$', line)
+        if m and m.group(1) in keys:
+            if m.group(1) in values: sys.exit(1)
+            values[m.group(1)] = m.group(2).strip()
+print(hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest())
+PY
+  )" || {
+    rm -f "$preview"
+    return 1
+  }
+  state_set --set options.next "$next"
+  # Compare the entire source immediately before replacement, not only managed
+  # keys: a concurrent unrelated operator edit must not be lost to the preview.
+  if [[ -e "$src" || -L "$src" ]]; then
+    [[ -f "$src" && ! -L "$src" ]] || {
+      rm -f "$preview"
+      state_set --set options.next ""
+      return 1
+    }
+    current_hash="$(shasum -a 256 "$src" | cut -d ' ' -f 1)"
+  fi
+  if [[ "$current_hash" != "$original_hash" ]]; then
+    rm -f "$preview"
+    state_set --set options.next ""
+    log "unsafe: native options changed during CAS preview" >&2
+    return 1
+  fi
+  # mv occurs only after the expected projection has been made durable.
+  mv -f "$preview" "$src"
+  actual="$(options_fingerprint)" || return 1
+  [[ "$actual" == "$next" ]] || return 1
+  state_set --set options.expected "$next" --set options.next ""
+}
+
+restore_managed_options() {
+  local backup key val
+  local -a args=()
+  backup="$(state_get backup.toml2)"
+  if [[ "$(state_get options.created)" == false ]]; then
+    if [[ -z "$backup" || ! -f "$backup" || -L "$backup" || "$(shasum -a 256 "$backup" | cut -d ' ' -f 1)" != "$(state_get backup.sha)" ]]; then
+      log "unsafe: original native options backup missing or changed; refusing rollback" >&2
+      return 1
+    fi
+  fi
+  for key in $MANAGED_KEYS; do
+    case "$key" in
+      stop-service | direct-server) continue ;; # An off state must stay off.
+    esac
+    val=""
+    if [[ -n "$backup" && -f "$backup" ]]; then
+      val="$(python_read_option "$backup" "$key")"
+    fi
+    if [[ -n "$val" ]]; then args+=(--set "$key" "$val"); else args+=(--drop "$key"); fi
+  done
+  args+=(--set direct-server N --set stop-service Y)
+  option_apply "${args[@]}"
 }
 
 python_read_option() {
@@ -362,14 +554,24 @@ state_get() {
   local key="$1"
   local file
   file="$(state_file)"
-  [[ -f "$file" ]] || return 0
+  [[ ! -L "$file" ]] || {
+    log "unsafe: symlink state journal" >&2
+    return 1
+  }
+  [[ -f "$file" ]] || {
+    [[ ! -e "$file" ]] && return 0
+    log "unsafe: invalid state journal" >&2
+    return 1
+  }
   python3 - "$file" "$key" <<'PY'
 import json, sys
 path, key = sys.argv[1], sys.argv[2]
 try:
     data = json.load(open(path, encoding="utf-8"))
-except Exception:
-    sys.exit(0)
+except (OSError, ValueError):
+    sys.exit("unsafe: unreadable state journal")
+if not isinstance(data, dict):
+    sys.exit("unsafe: invalid state journal")
 cur = data
 for part in key.split("."):
     if not isinstance(cur, dict) or part not in cur:
@@ -392,17 +594,20 @@ state_set() {
   local file dest tmp
   file="$(state_file)"
   mkdir -p "$(state_dir)"
+  chmod 700 "$(state_dir)"
   STATE_FILE="$file" python3 - "$@" <<'PY'
 import json, os, sys, tempfile
 path = os.environ["STATE_FILE"]
 data = {}
-if os.path.isfile(path):
+if os.path.lexists(path):
+    if not os.path.isfile(path) or os.path.islink(path):
+        sys.exit("unsafe: invalid state journal")
     try:
         data = json.load(open(path, encoding="utf-8"))
-    except Exception:
-        data = {}
+    except (OSError, ValueError):
+        sys.exit("unsafe: unreadable state journal")
 if not isinstance(data, dict):
-    data = {}
+    sys.exit("unsafe: invalid state journal")
 argv = sys.argv[1:]
 i = 0
 while i < len(argv):
@@ -434,18 +639,12 @@ with os.fdopen(fd, "w", encoding="utf-8") as handle:
     handle.flush()
     os.fsync(handle.fileno())
 os.replace(tmp, path)
+fd = os.open(directory, os.O_RDONLY)
+try:
+    os.fsync(fd)
+finally:
+    os.close(fd)
 PY
-}
-
-backup_toml() {
-  local src dest
-  src="$(rd_toml2)"
-  [[ -f "$src" ]] || return 0
-  dest="$(state_dir)/backups/RustDesk2.toml.$(date +%Y%m%dT%H%M%S)"
-  mkdir -p "$(dirname "$dest")"
-  cp -p "$src" "$dest"
-  state_set --set backup.toml2 "$dest"
-  log "backed up nonsecret options to state backups/"
 }
 
 gui_tailscale_present() {
@@ -526,8 +725,10 @@ PY
 
 select_peer_ips() {
   local want="$1"
-  local host="" v4="" v6="" line rc=0
+  local host="" v4="" v6="" peer_id="" tailnet="" line rc=0
   SELECTED_PEER_HOST=""
+  SELECTED_PEER_ID=""
+  SELECTED_TAILNET=""
   SELECTED_PEER_V4=""
   SELECTED_PEER_V6=""
   if ! command -v tailscale >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1; then
@@ -539,10 +740,12 @@ select_peer_ips() {
       host=*) host="${line#host=}" ;;
       v4=*) v4="${line#v4=}" ;;
       v6=*) v6="${line#v6=}" ;;
+      id=*) peer_id="${line#id=}" ;;
+      tailnet=*) tailnet="${line#tailnet=}" ;;
     esac
   done <<<"$(
     WANT="$want" python3 - <<'PY' || true
-import json, os, subprocess, sys
+import ipaddress, json, os, subprocess, sys
 want = (os.environ.get("WANT") or "").lower()
 try:
     raw = subprocess.check_output(["tailscale", "status", "--json"], stderr=subprocess.DEVNULL, timeout=8)
@@ -550,7 +753,7 @@ try:
 except Exception:
     print("rc=1")
     sys.exit(0)
-if (data.get("BackendState") or "") != "Running":
+if (data.get("BackendState") or "") != "Running" or not data.get("CurrentTailnet", {}).get("Name"):
     print("rc=1")
     sys.exit(0)
 matches = []
@@ -566,18 +769,31 @@ for peer in (data.get("Peer") or {}).values():
     elif not is_phone:
         continue
     addrs = peer.get("TailscaleIPs") or []
-    v4 = [a for a in addrs if "." in a and ":" not in a]
-    v6 = [a for a in addrs if ":" in a]
-    matches.append((host, v4[0] if v4 else "", v6[0] if v6 else ""))
+    if not isinstance(addrs, list) or any(not isinstance(a, str) for a in addrs) or len(set(addrs)) != len(addrs):
+        print("rc=1")
+        sys.exit(0)
+    try:
+        parsed = [ipaddress.ip_address(a) for a in addrs]
+    except (ValueError, TypeError):
+        print("rc=1")
+        sys.exit(0)
+    v4 = [str(a) for a in parsed if a.version == 4]
+    v6 = [str(a) for a in parsed if a.version == 6]
+    matches.append((host, v4[0] if v4 else "", v6[0] if v6 else "", peer.get("Online") is True, peer.get("ID") or ""))
 print("count=%d" % len(matches))
-if not want and len(matches) != 1:
+if len(matches) > 1:
     print("rc=2")
     sys.exit(0)
 if not matches:
     print("rc=1")
     sys.exit(0)
-host, v4, v6 = matches[0]
+host, v4, v6, online, peer_id = matches[0]
+if not online or not peer_id or any(c in peer_id + host for c in '\n\r='):
+    print("rc=1")
+    sys.exit(0)
 print("host=%s" % host)
+print("id=%s" % peer_id)
+print("tailnet=%s" % data["CurrentTailnet"]["Name"])
 print("v4=%s" % v4)
 print("v6=%s" % v6)
 print("rc=0")
@@ -586,13 +802,54 @@ PY
   if [[ "$rc" != "0" ]]; then
     return "$rc"
   fi
-  if [[ -z "$v4" && -z "$v6" ]]; then
+  if [[ -z "$peer_id" || -z "$tailnet" || (-z "$v4" && -z "$v6") ]]; then
     return 1
   fi
+  SELECTED_PEER_ID="$peer_id"
+  SELECTED_TAILNET="$tailnet"
   SELECTED_PEER_HOST="$host"
   SELECTED_PEER_V4="$v4"
   SELECTED_PEER_V6="$v6"
   return 0
+}
+
+check_saved_peer_whitelist() {
+  local peer_id="$1" tailnet="$2" white="$3" hostname="$4"
+  if [[ -z "$peer_id" || -z "$tailnet" || -z "$hostname" ]] || ! command -v python3 >/dev/null 2>&1; then
+    printf '%s\n' 'peer-identity-missing'
+    return 0
+  fi
+  SAVED_PEER_ID="$peer_id" SAVED_TAILNET="$tailnet" SAVED_PEER_WHITE="$white" SAVED_PEER_HOST="$hostname" python3 - <<'PY'
+import json, os, subprocess
+
+try:
+    raw = subprocess.check_output(["tailscale", "status", "--json"], stderr=subprocess.DEVNULL, timeout=8)
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise ValueError("invalid tailnet status")
+    current = data.get("CurrentTailnet")
+    if not isinstance(current, dict) or not isinstance(current.get("Name"), str) or not current["Name"]:
+        raise ValueError("invalid tailnet identity")
+    peers = data.get("Peer") or {}
+    if not isinstance(peers, dict) or any(not isinstance(peer, dict) for peer in peers.values()):
+        raise ValueError("invalid peer status")
+    matches = [peer for peer in peers.values() if peer.get("ID") == os.environ["SAVED_PEER_ID"]]
+    if (current["Name"] != os.environ["SAVED_TAILNET"] or len(matches) != 1
+            or matches[0].get("HostName") != os.environ["SAVED_PEER_HOST"]):
+        print("peer-stale")
+    elif matches[0].get("Online") is not True:
+        print("peer-offline")
+    else:
+        live = matches[0].get("TailscaleIPs") or []
+        saved = os.environ["SAVED_PEER_WHITE"].split(",")
+        if (not isinstance(live, list) or not live
+                or any(not isinstance(ip, str) or not ip for ip in live)
+                or len(set(live)) != len(live)
+                or len(set(saved)) != len(saved) or set(live) != set(saved)):
+            print("whitelist-mismatch")
+except (OSError, ValueError, TypeError, AttributeError, subprocess.SubprocessError):
+    print("peer-status-unavailable")
+PY
 }
 
 whitelist_value() {
@@ -690,10 +947,68 @@ plist_agent_body() {
 PLIST
 }
 
+plist_disk_path() {
+  printf '%s%s\n' "${REMOTE_ACCESS_PLIST_ROOT:-}" "$1"
+}
+
+plist_digest() {
+  local path
+  path="$(plist_disk_path "$1")"
+  [[ -f "$path" && ! -L "$path" ]] || return 1
+  shasum -a 256 "$path" | cut -d ' ' -f 1
+}
+
+# An exclusive create is the only ownership boundary. A matching digest by
+# itself proves content, not who created the file. A killed copy before the
+# journal commit leaves an ambiguous, unclaimed plist for operator review;
+# never adopt or delete it on re-entry.
+claim_plist() {
+  local name="$1" source="$2" target="$3" digest actual="" prior
+  lifecycle_hold || return $?
+  digest="$(shasum -a 256 "$source" | cut -d ' ' -f 1)"
+  prior="$(state_get "plists.${name}.sha")"
+  if [[ -n "$prior" && "$(state_get "plists.${name}.created")" != true ]]; then
+    die "unsafe: legacy ${name} claim has no exclusive-create proof; operator review required"
+  fi
+  if [[ -e "$(plist_disk_path "$target")" || -L "$(plist_disk_path "$target")" ]]; then
+    [[ -n "$prior" ]] || die "unsafe: unowned ${name} vendor plist exists"
+    actual="$(plist_digest "$target")" || die "unsafe: unreadable ${name} vendor plist"
+    [[ "$actual" == "$prior" && "$digest" == "$prior" ]] || die "unsafe: operator-modified ${name} vendor plist"
+    return 0
+  fi
+  [[ -z "$prior" ]] || die "unsafe: claimed ${name} vendor plist disappeared; operator review required"
+  # POSIX noclobber opens with O_EXCL: cp -n can succeed without copying when
+  # another writer creates the target between the probe and the copy.
+  # shellcheck disable=SC2016 # arguments expand in the privileged shell
+  run_sudo /bin/sh -c 'set -C; /bin/cat "$1" > "$2"' remote-access "$source" "$target"
+  actual="$(plist_digest "$target")" || die "unsafe: ${name} plist copy not verified"
+  [[ "$actual" == "$digest" ]] || die "unsafe: ${name} plist raced with another writer"
+  state_set --set "plists.${name}.sha" "$digest" --set "plists.${name}.created" true
+  run_sudo /usr/sbin/chown 0:0 "$target"
+  run_sudo /bin/chmod 644 "$target"
+  [[ "$(plist_digest "$target")" == "$digest" ]] || die "unsafe: ${name} plist changed during install"
+}
+
+check_owned_plists() {
+  local name path expected actual
+  for name in daemon agent; do
+    if [[ "$name" == daemon ]]; then
+      path="/Library/LaunchDaemons/${RD_DAEMON_LABEL}.plist"
+    else path="/Library/LaunchAgents/${RD_AGENT_LABEL}.plist"; fi
+    expected="$(state_get "plists.${name}.sha")"
+    [[ -n "$expected" && "$(state_get "plists.${name}.created")" == true ]] || return 1
+    actual="$(plist_digest "$path")" || return 1
+    [[ "$actual" == "$expected" ]] || return 1
+  done
+}
+
 write_vendor_plists() {
   local daemon_path="/Library/LaunchDaemons/${RD_DAEMON_LABEL}.plist"
   local agent_path="/Library/LaunchAgents/${RD_AGENT_LABEL}.plist"
   local tmp_d tmp_a
+  if [[ "${DRY_RUN}" -ne 1 ]]; then
+    lifecycle_hold || return $?
+  fi
   tmp_d="$(state_dir)/daemon.plist"
   tmp_a="$(state_dir)/agent.plist"
   if [[ "${DRY_RUN}" -eq 1 ]]; then
@@ -705,33 +1020,33 @@ write_vendor_plists() {
   if grep -Eiq 'password|--password' "$tmp_d" "$tmp_a"; then
     die "refusing to install plists that mention a password"
   fi
-  run_sudo /bin/cp -f "$tmp_d" "$daemon_path"
-  run_sudo /bin/cp -f "$tmp_a" "$agent_path"
-  run_sudo /usr/sbin/chown 0:0 "$daemon_path" "$agent_path"
-  run_sudo /bin/chmod 644 "$daemon_path" "$agent_path"
-  run_sudo launchctl bootout "system/${RD_DAEMON_LABEL}" >/dev/null 2>&1 || true
+  claim_plist daemon "$tmp_d" "$daemon_path"
+  claim_plist agent "$tmp_a" "$agent_path"
+  check_owned_plists || die "unsafe: vendor plist ownership changed before startup"
+  # A prior disable persists in launchd across reboots. Only an explicit enable
+  # transaction may clear an override that this journal proves we set.
+  restore_owned_launchd_override "system/${RD_DAEMON_LABEL}"
   run_sudo launchctl bootstrap system "$daemon_path"
-  run_sudo launchctl enable "system/${RD_DAEMON_LABEL}" >/dev/null 2>&1 || true
-  run_sudo launchctl bootout "gui/$(id -u)/${RD_AGENT_LABEL}" >/dev/null 2>&1 || true
-  run_sudo launchctl bootstrap "gui/$(id -u)" "$agent_path" >/dev/null 2>&1 || true
-  run_sudo launchctl enable "gui/$(id -u)/${RD_AGENT_LABEL}" >/dev/null 2>&1 || true
-  state_set --set owned.rustdesk_plists true
+  restore_owned_launchd_override "gui/$(id -u)/${RD_AGENT_LABEL}"
+  run_sudo launchctl bootstrap "gui/$(id -u)" "$agent_path"
+  check_owned_plists || die "unsafe: vendor plist ownership changed during startup"
 }
 
 remove_vendor_plists() {
-  local daemon_path="/Library/LaunchDaemons/${RD_DAEMON_LABEL}.plist"
-  local agent_path="/Library/LaunchAgents/${RD_AGENT_LABEL}.plist"
-  if [[ "${DRY_RUN}" -eq 1 ]]; then
-    log "dry-run: would bootout and remove vendor RustDesk plists"
-    return 0
-  fi
-  run_sudo launchctl bootout "system/${RD_DAEMON_LABEL}" >/dev/null 2>&1 || true
-  run_sudo launchctl bootout "gui/$(id -u)/${RD_AGENT_LABEL}" >/dev/null 2>&1 || true
-  if [[ "$(state_get owned.rustdesk_plists)" == "true" ]]; then
-    run_sudo rm -f "$daemon_path" "$agent_path"
-  else
-    log "plist removal skipped (not owned by this feature)"
-  fi
+  local name path
+  lifecycle_hold || return $?
+  for name in daemon agent; do
+    if [[ "$name" == daemon ]]; then
+      path="/Library/LaunchDaemons/${RD_DAEMON_LABEL}.plist"
+    else path="/Library/LaunchAgents/${RD_AGENT_LABEL}.plist"; fi
+    if [[ -e "$(plist_disk_path "$path")" || -L "$(plist_disk_path "$path")" ]]; then
+      log "rollback incomplete: ${name} plist retained for attended review; ownership claims preserved" >&2
+      return 1
+    fi
+  done
+  for name in daemon agent; do
+    state_set --set "plists.${name}.sha" "" --set "plists.${name}.created" false
+  done
 }
 
 sync_dest_runner() {
@@ -835,7 +1150,8 @@ configure_tailscale_operator() {
 merge_rustdesk_options() {
   local port whitelist
   port="${REMOTE_ACCESS_PORT:-$DEFAULT_PORT}"
-  whitelist="$(whitelist_value)" || die "refusing to enable without a selected iPhone Tailscale address (not allow-all)"
+  [[ "$port" =~ ^[0-9]+$ && "$port" -gt 0 && "$port" -le 65535 ]] || die "invalid direct-access port"
+  whitelist="$(whitelist_value)" || die "refusing to enable without a selected controller Tailscale address (not allow-all)"
   if [[ "$whitelist" == "," || -z "$whitelist" ]]; then
     die "refusing allow-all whitelist"
   fi
@@ -844,8 +1160,7 @@ merge_rustdesk_options() {
     log "dry-run: would merge nonsecret RustDesk options (direct IP, keyboard, clipboard, password approve, lan-discovery off, whitelist=selected-peer)"
     return 0
   fi
-  backup_toml
-  python_merge_options "$(rd_toml2)" \
+  option_apply \
     --set direct-server Y \
     --set direct-access-port "$port" \
     --set enable-keyboard Y \
@@ -860,7 +1175,7 @@ merge_rustdesk_options() {
     --set approve-mode password \
     --set verification-method use-permanent-password \
     --set whitelist "$whitelist"
-  state_set --set owned.toml2 true --set peer.hostname "${SELECTED_PEER_HOST:-}" --set last.port "$port"
+  state_set --set peer.hostname "$SELECTED_PEER_HOST" --set peer.id "$SELECTED_PEER_ID" --set peer.tailnet "$SELECTED_TAILNET" --set last.port "$port"
   log "merged nonsecret RustDesk options"
 }
 
@@ -943,7 +1258,7 @@ pending_gates() {
   fi
   if [[ "$(state_get peer.hostname)" == "" ]]; then
     if ! select_peer_ips "${PEER:-}" 2>/dev/null; then
-      gates="${gates}iphone-peer "
+      gates="${gates}controller-peer "
     fi
   fi
   gates="${gates}screen-recording-unknown accessibility-unknown input-monitoring-unknown"
@@ -959,7 +1274,7 @@ cmd_plan() {
   fi
   log "rustdesk lifecycle: vendor LaunchDaemon ${RD_DAEMON_LABEL} + LaunchAgent ${RD_AGENT_LABEL} (bundle ${RD_BUNDLE_ID}; official 1.4.9 templates). --install-service on macOS only checks plists; it does not install."
   log "tailscale brew label: ${LABEL_TS} (formula backend only)"
-  log "intended: iPhone RustDesk -> Tailscale -> Mac direct-IP listener (default port ${DEFAULT_PORT})"
+  log "intended: selected controller RustDesk -> Tailscale -> Mac direct-IP listener (default port ${DEFAULT_PORT}; default controller is one iPhone, MBA migration requires --peer MBP)"
   log "will not: self-hosted ID/relay servers, Funnel, Serve, subnet router, exit node, Tailscale SSH, UPnP, MDM, TCC edits, password argv"
   log "startup: tailscaled can run at LoginWindow after FileVault unlock; not before FileVault unlock"
   log "bootstrap: packages only with --with-remote-access; never auto-enable"
@@ -969,6 +1284,10 @@ cmd_plan() {
 cmd_install() {
   if ! is_darwin; then
     die "install is macOS-only"
+  fi
+  if [[ "$DRY_RUN" -eq 0 && -n "$(state_get journal.phase)" && "$(state_get journal.phase)" != steady ]]; then
+    guarded_off || return 1
+    state_set --set intent disabled --set journal.phase steady
   fi
   ensure_tailscale_backend
   install_rustdesk_cask
@@ -981,16 +1300,426 @@ cmd_install() {
     log "intent remains disabled; install does not re-enable"
     return 0
   fi
+  if [[ "$(state_get intent)" == "enabled" ]]; then
+    log "intent remains enabled; install cannot silently change active lifecycle"
+    return 0
+  fi
   state_set --set intent installed --set feature rustdesk-tailscale
   log "installed packages/artifacts; unattended access is still off until enable --apply"
+}
+
+# A launchd override is the durable half of safe-off: bootout alone only
+# unloads the current job, while the owned RunAtLoad plist survives a reboot.
+# Never disable a label backed by a preexisting, modified, or unclaimed plist.
+off_plist_claim() {
+  local target="$1" name path expected actual created
+  case "$target" in
+    "system/${RD_DAEMON_LABEL}")
+      name=daemon
+      path="/Library/LaunchDaemons/${RD_DAEMON_LABEL}.plist"
+      ;;
+    "gui/$(id -u)/${RD_AGENT_LABEL}")
+      name=agent
+      path="/Library/LaunchAgents/${RD_AGENT_LABEL}.plist"
+      ;;
+    *) return 1 ;;
+  esac
+  expected="$(state_get "plists.${name}.sha")" || return 1
+  created="$(state_get "plists.${name}.created")" || return 1
+  if [[ ! -e "$(plist_disk_path "$path")" && ! -L "$(plist_disk_path "$path")" ]]; then
+    if [[ -n "$expected" || "$created" == true ]]; then
+      log "unsafe: claimed ${name} vendor plist disappeared" >&2
+      return 1
+    fi
+    printf 'absent\n'
+    return 0
+  fi
+  actual="$(plist_digest "$path")" || {
+    log "unsafe: unreadable ${name} vendor plist" >&2
+    return 1
+  }
+  if [[ -z "$expected" || "$created" != true || "$actual" != "$expected" ]]; then
+    log "unsafe: ${name} vendor plist is not fingerprint-owned; preserving it" >&2
+    return 1
+  fi
+  printf 'owned\n'
+}
+
+# print-disabled is a domain query, not a loaded-job query. Require exactly
+# one exact-label entry; absent, duplicate, malformed, or denied is unknown.
+# macOS versions emit disabled/enabled or true/false for the override.
+launchctl_disabled_status() {
+  local target="$1" domain="${1%/*}" label="${1##*/}" output line found=0 state=unknown value
+  local in_map=0 malformed=0
+  local pattern='^[[:space:]]*"([^"]+)"[[:space:]]*=>[[:space:]]*(.*)$'
+  local close_pattern='^[[:space:]]*}[[:space:]]*$'
+  output="$(run_sudo launchctl print-disabled "$domain" 2>/dev/null)" || {
+    printf 'unknown\n'
+    return
+  }
+  # A well-formed empty map means no override. An unrecognized response does
+  # not; do not treat failed inspection or malformed entries as enabled.
+  if [[ "$output" != *'disabled services = {'* || "$output" != *$'\n}'* ]]; then
+    printf 'unknown\n'
+    return
+  fi
+  while IFS= read -r line; do
+    if [[ "$line" == *'disabled services = {'* ]]; then
+      [[ "$in_map" -eq 0 ]] || malformed=1
+      in_map=1
+    elif [[ "$in_map" -eq 1 ]]; then
+      if [[ "$line" =~ $close_pattern ]]; then
+        in_map=2
+      elif [[ "$line" =~ ^[[:space:]]*$ ]]; then
+        continue
+      elif [[ "$line" =~ $pattern ]]; then
+        value="${BASH_REMATCH[2]}"
+        case "$value" in disabled | true | enabled | false) ;; *) malformed=1 ;; esac
+        [[ "${BASH_REMATCH[1]}" == "$label" ]] || continue
+        found=$((found + 1))
+        case "$value" in disabled | true) state=disabled ;; enabled | false) state=enabled ;; *) state=unknown ;; esac
+      else
+        malformed=1
+      fi
+    fi
+  done <<<"$output"
+  if [[ "$malformed" -eq 1 || "$in_map" -ne 2 || "$found" -ne 1 ]]; then
+    state="unknown"
+    [[ "$malformed" -eq 0 && "$in_map" -eq 2 && "$found" -eq 0 ]] && state="unset"
+  fi
+  printf '%s\n' "$state"
+}
+
+launchd_unit_name() {
+  case "$1" in
+    "system/${RD_DAEMON_LABEL}") printf 'daemon\n' ;;
+    "gui/$(id -u)/${RD_AGENT_LABEL}") printf 'agent\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+durable_disable_unit() {
+  local target="$1" claim name status pending owned
+  lifecycle_hold || return $?
+  claim="$(off_plist_claim "$target")" || return 1
+  [[ "$claim" == absent ]] && return 0
+  name="$(launchd_unit_name "$target")" || return 1
+  status="$(launchctl_disabled_status "$target")"
+  pending="$(state_get "launchd.${name}.disable_pending")" || return 1
+  owned="$(state_get "launchd.${name}.disabled_by_us")" || return 1
+  case "$status" in
+    disabled)
+      # Never seize an operator's preexisting disabled override. A pending
+      # uncommitted write has unknown authorship, so it cannot be enabled.
+      [[ "$pending" != true ]] || return 1
+      return 0
+      ;;
+    unset | enabled) ;;
+    *) return 1 ;;
+  esac
+  # Crash before the command leaves pending provenance; crash after it but
+  # before the confirmed commit leaves a disabled override we will not adopt.
+  state_set --set "launchd.${name}.disable_pending" true || return 1
+  run_sudo launchctl disable "$target" || return 1
+  [[ "$(launchctl_disabled_status "$target")" == disabled ]] || return 1
+  state_set --set "launchd.${name}.disabled_by_us" true --set "launchd.${name}.disable_pending" false
+}
+
+restore_owned_launchd_override() {
+  local target="$1" name claim status owned pending
+  lifecycle_hold || return $?
+  claim="$(off_plist_claim "$target")" || return 1
+  [[ "$claim" == owned ]] || return 1
+  name="$(launchd_unit_name "$target")" || return 1
+  status="$(launchctl_disabled_status "$target")"
+  owned="$(state_get "launchd.${name}.disabled_by_us")" || return 1
+  pending="$(state_get "launchd.${name}.disable_pending")" || return 1
+  [[ "$pending" != true ]] || {
+    log "unsafe: ${name} launchd override provenance pending" >&2
+    return 1
+  }
+  case "$status" in
+    disabled)
+      [[ "$owned" == true ]] || {
+        log "unsafe: operator-disabled ${name} launchd override preserved" >&2
+        return 1
+      }
+      run_sudo launchctl enable "$target" || return 1
+      status="$(launchctl_disabled_status "$target")"
+      [[ "$status" == enabled || "$status" == unset ]] || return 1
+      state_set --set "launchd.${name}.disabled_by_us" false
+      ;;
+    unset | enabled)
+      [[ "$owned" != true ]] || {
+        log "unsafe: ${name} launchd override changed outside journal" >&2
+        return 1
+      }
+      ;;
+    *)
+      log "unsafe: ${name} launchd override state unknown" >&2
+      return 1
+      ;;
+  esac
+}
+
+durable_disable_check_only() {
+  local target="$1" claim name pending
+  claim="$(off_plist_claim "$target")" || return 1
+  [[ "$claim" == absent ]] && return 0
+  name="$(launchd_unit_name "$target")" || return 1
+  pending="$(state_get "launchd.${name}.disable_pending")" || return 1
+  [[ "$pending" != true && "$(launchctl_disabled_status "$target")" == disabled ]]
+}
+
+# A positive launchctl print means loaded; 113 is launchd's not-found result.
+# Other failures (including permission errors) are unknown, not proof of off.
+bootout_unit() {
+  local target="$1" rc=0 name path expected actual
+  lifecycle_hold || return $?
+  run_sudo launchctl print "$target" >/dev/null 2>&1 || rc=$?
+  if [[ "$rc" -eq 113 ]]; then return 0; fi
+  [[ "$rc" -eq 0 ]] || return 1
+  case "$target" in
+    "system/${RD_DAEMON_LABEL}")
+      name=daemon
+      path="/Library/LaunchDaemons/${RD_DAEMON_LABEL}.plist"
+      ;;
+    "gui/$(id -u)/${RD_AGENT_LABEL}")
+      name=agent
+      path="/Library/LaunchAgents/${RD_AGENT_LABEL}.plist"
+      ;;
+    *) return 1 ;;
+  esac
+  expected="$(state_get "plists.${name}.sha")"
+  actual="$(plist_digest "$path")" || return 1
+  if [[ -z "$expected" || "$(state_get "plists.${name}.created")" != true || "$expected" != "$actual" ]]; then
+    log "unsafe: loaded ${name} job is not fingerprint-owned; preserving it" >&2
+    return 1
+  fi
+  run_sudo launchctl bootout "$target" >/dev/null 2>&1 || return 1
+  rc=0
+  run_sudo launchctl print "$target" >/dev/null 2>&1 || rc=$?
+  [[ "$rc" -eq 113 ]]
+}
+
+# This is a separate all-ports check, not a check of only the configured port.
+# lsof's empty exit 1 is normal; permission/inspection failures remain unknown.
+off_listener_status() {
+  local records rc=0 line pid exe_records exe_line found marker
+  local record_pid="" command_seen=0 groups=0
+  # The root shell emits a sentinel even when lsof finds zero matches (exit 1).
+  # A failed sudo -n cannot emit it, so denial is never mistaken for absence.
+  # shellcheck disable=SC2016 # script is evaluated by the privileged shell
+  records="$(run_sudo /bin/sh -c 'lsof -nP -iTCP -sTCP:LISTEN -Fpc 2>&1; rc=$?; printf "\n__REMOTE_ACCESS_LSOF_RC=%s\n" "$rc"' 2>&1)" || {
+    printf 'unknown\n'
+    return
+  }
+  marker="${records##*$'\n'}"
+  case "$marker" in
+    __REMOTE_ACCESS_LSOF_RC=0 | __REMOTE_ACCESS_LSOF_RC=1) rc="${marker##*=}" ;;
+    *)
+      printf 'unknown\n'
+      return
+      ;;
+  esac
+  records="${records%$'\n'*}"
+  if [[ "$rc" -eq 1 && -z "$records" ]]; then
+    printf 'absent\n'
+    return
+  fi
+  # Exit 0 promises matching process records. Empty success is incomplete
+  # inspection, not the explicit no-match result (empty exit 1) above.
+  if [[ "$rc" -ne 0 || -z "$records" ]]; then
+    printf 'unknown\n'
+    return
+  fi
+  # Validate every requested process/command group before interpreting absence.
+  # Partial successful output cannot exclude a RustDesk listener.
+  while IFS= read -r line; do
+    case "$line" in
+      p*)
+        if [[ -n "$record_pid" && "$command_seen" -ne 1 ]]; then
+          printf 'unknown\n'
+          return
+        fi
+        record_pid="${line#p}"
+        if [[ ! "$record_pid" =~ ^[1-9][0-9]{0,9}$ ]]; then
+          printf 'unknown\n'
+          return
+        fi
+        command_seen=0
+        groups=$((groups + 1))
+        ;;
+      c*)
+        if [[ -z "$record_pid" || "$command_seen" -ne 0 || "$line" == c ]]; then
+          printf 'unknown\n'
+          return
+        fi
+        command_seen=1
+        ;;
+      "") ;;
+      *)
+        printf 'unknown\n'
+        return
+        ;;
+    esac
+  done <<<"$records"
+  if [[ "$groups" -eq 0 || "$command_seen" -ne 1 ]]; then
+    printf 'unknown\n'
+    return
+  fi
+  while IFS= read -r line; do
+    case "$line" in
+      cRustDesk | cservice)
+        printf 'alive\n'
+        return
+        ;;
+      p[0-9]*)
+        pid="${line#p}"
+        exe_records="$(run_sudo lsof -nP -a -p "$pid" -d txt -Fn 2>&1)" || {
+          printf 'unknown\n'
+          return
+        }
+        found=0
+        while IFS= read -r exe_line; do
+          case "$exe_line" in
+            "n${RD_BIN}" | "n${RD_APP}/Contents/MacOS/service")
+              printf 'alive\n'
+              return
+              ;;
+            n*) found=1 ;;
+          esac
+        done <<<"$exe_records"
+        [[ "$found" -eq 1 ]] || {
+          printf 'unknown\n'
+          return
+        }
+        ;;
+      c* | "") ;;
+      *)
+        printf 'unknown\n'
+        return
+        ;;
+    esac
+  done <<<"$records"
+  printf 'absent\n'
+}
+
+# All transitions stage native stop before touching direct-IP options or plists.
+# The durable phase is set first so a killed invocation is never steady-state.
+guarded_off() {
+  local failed=0 i max status
+  lifecycle_hold || return $?
+  state_set --set journal.phase stopping || return 1
+  if [[ -f "$(rd_toml2)" ]] || rustdesk_cask_present || [[ "$(state_get options.tracked)" == true ]]; then
+    if ! option_apply --set stop-service Y || [[ "$(python_read_option "$(rd_toml2)" stop-service)" != Y ]]; then
+      log "unsafe: native stop write/readback failed" >&2
+      failed=1
+    elif ! option_apply --set direct-server N || [[ "$(python_read_option "$(rd_toml2)" direct-server)" != N ]]; then
+      log "unsafe: direct-IP off write/readback failed" >&2
+      failed=1
+    fi
+  fi
+  # Even if native stop failed, attempt owned durable disables and bootouts.
+  # Never interpret one control succeeding as proof that another is off.
+  durable_disable_unit "system/${RD_DAEMON_LABEL}" || {
+    log "unsafe: daemon durable disable unproved" >&2
+    failed=1
+  }
+  durable_disable_unit "gui/$(id -u)/${RD_AGENT_LABEL}" || {
+    log "unsafe: agent durable disable unproved" >&2
+    failed=1
+  }
+  bootout_unit "system/${RD_DAEMON_LABEL}" || {
+    log "unsafe: daemon bootout unproved" >&2
+    failed=1
+  }
+  bootout_unit "gui/$(id -u)/${RD_AGENT_LABEL}" || {
+    log "unsafe: agent bootout unproved" >&2
+    failed=1
+  }
+  max="${REMOTE_ACCESS_LISTEN_WAIT:-5}"
+  i=0
+  while :; do
+    status="$(off_listener_status)"
+    [[ "$status" == absent ]] && break
+    if [[ "$i" -ge "$max" ]]; then
+      log "unsafe: listener ${status}" >&2
+      failed=1
+      break
+    fi
+    sleep 1
+    i=$((i + 1))
+  done
+  # A vendor rewrite after the first native readback must not become a
+  # disabled/rollback success, especially with RunAtLoad plists still on disk.
+  if [[ -f "$(rd_toml2)" ]] || rustdesk_cask_present || [[ "$(state_get options.tracked)" == true ]]; then
+    if ! options_fingerprint >/dev/null \
+      || [[ "$(python_read_option "$(rd_toml2)" stop-service)" != Y || "$(python_read_option "$(rd_toml2)" direct-server)" != N ]] \
+      || [[ "$(options_fingerprint)" != "$(state_get options.expected)" ]]; then
+      log "unsafe: final native off readback changed" >&2
+      failed=1
+    fi
+  fi
+  durable_disable_check_only "system/${RD_DAEMON_LABEL}" || {
+    log "unsafe: final daemon durable disable unproved" >&2
+    failed=1
+  }
+  durable_disable_check_only "gui/$(id -u)/${RD_AGENT_LABEL}" || {
+    log "unsafe: final agent durable disable unproved" >&2
+    failed=1
+  }
+  if [[ "$failed" -ne 0 ]]; then
+    state_set --set journal.phase unsafe || true
+    log "unsafe: native stop, launchd durable disable/bootout, or listener absence is unproved" >&2
+    return 1
+  fi
+  state_set --set journal.phase off
+}
+
+enable_exit_guard() {
+  local exit_status="$1"
+  if [[ "$exit_status" -ne 0 && "${ENABLE_TRANSACTION:-0}" -eq 1 ]]; then
+    if guarded_off; then
+      state_set --set intent disabled --set journal.phase steady || true
+      log "enable failed; reconciled to guarded off" >&2
+    else
+      log "unsafe: enable failed and off could not be proved" >&2
+    fi
+  fi
+}
+
+# A failed preflight on an already active installation is not allowed to leave
+# an old allowlist listening for a peer that may have been replaced.
+revoke_active_on_preflight_failure() {
+  if [[ "${DRY_RUN}" -eq 0 && "$(state_get intent)" == enabled ]]; then
+    guarded_off || return 1
+    state_set --set intent disabled --set journal.phase steady || return 1
+  fi
 }
 
 cmd_enable() {
   if ! is_darwin; then
     die "enable is macOS-only"
   fi
+  if [[ "${DRY_RUN}" -eq 0 && -n "$(state_get journal.phase)" && "$(state_get journal.phase)" != steady ]]; then
+    guarded_off || return 1
+    state_set --set intent disabled --set journal.phase steady
+  fi
   if [[ "$(state_get intent)" == "disabled" && "${DRY_RUN}" -eq 0 ]]; then
+    if [[ -f "$(rd_toml2)" && "$(python_read_option "$(rd_toml2)" stop-service)" != "Y" ]]; then
+      log "disabled intent lacks native stop-service=Y; refusing enable until repaired"
+      return 4
+    fi
     log "re-enabling after explicit disable --apply"
+  fi
+  # Repeated enable is a new transaction, not a harmless preflight: a failed
+  # backend install, login, peer lookup or password check must never leave the
+  # previous direct-IP listener and allowlist active. Revoke it before doing
+  # anything that can fail, and journal the disabled intent before preflight.
+  if [[ "${DRY_RUN}" -eq 0 && "$(state_get intent)" == enabled ]]; then
+    guarded_off || return 1
+    state_set --set intent disabled --set journal.phase steady
   fi
   ensure_tailscale_backend
   if gui_tailscale_present; then
@@ -1000,6 +1729,7 @@ cmd_enable() {
     configure_tailscale_operator
   fi
   if [[ "${DRY_RUN}" -eq 0 && "$(ts_status_line)" != "up" ]]; then
+    revoke_active_on_preflight_failure || return 1
     log "tailscale is not logged in. In Terminal: sudo tailscale up"
     log "then: sudo tailscale set --operator=$(id -un)"
     log "then re-run: just remote-access enable --apply"
@@ -1007,28 +1737,56 @@ cmd_enable() {
   fi
   if [[ "${DRY_RUN}" -eq 0 ]]; then
     if ! rustdesk_cask_present; then
+      revoke_active_on_preflight_failure || return 1
       log "RustDesk.app missing; run: just remote-access install --apply"
       exit 4
     fi
-    if ! select_peer_ips "${PEER:-}"; then
-      local rc=$?
-      if [[ "$rc" -eq 2 ]]; then
-        log "iPhone peer is ambiguous or missing. Re-run with --peer <hostname> after the phone is on the tailnet."
+    local peer_rc=0
+    select_peer_ips "${PEER:-}" || peer_rc=$?
+    if [[ "$peer_rc" -ne 0 ]]; then
+      revoke_active_on_preflight_failure || return 1
+      if [[ "$peer_rc" -eq 2 ]]; then
+        log "Tailscale peer selection is ambiguous. Re-run with --peer <unique hostname>."
       else
-        log "no iPhone Tailscale address found; refusing allow-all"
+        log "no matching Tailscale peer address found; refusing allow-all"
       fi
       exit 4
     fi
-    merge_rustdesk_options
+    local saved_id saved_tailnet saved_host
+    saved_id="$(state_get peer.id)"
+    saved_tailnet="$(state_get peer.tailnet)"
+    saved_host="$(state_get peer.hostname)"
+    if [[ -n "$saved_host" && (-z "$saved_id" || -z "$saved_tailnet") ]]; then
+      revoke_active_on_preflight_failure || return 1
+      die "peer identity is unpinned; explicit review/rebind required (no automatic hostname/IP adoption)"
+    fi
+    if [[ -n "$saved_id" && ("$SELECTED_PEER_ID" != "$saved_id" || "$SELECTED_TAILNET" != "$saved_tailnet" || "$SELECTED_PEER_HOST" != "$saved_host") ]]; then
+      revoke_active_on_preflight_failure || return 1
+      die "peer identity changed; explicit review/rebind required (no automatic hostname/IP adoption)"
+    fi
     if ! password_present; then
+      revoke_active_on_preflight_failure || return 1
       open_permission_surfaces
       log "permanent password is not set. In RustDesk: Settings → Security → set a unique permanent password, approval = password only."
       log "then re-run: just remote-access enable --apply"
-      exit 4
+      return 4
     fi
+    ENABLE_TRANSACTION=1
+    guarded_off || return 1
+    # The native stop and both bootouts were proved before touching direct IP
+    # or a vendor plist. Each later step stays in the journal's arming phase.
+    state_set --set journal.phase arming
+    merge_rustdesk_options
     write_vendor_plists
-    open_permission_surfaces
     state_set --set intent enabled
+    option_apply --set stop-service N
+    if ! enabled_readback; then
+      log "unsafe: enabled readback failed" >&2
+      return 1
+    fi
+    state_set --set journal.phase steady
+    ENABLE_TRANSACTION=0
+    open_permission_surfaces
     log "enabled. Grant Screen Recording, Accessibility, and Input Monitoring if prompted."
   else
     if gui_tailscale_present; then
@@ -1042,123 +1800,272 @@ cmd_enable() {
 
 cmd_disable() {
   if [[ "${DRY_RUN}" -eq 1 ]]; then
-    log "dry-run: would bootout RustDesk vendor services and persist intent=disabled"
+    log "dry-run: would stage native stop, durably disable and bootout owned vendor jobs, prove no listener, persist disabled"
     log "dry-run: would leave Tailscale running"
     return 0
   fi
-  run_sudo launchctl bootout "system/${RD_DAEMON_LABEL}" >/dev/null 2>&1 || true
-  run_sudo launchctl bootout "gui/$(id -u)/${RD_AGENT_LABEL}" >/dev/null 2>&1 || true
-  if rustdesk_cask_present; then
-    python_merge_options "$(rd_toml2)" --set stop-service Y || true
-  fi
-  state_set --set intent disabled
-  log "disabled. Tailscale was left running."
+  guarded_off || return 1
+  state_set --set intent disabled --set journal.phase steady
+  log "disabled (native stop, owned launchd overrides, both bootouts, all-port listener absence verified). Tailscale was left running."
 }
 
 cmd_rollback() {
-  local backup
-  backup="$(state_get backup.toml2)"
   if [[ "${DRY_RUN}" -eq 1 ]]; then
-    log "dry-run: would restore options backup if unchanged, remove owned plists, persist intent=rolled-back"
+    log "dry-run: would prove off, remove only fingerprint-owned plists, CAS-restore managed options with direct IP still off"
     return 0
   fi
-  if [[ -n "$backup" && -f "$backup" && -f "$(rd_toml2)" ]]; then
-    local current_white backup_white
-    current_white="$(python_read_option "$(rd_toml2)" whitelist || true)"
-    backup_white="$(python_read_option "$backup" whitelist || true)"
-    local last_host
-    last_host="$(state_get peer.hostname)"
-    if [[ -n "$current_white" && -n "$backup_white" && "$current_white" != "$backup_white" && -n "$last_host" ]]; then
-      log "conflict: whitelist changed since install; not overwriting. Disable instead or restore manually from state backups/"
-    else
-      restore_managed_from_backup "$backup" "$(rd_toml2)"
-      log "restored previous nonsecret options (unknown keys preserved)"
-    fi
+  guarded_off || return 1
+  state_set --set journal.phase rolling-back
+  remove_vendor_plists || {
+    state_set --set journal.phase unsafe
+    return 1
+  }
+  if [[ "$(state_get options.tracked)" == true ]]; then
+    restore_managed_options || {
+      state_set --set journal.phase unsafe
+      return 1
+    }
   fi
-  if [[ "$(state_get owned.rustdesk_plists)" == "true" ]]; then
-    remove_vendor_plists
-    state_set --set owned.rustdesk_plists false
-  fi
+  guarded_off || return 1
   if [[ "$(state_get owned.tailscale_started_by_us)" == "true" ]]; then
     log "leaving Tailscale brew service running (shared identity); stop with: sudo brew services stop tailscale"
   fi
-  state_set --set intent rolled-back
-  log "rollback complete. RustDesk.app and Tailscale identity were kept."
+  state_set --set intent rolled-back --set journal.phase steady
+  log "rollback complete; safe-off sentinel retained. RustDesk.app and Tailscale identity kept."
+}
+
+listener_owner_status() {
+  local port="$1" records pid command_line exe_records exe_line exe_found found=0
+  if ! command -v lsof >/dev/null 2>&1; then
+    printf 'unknown\n'
+    return 0
+  fi
+  records="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN -Fpc 2>/dev/null)" || {
+    printf 'unknown\n'
+    return 0
+  }
+  while IFS= read -r record; do
+    [[ "$record" == p* ]] || continue
+    pid="${record#p}"
+    if [[ ! "$pid" =~ ^[0-9]+$ ]]; then
+      printf 'unknown\n'
+      return 0
+    fi
+    found=1
+    command_line="$(ps -p "$pid" -o command= 2>/dev/null)" || {
+      printf 'unknown\n'
+      return 0
+    }
+    case "$command_line" in
+      "$RD_BIN --server" | "$RD_BIN --server "* | "$RD_APP/Contents/MacOS/service" | "$RD_APP/Contents/MacOS/service "*) ;;
+      *)
+        printf 'mismatch\n'
+        return 0
+        ;;
+    esac
+    exe_records="$(lsof -nP -a -p "$pid" -d txt -Fn 2>/dev/null)" || {
+      printf 'unknown\n'
+      return 0
+    }
+    exe_found=0
+    while IFS= read -r exe_line; do
+      [[ "$exe_line" == n* ]] || continue
+      case "${exe_line#n}" in
+        "$RD_BIN" | "$RD_APP/Contents/MacOS/service") exe_found=1 ;;
+        *)
+          printf 'mismatch\n'
+          return 0
+          ;;
+      esac
+    done <<<"$exe_records"
+    if [[ "$exe_found" -ne 1 ]]; then
+      printf 'unknown\n'
+      return 0
+    fi
+  done <<<"$records"
+  if [[ "$found" -eq 1 ]]; then
+    printf 'verified\n'
+  else
+    printf 'unknown\n'
+  fi
+}
+
+# Return 0 only for a fully owned, configured, observed enabled service.
+enabled_readback() {
+  local key value expected port white peer_check ts_json backend_state self_online target name override
+  if ! lifecycle_hold; then
+    log "broken: loaded-job identity is unproved"
+    return 1
+  fi
+  if [[ "$(state_get journal.phase)" != arming && "$(state_get journal.phase)" != steady ]]; then
+    log "broken: incomplete lifecycle journal"
+    return 1
+  fi
+  local -a required=(
+    'direct-server:Y' 'enable-keyboard:Y' 'enable-clipboard:Y'
+    'enable-file-transfer:N' 'enable-tunnel:N' 'enable-terminal:N'
+    'allow-remote-config-modification:N' 'enable-record-session:N'
+    'enable-audio:Y' 'enable-lan-discovery:N' 'approve-mode:password'
+    'verification-method:use-permanent-password' 'stop-service:N'
+  )
+  options_fingerprint >/dev/null || {
+    log "broken: ambiguous native options"
+    return 1
+  }
+  for value in "${required[@]}"; do
+    key="${value%%:*}"
+    expected="${value#*:}"
+    if [[ "$(python_read_option "$(rd_toml2)" "$key")" != "$expected" ]]; then
+      log "broken: native ${key} differs from required setting"
+      return 1
+    fi
+  done
+  [[ "$(state_get options.tracked)" == true && -z "$(state_get options.next)" && "$(options_fingerprint)" == "$(state_get options.expected)" ]] || {
+    log "broken: native options changed outside journal"
+    return 1
+  }
+  port="$(state_get last.port)"
+  [[ "$port" =~ ^[0-9]+$ && "$port" -gt 0 && "$port" -le 65535 ]] || {
+    log "broken: saved port missing"
+    return 1
+  }
+  [[ "$(python_read_option "$(rd_toml2)" direct-access-port)" == "$port" ]] || {
+    log "broken: direct-access-port drift"
+    return 1
+  }
+  white="$(python_read_option "$(rd_toml2)" whitelist)"
+  [[ -n "$white" && "$white" != , ]] || {
+    log "broken: whitelist unset"
+    return 1
+  }
+  log "access: whitelist configured (addresses not printed)"
+  [[ "$(ts_status_line)" == up ]] || {
+    log "broken: tailscale-daemon"
+    return 1
+  }
+  ts_json="$(summarize_tailscale_json)"
+  backend_state="$(printf '%s\n' "$ts_json" | awk -F= '/^backend=/{print $2; exit}')"
+  self_online="$(printf '%s\n' "$ts_json" | awk -F= '/^online=/{print $2; exit}')"
+  [[ "$backend_state" == Running ]] || {
+    log "broken: tailscale-backend"
+    return 1
+  }
+  [[ "$self_online" == true ]] || {
+    log "broken: tailscale-offline"
+    return 1
+  }
+  peer_check="$(check_saved_peer_whitelist "$(state_get peer.id)" "$(state_get peer.tailnet)" "$white" "$(state_get peer.hostname)")" || {
+    log "broken: peer-status-unavailable"
+    return 1
+  }
+  [[ -z "$peer_check" ]] || {
+    log "broken: ${peer_check}"
+    return 1
+  }
+  password_present || {
+    log "broken: permanent password missing"
+    return 1
+  }
+  check_owned_plists || {
+    log "broken: vendor plist ownership or fingerprint mismatch"
+    return 1
+  }
+  for target in "system/${RD_DAEMON_LABEL}" "gui/$(id -u)/${RD_AGENT_LABEL}"; do
+    run_sudo launchctl print "$target" >/dev/null 2>&1 || {
+      log "broken: vendor launchd job not loaded"
+      return 1
+    }
+    name="$(launchd_unit_name "$target")" || return 1
+    override="$(launchctl_disabled_status "$target")"
+    [[ "$override" == unset || "$override" == enabled ]] \
+      && [[ "$(state_get "launchd.${name}.disable_pending")" != true && "$(state_get "launchd.${name}.disabled_by_us")" != true ]] || {
+      log "broken: ${name} launchd startup override disabled or unproved"
+      return 1
+    }
+  done
+  [[ "$(listener_owner_status "$port")" == verified ]] || {
+    log "broken: listener-owner missing or mismatched on ${port}"
+    return 1
+  }
+  log "verified: RustDesk listener on ${port} (local process ownership; not proof of iPhone path)"
 }
 
 cmd_doctor() {
-  local rc=0
   if ! is_darwin; then
     log "status: unsupported"
     return 3
   fi
+  DOCTOR_READ_ONLY=1
   print_inventory
-  local intent
-  intent="$(state_get intent || true)"
-  log "configured: intent=${intent:-unset} backend=$(state_get backend || echo unknown)"
-  local ts
-  ts="$(ts_status_line)"
-  log "running: tailscale=${ts}"
-  if pgrep -x RustDesk >/dev/null 2>&1 || pgrep -f "${RD_BIN} --server" >/dev/null 2>&1; then
-    log "running: rustdesk=yes"
-  else
-    log "running: rustdesk=no"
-  fi
-  local port
-  port="$(python_read_option "$(rd_toml2)" direct-access-port 2>/dev/null || true)"
-  port="${port:-$DEFAULT_PORT}"
-  if command -v lsof >/dev/null 2>&1; then
-    if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
-      log "verified: listener on ${port} (process ownership via lsof; not proof of iPhone path)"
-    else
-      log "verified: no listener on ${port}"
-      if [[ "$intent" == "enabled" ]]; then
-        rc=1
-      fi
-    fi
-  else
-    log "verified: lsof missing; listener unknown"
-  fi
-  if [[ -f "/Library/LaunchDaemons/${RD_DAEMON_LABEL}.plist" ]]; then
-    log "startup: vendor daemon plist present"
-  else
-    log "startup: vendor daemon plist absent"
-  fi
-  if password_present; then
-    log "auth: permanent password is set (value not printed)"
-  else
-    log "auth: permanent password missing (native UI gate)"
-    if [[ "$intent" == "enabled" ]]; then
-      rc=4
-    fi
-  fi
-  local white
-  white="$(python_read_option "$(rd_toml2)" whitelist 2>/dev/null || true)"
-  if [[ -z "$white" || "$white" == "," ]]; then
-    log "access: whitelist unset (would be allow-all — enable refuses this)"
-    if [[ "$intent" == "enabled" ]]; then
-      rc=1
-    fi
-  else
-    log "access: whitelist configured (addresses not printed)"
-  fi
-  log "permissions: Screen Recording / Accessibility / Input Monitoring are unknown unless granted in System Settings (TCC not probed)"
-  log "exposure: listener is not Tailscale-authenticated by itself; enforcement is the RustDesk whitelist plus tailnet membership"
-  log "rendezvous: LAN discovery is set off when enabled; the stock client may still contact public ID servers. Direct IP does not prove those calls stopped."
-  log "encryption: Tailscale transport is encrypted (including DERP relay). RustDesk may label a direct-IP session as unencrypted at its own layer."
-  log "sleep: display sleep is separate from system sleep; no power policy was changed"
+  local intent phase status
+  intent="$(state_get intent)"
+  phase="$(state_get journal.phase)"
+  log "configured: intent=${intent:-unset} phase=${phase:-untracked} backend=$(state_get backend)"
+  log "permissions: Screen Recording / Accessibility / Input Monitoring remain manual TCC gates"
+  log "exposure: a direct-IP listener needs both RustDesk allowlist and tailnet membership"
   log "FileVault: processes are not reachable before unlock"
-  if [[ "$intent" == "disabled" || "$intent" == "rolled-back" ]]; then
-    log "status: disabled-intent honored"
+  if [[ "$intent" == enabled ]]; then
+    enabled_readback || return 1
     return 0
   fi
-  local gates
-  gates="$(pending_gates)"
-  if [[ -n "$gates" && "$intent" != "enabled" ]]; then
-    log "pending: $gates"
-    return 4
+  if [[ "$intent" == disabled || "$intent" == rolled-back ]]; then
+    [[ "$phase" == steady ]] || {
+      log "unsafe: lifecycle journal incomplete"
+      return 1
+    }
+    if [[ -f "$(rd_toml2)" ]] || rustdesk_cask_present; then
+      options_fingerprint >/dev/null || {
+        log "unsafe: ambiguous native options"
+        return 1
+      }
+      [[ "$(python_read_option "$(rd_toml2)" stop-service)" == Y && "$(python_read_option "$(rd_toml2)" direct-server)" == N ]] || {
+        log "unsafe: native stop/direct-IP not off"
+        return 1
+      }
+    fi
+    status="$(off_listener_status)"
+    [[ "$status" == absent ]] || {
+      log "unsafe: listener ${status}"
+      return 1
+    }
+    bootout_check_only "system/${RD_DAEMON_LABEL}" || {
+      log "unsafe: vendor daemon loaded/unknown"
+      return 1
+    }
+    bootout_check_only "gui/$(id -u)/${RD_AGENT_LABEL}" || {
+      log "unsafe: vendor agent loaded/unknown"
+      return 1
+    }
+    durable_disable_check_only "system/${RD_DAEMON_LABEL}" || {
+      log "unsafe: vendor daemon durable disable unproved"
+      return 1
+    }
+    durable_disable_check_only "gui/$(id -u)/${RD_AGENT_LABEL}" || {
+      log "unsafe: vendor agent durable disable unproved"
+      return 1
+    }
+    log "status: disabled-intent honored (off and owned launchd overrides proved)"
+    return 0
   fi
-  return "$rc"
+  if [[ -n "$phase" && "$phase" != steady ]]; then
+    log "unsafe: incomplete lifecycle journal"
+    return 1
+  fi
+  log "pending: $(pending_gates)"
+  return 4
+}
+
+bootout_check_only() {
+  local rc=0
+  run_sudo launchctl print "$1" >/dev/null 2>&1 || rc=$?
+  [[ "$rc" -eq 113 ]]
+}
+
+# The source cannot bind a loaded launchd label to the plist we created or
+# exclude privileged writers between a pathname check and removal.
+lifecycle_hold() {
+  printf '%s\n' 'blocked: source-only lifecycle hold; loaded-job ownership and writer exclusion are unproved. Existing access may still be active; no change was made.' >&2
+  return 4 # REMOTE_ACCESS_SOURCE_HOLD
 }
 
 main() {
@@ -1169,7 +2076,7 @@ main() {
   DRY_RUN=0
   APPLY=0
   PEER="${REMOTE_ACCESS_PEER:-}"
-  local mode="plan"
+  local mode="plan" mode_set=0
   local arg
   for arg in "$@"; do
     case "$arg" in
@@ -1181,28 +2088,10 @@ main() {
   done
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      plan)
-        mode="plan"
-        shift
-        ;;
-      install)
-        mode="install"
-        shift
-        ;;
-      enable)
-        mode="enable"
-        shift
-        ;;
-      doctor)
-        mode="doctor"
-        shift
-        ;;
-      disable)
-        mode="disable"
-        shift
-        ;;
-      rollback)
-        mode="rollback"
+      plan | install | enable | doctor | disable | rollback)
+        [[ "$mode_set" -eq 0 ]] || die "multiple subcommands are not allowed"
+        mode="$1"
+        mode_set=1
         shift
         ;;
       --dry-run)
@@ -1243,9 +2132,15 @@ main() {
       fi
       ;;
   esac
+  if [[ "$APPLY" -eq 1 && "$DRY_RUN" -eq 0 ]]; then
+    case "$mode" in
+      enable | disable | rollback) lifecycle_hold || return $? ;;
+    esac
+  fi
   if [[ "$mode" != "plan" && "$mode" != "doctor" && "$DRY_RUN" -eq 0 ]]; then
     acquire_lock
-    trap release_lock EXIT
+    trap 'enable_exit_guard "$?"; release_lock' EXIT
+    state_get journal.phase >/dev/null || die "unsafe: state journal cannot be read; no mutation attempted"
   fi
   if ! is_darwin && [[ "$mode" != "plan" && "$mode" != "doctor" ]]; then
     log "unsupported on $(uname_s)"

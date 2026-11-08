@@ -1,26 +1,22 @@
 ---
 icon: remote-access
 title: Remote access
-description: iPhone RustDesk over Tailscale to this Mac. Opt-in, never auto-enabled.
+description: Opt-in, never auto-enabled RustDesk over Tailscale for a named peer.
 ---
 
-Free personal tailnet plus the ordinary RustDesk macOS client. Direct IP through Tailscale. No RustDesk Server, hbbs/hbbr, Headscale, Funnel, or paid infrastructure.
+Free personal tailnet plus the ordinary RustDesk macOS client. Direct IP through Tailscale. No RustDesk Server, hbbs/hbbr, Headscale, Funnel, or paid infrastructure. **Automated MBA remote-control enablement is blocked; an installed app is not a working remote session.** The repo source has a safety hold: `enable`, `disable`, and `rollback --apply` exit before acquiring a lock or changing native options, launchd, or plists. A matching on-disk plist does not prove which job is loaded under its label, and a pathname hash cannot make a later removal atomic against a privileged writer. Existing access may still be active after a blocked command. The installed runner is not changed by this source edit; a preexisting `$HOME/.local/bin/remote-access` copy may lack the hold and must not be used as an apply workaround. Separate review, exact approval, and attended macOS/vendor/TCC proof remain required.
 
 ```bash
 just remote-access                 # plan (read-only)
 just remote-access install --dry-run
-just remote-access install --apply
 just remote-access enable --dry-run
-just remote-access enable --apply
 just remote-access doctor
-just remote-access disable --apply
-just remote-access rollback --apply
-just check-remote-access           # static; no live launchctl/TCC
+just check-remote-access           # static only; sandbox fixtures run under just check-bats
 ```
 
 `just remote-access*` always runs the **repo source**. Launchd never runs this script. Dest runner `$HOME/.local/bin/remote-access` is a copy for PATH use.
 
-Generic `just bootstrap --apply` and Chezmoi apply **do not** enable unattended access. Pass `--with-remote-access` only to install packages.
+Generic `just bootstrap --apply` and Chezmoi apply **never auto-enable** unattended access. Pass `--with-remote-access` only to install packages; an explicit approved enable remains a separate operation.
 
 ## Sources (verified 2026-09-05)
 
@@ -39,7 +35,7 @@ Generic `just bootstrap --apply` and Chezmoi apply **do not** enable unattended 
 | Homebrew `tailscale-app` cask | https://formulae.brew.sh/cask/tailscale-app |
 | FileVault | https://support.apple.com/guide/deployment/intro-to-filevault-dep82064ec40/web |
 
-Current packages: Tailscale formula **1.102.3**, RustDesk cask **1.4.9**. Use current stable unless a disclosed beta-OS exception is required.
+The 2026-09-05 source review used Tailscale formula **1.102.3** and RustDesk cask **1.4.9**. These are dated template references, not current offered or installed versions. Review the actual signed app, cask artifacts and startup mechanism before any newer-build operation; do not treat the historical templates as vendor proof.
 
 ## Lifecycle
 
@@ -48,22 +44,24 @@ This host already declared `brew "tailscale"`. The runner **reuses that formula*
 | Piece | Owner | Why |
 | --- | --- | --- |
 | Tailscale | `sudo brew services start tailscale` (current Homebrew label `sh.brew.tailscale`) | Single lifecycle. Formula `tailscaled` can run at LoginWindow after FileVault unlock. Do not also run `tailscaled install-system-daemon`. |
-| RustDesk | Vendor `com.carriez.RustDesk_service` (root daemon) + `com.carriez.RustDesk_server` (user agent, LoginWindow + Aqua) | Official 1.4.9 templates. macOS `--install-service` only **checks** plists; it does not install. |
-| This repo | `just remote-access` | Packages, nonsecret option merge, enable/disable intent. No homemade `open`+KeepAlive watchdog. No `.zshrc` startup. |
+| RustDesk | Vendor `com.carriez.RustDesk_service` (root daemon) + `com.carriez.RustDesk_server` (user agent, LoginWindow + Aqua) | Historical 1.4.9 templates in the source runner, **not** verified for a newer installed app. macOS `--install-service` only **checks** plists; it does not install. |
+| This repo | `just remote-access` | Read-only planning and a separately gated installer. Enable/disable/rollback apply remain held in source. No homemade `open`+KeepAlive watchdog or `.zshrc` startup. |
 
 If a GUI Tailscale.app is already present, the runner preserves it and does not start a second daemon. That GUI variant does **not** run before login.
 
-## Setup
+## Deferred setup
+
+These are future operator steps, **not** approval to run them now. `install --apply` needs its own package-state review and authorization; source `enable --apply` cannot succeed while the provenance hold remains. Do not use `disable --apply` as an emergency-off command: it also stops before making changes.
 
 1. `just remote-access` — confirm backend `brew-formula-tailscaled` and that no GUI app is competing.
 2. `just remote-access install --apply` — cask `rustdesk` if missing; dest runner; **does not** enable the listener.
 3. Log the Mac into the existing personal tailnet: `sudo tailscale up` then `sudo tailscale set --operator=$USER`. Do not pass `--reset`, do not rotate node keys, do not enable SSH / Funnel / Serve / subnet routes / exit nodes.
 4. Open RustDesk. Settings → Security: enable **Direct IP access**, set a **unique permanent password** in the app UI, set approval to **password only**. Never put the password in chat, git, logs, or argv.
-5. Sign the iPhone into the **same** tailnet and leave it online once so `enable` can see exactly one iOS peer. If several phones exist: `just remote-access enable --apply --peer <hostname>`.
-6. `just remote-access enable --apply` — starts brew `tailscale` if needed, merges nonsecret keys, installs vendor plists, persists `intent=enabled`.
+5. In a later approved pilot, sign the intended controller into the **same** tailnet and bring it online. The MBA migration names the **MBP** controller rather than assuming a default phone. Review the selected Tailscale peer ID and tailnet; a replacement node requires a separate rebind decision.
+6. **Do not use** source or older installed `enable --apply --peer <unique-mbp-hostname>` while the hold remains. Disk plist hashes, labels, PIDs and a user-owned lock cannot prove effective loaded-job provenance or exclude privileged/vendor writers. For a newer app, review its actual vendor-supported attended setup and revocation path with the operator before separately approving any GUI action; do not install the historical 1.4.9 plists by assumption. If no supported unattended startup exists, stop at logged-in use rather than claiming reboot recovery. The blocked source command changes nothing and does not revoke an existing session.
 7. Grant **Screen Recording**, **Accessibility**, and **Input Monitoring** (RustDesk docs: Input Monitoring is required on newer macOS). The runner opens System Settings when a TTY is present; it never edits TCC.
 
-Disable later with `just remote-access disable --apply`. That stops RustDesk autostart and keeps Tailscale running.
+The historical lifecycle fixture models native-off, persistent launchd disables, bootout and listener readback in an isolated mock root. That fixture is **not** the production source behavior: all three lifecycle apply commands are held before host mutation. Production `doctor` also refuses an enabled-green result based only on a loaded label and matching disk plist. An operator must inspect and reconcile an existing session locally; Tailscale remains separate.
 
 ## iPhone
 
@@ -72,7 +70,7 @@ Disable later with `just remote-access disable --apply`. That stops RustDesk aut
 
 On the phone: join the same tailnet, enable the VPN, put the Mac's Tailscale IPv4 (from `just remote-access doctor` / `tailscale ip -4`) in RustDesk's Remote ID box, then enter the password in the app. Do not use the numeric RustDesk ID for this workflow.
 
-`doctor` prints listener and startup state; it does not print the password or peer allowlist addresses.
+`doctor` is read-only. For **enabled** intent it now returns nonzero: journal, settings, peer, listener and matching on-disk plists cannot prove the effective loaded launchd job's identity. For disabled or rolled-back intent it still checks native-off sentinels, exact-label persistent overrides, launchd absence and all-port listener absence; uncertain inspection is not green. Empty listener output proves no match only with `lsof` exit **1**; empty exit **0** remains **unknown**, not safely off. Nonempty successful output must contain complete, valid PID/command groups; orphan fields, malformed PIDs and incomplete groups are also **unknown**. Privileged readback uses noninteractive sudo (`-n`). It does not print passwords or peer allowlist addresses. Synthetic readback and reboot fixtures are not live named-peer control, vendor startup, TCC or post-login proof; those gates remain open.
 
 ## Startup boundaries
 
@@ -92,13 +90,15 @@ macOS 27 beta: treat LoginWindow/pre-login behavior as **unverified** until you 
 
 Tailscale encrypts transport, including DERP relay fallback. RustDesk may still label a **direct-IP** session as unencrypted at the RustDesk layer. That label is not a claim about Tailscale. It also does **not** apply to a raw LAN or public-IP listener.
 
-The RustDesk process listens on the configured direct-access port (upstream default **21118**; `doctor` checks the live port). A `100.x` address is not Tailscale authentication by itself. Enable refuses an empty whitelist (`allow-all`). Access control is: tailnet membership + the selected iPhone allowlist + the permanent password. Tailscale ACLs are not rewritten.
+The RustDesk process listens on the configured direct-access port (upstream default **21118**; `doctor` checks the live port). A `100.x` address is not Tailscale authentication by itself. Enable refuses an empty whitelist (`allow-all`). Access control is: tailnet membership + the selected named peer's allowlist (**MBP** for the MBA migration) + the permanent password. Tailscale ACLs are not rewritten.
 
 LAN discovery is turned off when enabling. The stock client may still contact public ID/rendezvous servers. Direct-IP success does not prove those calls stopped. Do not fake custom server endpoints.
 
 ## Power
 
 Display sleep is not system sleep. This feature does not change `pmset`. There is no `caffeinate` loop. Closed-lid reachability and Wake-on-LAN over Tailscale are **unclaimed**.
+
+The separate MBA host-availability source is `rig/bootstrap/mba-awake/com.wyattowalsh.mba-awake.plist`: one normal-user Aqua LaunchAgent runs `/usr/bin/caffeinate -s` with `RunAtLoad` and `KeepAlive`. Its explicit installer is restricted to the named MBA account; generic bootstrap/Chezmoi and the MBP are unaffected. Apple's native `caffeinate` manual defines `-s` as a system-sleep assertion valid on AC power. It adds no display-wake flag, all-power idle assertion, root power-setting change or lid-sleep override. Source presence is not installed proof: bind the loaded label's exact PID/UID/argv to its own `PreventSystemSleep` assertion on AC and inspect the native sleep-preventer readback. A zero `PreventUserIdleSystemSleep` count alone does not reject this different assertion type. If AC assertion or idle-prevention evidence is absent, keep that result unproved rather than silently adding `-i` or changing `pmset`. Next-login and attended lock/idle reachability remain separate host acceptance. Explicit disable boots out/disables only this label and retains its plist for rollback.
 
 ## Manual gates
 
@@ -119,26 +119,29 @@ Display sleep is not system sleep. This feature does not change `pmset`. There i
 | NordVPN (or other VPN) running | Left running; it may interfere with `utun`. Do not disable it from this feature |
 | Service loaded, no control | Permissions; `stop-service` leftover; `just remote-access doctor` |
 | Direct IP refused | Confirm `direct-server` and the live port; whitelist must be the phone's Tailscale IPs |
-| `enable` pending peer | Bring the phone online, or pass `--peer` |
+| `enable` pending peer | Bring the reviewed controller online and pass its unique `--peer` hostname (MBP for MBA migration) |
 
 ## Updates
 
-`brew upgrade tailscale` keeps the brew service unit. Re-run `just remote-access doctor` after upgrades. Do not silently replace a working GUI install. RustDesk cask upgrades may need the vendor plists reinstalled (`enable --apply` is idempotent and does not rotate the password).
+`brew upgrade tailscale` keeps the brew service unit. Re-run `just remote-access doctor` after upgrades. Do not silently replace a working GUI install. RustDesk cask upgrades may require an attended review of vendor plists. Source `enable --apply` is **held** and cannot repair or revoke an existing session. The historical off-first implementation is fixture-only until a separately reviewed provenance design can safely lift that hold.
 
 ## Disable / rollback
 
 ```bash
-just remote-access disable --apply
-just remote-access rollback --apply
+just remote-access disable --dry-run
+just remote-access rollback --dry-run
+just remote-access doctor
 ```
 
-Disable stops the RustDesk listener/autostart and persists disabled intent (survives install re-entry). Rollback restores the previous nonsecret options backup when it does not conflict with later operator edits, and removes **owned** vendor plists. It does not delete RustDesk.app, Tailscale identity, or the password.
+All three lifecycle `--apply` commands return **4** at the source hold before the state lock, journal read, native-option write, launchd call, or plist removal. This is a refusal, **not** evidence that direct IP or an existing session is off. Do not delete the journal or original backup, clear a lock, or force a rebind to bypass it. An attended local operator must first determine what is actually loaded and whether remote control remains active; any later intervention or lifted hold requires separate review and authorization.
+
+The owner-only journal and SHA-256 claims remain as historical evidence, not proof of a loaded job's origin. A source fixture-only copy exercises the former lifecycle logic against a sandbox and mocked `sudo`/`launchctl`; it cannot authorize production apply. The production source no longer automatically unlinks vendor plists: if a future reviewed lifecycle reaches rollback while a plist exists, it preserves the file and claim and reports **incomplete**, rather than `rolled-back`. Even an identical replacement may belong to another writer. The native-option hash/check-then-replace path has a separate concurrent-writer window, so no source fixture closes live vendor/root-writer, stale-lock, TCC or post-login safety. Tailscale identity, RustDesk.app and the permanent password remain outside automatic rollback.
 
 ## Human acceptance
 
-1. iPhone on cellular (Wi-Fi off), Tailscale VPN on, connect to the Mac Tailscale IP, confirm desktop + input + clipboard.
-2. Disconnect, lock the Mac, reconnect.
-3. Restart recovery only with explicit approval.
-4. From another owned LAN device **not** on the tailnet, confirm the listener is not a usable unauthenticated path.
+1. From the **named allowed controller**—the MBP for this MBA migration—connect to the MBA's tailnet address and verify actual screen, input and clipboard. For a separately approved iPhone target, repeat on cellular with Wi-Fi off and Tailscale VPN on.
+2. Disconnect, lock the Mac, reconnect from the same allowed peer; confirm an unallowlisted peer cannot control it.
+3. Test restart/recovery only with separate approval and an attended FileVault unlock path.
+4. From an owned LAN device **not** on the tailnet, verify the listener is not a usable unauthenticated path.
 
-A local socket or localhost connect is **not** proof of iPhone-over-cellular success.
+A local socket, localhost connect or source fixture is **not** proof of named-peer remote control or post-login recovery.
