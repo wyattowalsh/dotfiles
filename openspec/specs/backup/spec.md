@@ -2,13 +2,13 @@
 
 ## Purpose
 
-Nightly Kopia snapshots run headless via CLI at 04:00. KopiaUI is not a scheduler.
+The MBP runs headless Kopia snapshots at 04:00. The MBA schedules its separate repository through KopiaUI.
 
 ## Requirements
 
 ### Requirement: Headless 04:00 snapshots
 
-The machine SHALL create the existing 04:00 Kopia sources with the CLI and SHALL NOT keep KopiaUI running for scheduling.
+The MBP SHALL create the existing 04:00 Kopia sources with the CLI and SHALL NOT keep KopiaUI running for scheduling.
 
 #### Scenario: Explicit source list
 
@@ -25,7 +25,7 @@ The machine SHALL create the existing 04:00 Kopia sources with the CLI and SHALL
 
 ### Requirement: No KopiaUI at login
 
-KopiaUI login LaunchAgents SHALL NOT start the app at session load.
+On the MBP, KopiaUI login LaunchAgents SHALL NOT start the app at session load.
 
 #### Scenario: Login agents disabled
 
@@ -38,6 +38,17 @@ KopiaUI login LaunchAgents SHALL NOT start the app at session load.
 - **THEN** it uses `StartCalendarInterval` at 04:00
 - **AND** `RunAtLoad` is false
 - **AND** wall-clock cap is enforced in the runner (`KOPIA_NIGHTLY_TIMEOUT_SEC`, default 43200), not launchd `TimeOut`
+
+### Requirement: Preserve the MBA scheduler on reapply
+
+Chezmoi and bootstrap SHALL preserve the named MBA account’s native KopiaUI scheduling role.
+
+#### Scenario: MBA home projection and direct invocation
+
+- **WHEN** the named MBA account previews or reapplies the home configuration
+- **THEN** Chezmoi withholds the Nightly runner and plist and bootstrap skips Nightly installation
+- **AND** bootstrap skips the MBP nix-darwin profile to preserve the MBA host identity
+- **AND** direct Nightly install and execution refuse before changing files, launchd, or the repository
 
 ### Requirement: Secrets stay off git
 

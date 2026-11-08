@@ -1,41 +1,120 @@
 ---
 icon: database
 title: Backup
-description: Headless Kopia CLI to Drive at 04:00.
+description: Host-specific Kopia ownership, schedules and recovery.
 ---
 
-KopiaUI does **not** start at login. A user LaunchAgent runs the CLI at 04:00 and exits. Policy schedules inside KopiaUI only fire while that app is open — do not rely on the GUI for nightly.
+The MBP uses a 04:00 CLI LaunchAgent. The MBA uses KopiaUI as its sole hourly scheduler, with a separate encrypted Google Drive repository. On the named MBA account, Chezmoi withholds the Nightly runner and plist, bootstrap skips the Nightly phase, and the Nightly runner refuses direct install and execution. For each host, verify the authorized scope, complete non-checkpoint snapshots, current-path coverage and isolated hash-matched restores.
 
-## Commands
+## MBP CLI commands
 
 ```bash
 just kopia-nightly --dry-run
 just kopia-nightly doctor
 just kopia-nightly doctor --policies   # two-way 04:00 drift (network)
 just kopia-nightly-install --dry-run
-just kopia-nightly-install             # sync dest runner + bootstrap agent
+just kopia-nightly-install             # mutates installed runner/jobs; exact approval required
 just check-kopia-nightly               # static; no live kopia
 ```
 
-`just kopia-nightly*` always runs the **repo source**. Launchd runs `$HOME/.local/bin/kopia-nightly`. Chezmoi apply and `just kopia-nightly-install` both write that dest runner; install copies with `/bin/cp -f` when `KOPIA_NIGHTLY_REPO` is set. Dest plist still comes from Chezmoi: `$HOME/Library/LaunchAgents/com.wyattowalsh.kopia-nightly.plist`. After runner edits, re-run `just kopia-nightly-install` so dest picks up the new script.
+`just kopia-nightly*` always runs the **repo source**. Launchd runs `$HOME/.local/bin/kopia-nightly`. Chezmoi apply and `just kopia-nightly-install` both write that dest runner; install copies with `/bin/cp -f` when `KOPIA_NIGHTLY_REPO` is set. Dest plist still comes from Chezmoi: `$HOME/Library/LaunchAgents/com.wyattowalsh.kopia-nightly.plist`. A source repair does not repair the installed runner. Review the source/destination difference and current scheduler owner before obtaining exact promotion approval; do not automatically run install or a full Chezmoi apply.
 
-## Sources (04:00)
+## MBP sources (04:00)
 
 `$HOME/.bash_profile` `$HOME/.bashrc` `$HOME/.codex/memories` `$HOME/.gitconfig` `$HOME/.github` `$HOME/.gitignore` `$HOME/.zshrc` `$HOME/Documents` `$HOME/Movies` `$HOME/Music` `$HOME/Pictures` `$HOME/Public` `$HOME/dev` `$HOME/src`
 
+The source list also includes the completed phone-successor archive at
+`$HOME/.local/share/mba-phone-usb-successor/archive-20261025-v123`. This exact root
+retains all 177 captured phone files, their metadata and completion receipts;
+unfinished sibling archive namespaces and the rest of `.local/share` are outside
+this addition. As with other listed sources, a missing root is skipped by the
+existing runner. The existing LaunchAgent snapshots the archive at 04:00.
+`doctor --policies` expects the other 14 source paths to have 04:00 Kopia policy
+rows and flags an independent 04:00 policy for the archive as drift.
+
+The one-line archive addition is installed in the MBP runner through a
+compare-and-replace that preserved its existing source differences. Shell syntax
+and the installed runner's `--dry-run` archive listing passed. On 2026-10-26, the
+archive snapshot and isolated restore passed full hash comparison for all 720
+files (2,558,472,310 bytes), including the 177 captured phone payloads and their
+controls. The failed restore was preserved; its continuation cloned verified
+final files with APFS COW and retrieved the remaining files from the existing
+snapshot. Source state remained unchanged and the native processes exited.
+This used the same proven isolated client and cache; a fresh cold client was not
+proved. The archive result does not complete full Music recovery or acceptance
+of the default nightly client. See [SSOT workflow](/docs/ssot-workflow) for
+source-to-installed promotion; keep detailed receipts in the mission ledger.
+
+A bounded 90-second status probe in the default CLI context timed out without
+starting a backup; it does not establish repository failure. The isolated Music
+backup client separately opened its selected repository read/write with its
+configuration unchanged. Keep these client contexts distinct; do not replace the
+default configuration with the isolated client's configuration.
+
 Not snapshotted: `$HOME` itself. Never `kopia snapshot create --all`.
+
+## MBA retained-state boundary
+
+The tracked 04:00 source list is **MBP-specific**, not an MBA backup installer or proof: it omits Desktop, Downloads and app-owned Library state, and `$HOME/Music` on a target Mac may be cloud-linked. Do not apply the full MBP Chezmoi/bootstrap/nightly job to create an MBA backup. First classify every retained local-only root and app-consistent export, including cloud-provider **unsynced local** files, with `checks/mba-retained-inventory.py` and attended app review. Any deadlock, timeout, dataless placeholder, unreadable path or unvisited subtree is **UNKNOWN**, never an approved omission or zero-byte scope. Its metadata-only output does not prove recoverability.
+
+An independent MBA Kopia repository needs a **distinct reviewed Drive folder identity**, encryption/password recovery handled privately, quota/retention review, an exact source/ignore manifest, separately approved upload, then complete dated non-checkpoint coverage and an isolated hash-matched restore. Never connect an MBA-only setup to the existing MBP repository merely because its marker files are visible. A later backup of an MBA-only edited music epoch needs its own approved scope and restore; the retained-state backup does not carry that permission forward.
+
+The MBA's hourly policy and native KopiaUI auto-launch own its schedule; no additional backup daemon or second nightly job is needed. Native UI startup and an automatic startup snapshot have been observed. A next-login start and a snapshot after an hourly interval remain separate acceptance checks. The one-file pilot, its complete verification and independent restore establish that pilot's recovery only; they do not establish coverage of the retained home or music library. Expand the existing repository's reviewed source policies and verify their actual coverage rather than creating another scheduler.
+
+Dated migration exports use source-specific manual-only policies. Before their
+first backup, register each exact `user@host:path` target with
+`kopia policy set --manual` in the existing reviewed repository context. This
+prevents hourly snapshots of frozen exports while retaining their snapshot
+history and inherited retention, compression and error policies. An effective
+policy can still show an inherited hourly interval alongside `manual: true`;
+[manual scheduling takes precedence](https://github.com/kopia/kopia/blob/v0.23.1/snapshot/policy/scheduling_policy.go).
+
+As of 2026-10-28, the registered live hourly source is
+`$HOME/.config/mba-model-service`; the dated migration exports are manual-only.
+This scope does not establish ongoing protection of all native app state or the
+canonical music library. KopiaUI remains paused through the final Music
+21-file state backup and restore. Before resuming that same owner afterward,
+refresh the repository identity, registered source inventory, effective policies
+and native owners; a source path registered during migration can otherwise
+inherit the global hourly schedule.
+
+## MBP CLI startup readiness and bounded diagnosis
+
+| Canonical runtime entry | Source contract |
+| --- | --- |
+| `$HOME/Library/Logs/kopia` and its `tmp` child | Owned, non-symlink directories, mode `0700`, readable/writable/searchable |
+| `nightly.lock`, `nightly.out.log`, `nightly.err.log` in that log directory | Owned, non-symlink regular files, mode `0600`, readable/writable |
+| `$HOME`, `$HOME/Library`, `$HOME/Library/Logs` | Owned, non-symlink directory entries without group/other write bits; existing parent modes are not changed |
+
+Run/install use a restrictive umask and may create **missing** entries, but refuse unsafe existing ones instead of silently changing modes, ownership or symlink targets. Install checks these entries **before** copying the runner or changing scheduler state, because launchd opens stdout/stderr paths before starting the script. The snapshot runner uses the validated private `TMPDIR` and appends to its lock file without truncation. These are POSIX-mode checks, not an ACL audit or proof against concurrent same-user path replacement; review nontrivial ACLs locally.
+
+An approved normal run validates the runtime paths and acquires the lock before changing scheduler state. It must successfully disable both KopiaUI login agents, quit KopiaUI and pass repository readiness before starting snapshots. Readiness uses at most eight status probes, each capped at 125 seconds plus a 5-second forced-kill grace, with finite backoff delays from 5 to 30 seconds. Every probe and delay is limited by the remaining shared run budget. Raw readiness diagnostics are suppressed; exhaustion fails the run without starting snapshots.
+
+After identifying the actual installed scheduler owner and checking private runtime-path metadata, an optional non-destructive diagnostic is `just kopia-nightly doctor` on the intended host, using the canonical source without installing it. It inspects runtime paths and may contact the existing configured repository for status; a missing/unsafe entry makes repository status **NOT CHECKED**, not auto-repaired. Do not repeat an inconclusive status probe just because a loaded job reported last exit zero. With ready paths and a timeout helper, it runs `repository status` in an environment matching the tracked plist's `HOME`, `PATH` and private `TMPDIR`, with a 125-second cap plus at most 60 seconds of forced-kill grace. This allows a 90-second provider startup deadline to finish before the outer cap. It reports the exit code and suppresses raw repository output. `doctor --policies` is an additional network metadata probe, only after status succeeds, with a separate 90-second cap plus at most 60 seconds of forced-kill grace and private temporary storage. Neither doctor mode snapshots, quits KopiaUI, repairs directories or mutates launchd.
+
+A status failure remains **UNKNOWN** until an attended, bounded local diagnostic distinguishes runtime-path, saved-auth/keyring, provider/backend and other failures. Failure to retrieve saved authentication is **not proof of a wrong password**. Do not paste raw logs, retrieve credentials into chat, reconnect/create a repository or reset a password as a guessed repair. The source doctor does not parse the installed plist, so an installed runner hash mismatch or different installed environment still needs review; success here does not prove a backup or restore.
+
+If metadata identifies a missing private temporary directory, the next repair would be a separately reviewed **local-only path repair**, not an installer run. Verify the exact configured path, its parents, ownership, modes, symlinks/ACLs and the existing job's loaded state before approving that repair. Restoring a job's ability to run can enable its next upload even without a kickstart, so path repair and future uploads must not be conflated with approval of a read-only diagnostic. A separate held Library-backup launcher is not replaced by this runner.
 
 ## Login / background
 
-`install` and each nightly run disable `com.kopia.kopiaui.login` and `KopiaUI`. Opening KopiaUI by hand can put a login agent back; the next run removes it.
+On the MBP, the tracked CLI design makes `install` and each nightly run disable `com.kopia.kopiaui.login` and `KopiaUI`; it must not be applied over an existing GUI-owned schedule without approval to transfer ownership. Opening KopiaUI by hand can put a login agent back; a subsequent approved MBP nightly run disables it again. This CLI ownership rule does not apply to the MBA, where the native KopiaUI login item must remain enabled for its hourly policy.
 
-The nightly label is `com.wyattowalsh.kopia-nightly`. If it is not loaded after install, allow it under System Settings → General → Login Items & Extensions → Allow in the Background, then re-run `just kopia-nightly-install`.
+The nightly label is `com.wyattowalsh.kopia-nightly`. Install bootstraps/enables its unchanged 04:00 calendar with `RunAtLoad=false`: **installation is not an immediate snapshot**, but it can enable future uploads and does not establish backup success. If it is not loaded after an approved install, review System Settings → General → Login Items & Extensions → Allow in the Background; do not repeat installation until scheduler ownership and that mutation are approved.
 
-## Sleep
+## MBP CLI sleep behavior
 
 If the Mac is asleep at 04:00, launchd runs the job at the next user-session wake. No wake schedule. While a snapshot is running, the job holds idle sleep with `caffeinate -i`.
 
-The runner caps snapshot wall-clock time at 43200s (override `KOPIA_NIGHTLY_TIMEOUT_SEC`) with `timeout` or `gtimeout`. The plist deliberately has no `TimeOut` key; launchd does not implement that wall-clock limit. The EXIT trap still disables the KopiaUI login agents.
+The runner uses one 43200-second budget (override `KOPIA_NIGHTLY_TIMEOUT_SEC` with a positive integer) for the whole normal run, including startup, repository readiness, snapshots, full maintenance and cleanup. An outer `timeout` or `gtimeout` bounds the process group, with a further 60-second kill grace. The plist deliberately has no `TimeOut` key; launchd does not implement that wall-clock limit.
+
+The runner requests interactive progress only when stdout is a terminal and the process is outside launchd. Background and redirected runs do not force terminal progress updates, so quiet logs can be normal. Use the matching job/process state and terminal summary to assess the run; log growth alone proves neither progress nor completion.
+
+Each source uses native `--fail-fast`: an unreadable file fails that source so the existing loop can attempt later roots while shared time remains. Any failed source keeps the overall run unsuccessful and skips maintenance; it does not establish complete coverage or resolve unavailable placeholders. Only the native rclone startup-timeout diagnostic permits a retry, for at most three total attempts using the remaining shared budget. Filenames containing `rclone` and `timeout`, file-read failures and unknown errors do not qualify. Wall-clock timeout exit codes `124` and `137` stop the snapshot loop without retrying.
+
+After a successful snapshot loop, the runner attempts one `kopia maintenance run --full` using the remaining budget. A failed or capped snapshot loop skips maintenance. Maintenance failure or an exhausted remaining budget produces a warning and preserves the successful snapshot result. A whole-run timeout or cleanup failure can still make the job fail. For full-maintenance acceptance, inspect the logged native `maintenance run --full rc=0`; snapshot or job exit zero alone does not establish that result, snapshot coverage or a successful restore.
+
+`TERM` and `INT` handlers stop the run with exit status `143` and `130` respectively; the outer wall-clock timeout may instead report `124` or `137`. One finalization pass re-disables the KopiaUI login agents, stops `caffeinate` and removes the run's private temporary snapshot log. It attempts at most one bounded macOS failure notification. A maintenance-only warning instead attempts a warning notification and keeps the successful snapshot status.
 
 ## Secrets
 
