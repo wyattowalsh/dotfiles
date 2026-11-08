@@ -1,0 +1,16 @@
+# Syncthing ignore for ~/Music/Library (send-only on the Mac).
+(?d).DS_Store
+(?d).AppleDouble
+(?d).Spotlight-V100
+(?d).Trashes
+Incoming/staging
+Incoming/quarantine
+Incoming/review
+*.partial
+*.tmp
+*.download
+._*
+# beets/navidrome DBs must never live in this tree; ignore if they appear.
+library.db
+navidrome.db
+*.db-journal

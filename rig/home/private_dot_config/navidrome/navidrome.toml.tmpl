@@ -1,0 +1,40 @@
+{{- /* chezmoi:template:missing-key=zero */ -}}
+# Derived streaming layer only. Do not treat navidrome.db as SSOT.
+# First-run admin is created in the UI. Do not put passwords here.
+
+MusicFolder = '{{ .chezmoi.homeDir }}/Music/Library'
+DataFolder = '{{ .chezmoi.homeDir }}/.local/share/navidrome'
+CacheFolder = '{{ .chezmoi.homeDir }}/Library/Caches/navidrome'
+FFmpegPath = '/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg'
+
+Address = '0.0.0.0'
+Port = 4533
+LogLevel = 'info'
+
+# The 5s watcher is authoritative for on-disk changes; hourly full scans are
+# redundant. Run an explicit full scan (`navidrome scan`) only when required.
+Scanner.Schedule = 0
+Scanner.WatcherWait = '5s'
+Scanner.PurgeMissing = 'always'
+PlaylistsPath = 'Playlists'
+
+EnableDownloads = true
+EnableSharing = false
+EnableExternalServices = true
+Agents = 'deezer,listenbrainz'
+ArtistArtPriority = 'artist.*, album/artist.*, external'
+CoverArtPriority = 'embedded, cover.*, folder.*, front.*, albumart*, external'
+LyricsPriority = '.ttml,.yaml,.yml,.elrc,.lrc,.srt,.txt,embedded'
+TranscodingCacheSize = '150MiB'
+ImageCacheSize = '100MiB'
+
+# Dual-write KEY + INITIALKEY so Mixxx, Picard, and Navidrome all see the key.
+Tags.InitialKey.Aliases = ['initialkey', 'initial_key', 'key', 'tkey']
+Tags.Camelot.Aliases = ['camelot']
+Tags.OpenKey.Aliases = ['openkey']
+Tags.Style.Aliases = ['style']
+Tags.CatalogNumber.Aliases = ['catalognumber', 'catalog']
+Tags.EnergyLevel.Aliases = ['energylevel', 'energy']
+Tags.Remixer.Aliases = ['remixer']
+Tags.Subtitle.Aliases = ['subtitle']
+Tags.Label.Aliases = ['label', 'publisher']

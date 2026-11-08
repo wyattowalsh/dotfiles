@@ -1,0 +1,157 @@
+{{- /* chezmoi:template:missing-key=zero */ -}}
+# Canonical library catalog. Files + embedded tags remain SSOT.
+# library.db stays local (untracked). Optional Discogs plugin OAuth: put
+# discogs_token.json next to this file and add `- discogs` via untracked
+# config.local.yaml — the plugin prompts on load if the token is missing.
+# MusicBrainz is a plugin in beets 2.13+ and must stay in `plugins` or
+# autotag has no authoritative source.
+
+directory: {{ .chezmoi.homeDir }}/Music/Library
+library: {{ .chezmoi.homeDir }}/.local/share/beets/library.db
+pluginpath: []
+
+import:
+  copy: yes
+  move: no
+  write: yes
+  resume: yes
+  incremental: no
+  from_scratch: no
+  timid: no
+  autotag: yes
+  languages:
+    - en
+  # Soulseek edits/bootlegs often miss MusicBrainz. Keep existing tags (asis).
+  # Current repo music-ingest source imports with --copy, retains complete/
+  # originals, and blocks on ambiguous imports; it does not auto-move a
+  # skip/fail unit into Incoming/review. Confirm installed-runner parity
+  # before any deployment or writer handover.
+  quiet_fallback: asis
+  none_rec_action: asis
+  default_action: apply
+  duplicate_action: keep
+  log: {{ .chezmoi.homeDir }}/.local/share/beets/import.log
+
+id3v23: no
+per_disc_numbering: yes
+original_date: yes
+artist_credit: yes
+va_name: Various Artists
+
+match:
+  strong_rec_thresh: 0.04
+  medium_rec_thresh: 0.25
+  rec_tied_penalty: 0.04
+
+paths:
+  default: $format/$albumartist/%if{$year,$year - }$album%aunique{albumartist album year catalognum}/$disc-$track $title
+  singleton: $format/Non-Album/$albumartist/$title
+  comp: $format/Compilations/%if{$year,$year - }$album%aunique{albumartist album year catalognum}/$disc-$track $title
+
+plugins:
+  - musicbrainz
+  - chroma
+  # discogs OAuth prompts on every beet invocation until discogs_token.json exists.
+  # Enable from untracked ~/.config/beets/config.local.yaml when that token is present.
+  - fromfilename
+  - fetchart
+  - embedart
+  - lyrics
+  - keyfinder
+  - inline
+  - info
+  - duplicates
+  - mbsync
+  - filetote
+  - types
+
+types:
+  energy: float
+
+chroma:
+  auto: yes
+
+musicbrainz:
+  genres: yes
+  genres_tag: genre
+  extra_tags:
+    - year
+    - catalognum
+    - country
+    - label
+    - media
+  # IDs taken from MusicBrainz URL relationships (not scraped pages).
+  external_ids:
+    discogs: yes
+    bandcamp: yes
+    spotify: yes
+    deezer: yes
+    tidal: yes
+    beatport: yes
+
+discogs:
+  append_style_genre: no
+  extra_tags:
+    - style
+    - country
+    - label
+  index_tracks: no
+  data_source_mismatch_penalty: 0.5
+
+fetchart:
+  auto: yes
+  cautious: yes
+  minwidth: 500
+  # Apple's ultra-high-resolution endpoint currently returns JSON; the normal
+  # iTunes mode still requests a 1200px image and preserves the 500px floor.
+  high_resolution: no
+  store_source: yes
+  sources:
+    - filesystem
+    - coverart
+    - itunes
+    - albumart
+
+embedart:
+  auto: yes
+  ifempty: yes
+  maxwidth: 1200
+  remove_art_file: no
+
+keyfinder:
+  auto: yes
+  bin: keyfinder-cli
+  overwrite: no
+
+filetote:
+  extensions: .cue .log .nfo .jpg .jpeg .png .pdf .txt .m3u .sfv
+  pairing:
+    enabled: true
+
+duplicates:
+  checksum: no
+  keys: mb_trackid format
+
+lyrics:
+  # Requires beets 2.14+ for safe LRCLIB empty/null-result handling.
+  # Keep lyrics as an explicit post-import/manual network operation so ingest
+  # behavior stays predictable.
+  auto: no
+  sources:
+    - lrclib
+  fallback: ''
+
+inline:
+  item_fields:
+    camelot: |
+      mapping = {
+          "C": "8B", "C#": "3B", "Db": "3B", "D": "10B", "D#": "5B", "Eb": "5B",
+          "E": "12B", "F": "7B", "F#": "2B", "Gb": "2B", "G": "9B", "G#": "4B",
+          "Ab": "4B", "A": "11B", "A#": "6B", "Bb": "6B", "B": "1B",
+          "Cm": "5A", "C#m": "12A", "Dbm": "12A", "Dm": "7A", "D#m": "2A",
+          "Ebm": "2A", "Em": "9A", "Fm": "4A", "F#m": "11A", "Gbm": "11A",
+          "Gm": "6A", "G#m": "1A", "Abm": "1A", "Am": "8A", "A#m": "3A",
+          "Bbm": "3A", "Bm": "10A",
+      }
+      raw = (initial_key or "").strip()
+      return mapping.get(raw, mapping.get(raw.replace("minor", "m").replace("min", "m"), raw))
