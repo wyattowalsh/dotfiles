@@ -1,7 +1,8 @@
 {
   "version": 1,
   "values": {
-    "home_address": "100 Example Way, Test City, ST 00000"
+    "home_address": "100 Example Way, Test City, ST 00000",
+    "phone_number": "555-0199"
   },
   "overrides": {}
 }

@@ -26,5 +26,17 @@
 		<key>shortcut</key>
 		<string>myEn</string>
 	</dict>
+	<dict>
+		<key>phrase</key>
+		<string>leave-this</string>
+		<key>shortcut</key>
+		<string>keepme</string>
+	</dict>
+	<dict>
+		<key>phrase</key>
+		<string>Carefully research, review, analyze, consider, audit, critique, and stress-test this end to end. Identify omissions, contradictions, unsupported assumptions, fragile decisions, unnecessary complexity, edge cases, and material risks.</string>
+		<key>shortcut</key>
+		<string>aiaudit</string>
+	</dict>
 </array>
 </plist>

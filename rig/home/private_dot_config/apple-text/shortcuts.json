@@ -5,37 +5,37 @@
     {
       "id": "compose.ai-deep-research",
       "label": "AI • Deep research",
-      "triggers": ["airesearch", "aicurrent", "aisource"]
+      "triggers": [";res", ";now", ";reuse"]
     },
     {
       "id": "compose.ai-audit-improve",
       "label": "AI • Audit and improve",
-      "triggers": ["aifull"]
+      "triggers": [";full"]
     },
     {
       "id": "compose.ai-continue-finish",
       "label": "AI • Continue and finish",
-      "triggers": ["aicontinue", "aifinal"]
+      "triggers": [";cont", ";final"]
     },
     {
       "id": "compose.ai-planning-tasks",
       "label": "AI • Planning and task graph",
-      "triggers": ["aiplan", "aitasks"]
+      "triggers": [";plan", ";deps"]
     },
     {
       "id": "compose.build-codex-kickoff",
       "label": "Build • Codex kickoff",
-      "triggers": ["aiteam", "aitasks", "devbase", "aiverify", "aifinal"]
+      "triggers": [";team", ";deps", ";dev", ";check", ";final"]
     },
     {
       "id": "compose.eng-python",
       "label": "Engineering • Python defaults",
-      "triggers": ["devbase", "devpy"]
+      "triggers": [";dev", ";py"]
     },
     {
       "id": "compose.eng-frontend",
       "label": "Engineering • Frontend defaults",
-      "triggers": ["devbase", "devweb"]
+      "triggers": [";dev", ";web"]
     }
   ],
   "recipes": [
@@ -219,9 +219,9 @@
       "mac_hotkey": "ctrl+option+space",
       "terminal_safety": "Auto-paste only one-line shell_safe entries into Ghostty or Terminal. Copy-only for multiline, AI, and message bodies. Never send Return.",
       "validation_steps": [
-        "In TextEdit, expand mygh",
-        "In Ghostty, expand mygh without pressing Return",
-        "In Ghostty, choose aiplan and confirm copy-only"
+        "In TextEdit, expand ;gh",
+        "In Ghostty, expand ;gh without pressing Return",
+        "In Ghostty, choose ;plan and confirm copy-only"
       ],
       "describe_prompt": "Create a Mac-only Shortcut named Expand Anywhere. This is an explicit hotkey fallback, not typed automatic expansion. Capture the frontmost application before showing UI. Ask for a trigger or let the user choose from the non-private iCloud registry at Shortcuts/AppleText/registry.json. Resolve the matching enabled non-private entry. If the destination is Ghostty or Terminal, auto-paste only when the entry is one line and marked shell safe in the registry. Otherwise copy the text, show a notification, and do not paste. Never append Return or a newline. Copy using Local Only if available. Restore the original application. Restore the previous clipboard after a short delay when practical. Never execute pasted text. Do not include private address values."
     },

@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "AppleTextExpansions",
   "type": "object",
-  "required": ["version", "expansions", "retired_triggers"],
+  "required": ["version", "expansions", "retired_triggers", "reserved_triggers", "generated_help"],
   "additionalProperties": false,
   "properties": {
     "$schema": {"type": "string"},
-    "version": {"const": 1},
+    "version": {"const": 2},
     "expansions": {
       "type": "array",
       "minItems": 1,
@@ -15,7 +15,13 @@
     "retired_triggers": {
       "type": "array",
       "items": {"$ref": "#/$defs/retiredTrigger"}
-    }
+    },
+    "reserved_triggers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/reservedTrigger"}
+    },
+    "generated_help": {"$ref": "#/$defs/generatedHelp"}
   },
   "$defs": {
     "expansion": {
@@ -30,7 +36,11 @@
         "sensitivity",
         "shell_safe",
         "surfaces",
-        "replaces"
+        "replaces",
+        "label",
+        "help_group",
+        "kind",
+        "legacy_exception"
       ],
       "properties": {
         "id": {"type": "string", "pattern": "^[a-z][a-z0-9.-]*$"},
@@ -58,6 +68,20 @@
           "type": "array",
           "items": {"type": "string", "minLength": 1}
         },
+        "label": {"type": "string", "minLength": 1},
+        "help_group": {
+          "type": "string",
+          "enum": ["AI", "CODE", "MESSAGES", "PERSONAL", "FORMATTING", "KEPT"]
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["literal", "instruction", "editable-template"]
+        },
+        "legacy_exception": {"type": "boolean"},
+        "predecessor_phrases": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/predecessorPhrase"}
+        },
         "duplicate_phrase_justification": {"type": "string", "minLength": 1}
       },
       "oneOf": [
@@ -71,6 +95,15 @@
         }
       ]
     },
+    "predecessorPhrase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trigger", "phrase"],
+      "properties": {
+        "trigger": {"type": "string", "minLength": 1},
+        "phrase": {"type": "string", "minLength": 1}
+      }
+    },
     "retiredTrigger": {
       "type": "object",
       "additionalProperties": false,
@@ -79,6 +112,34 @@
         "trigger": {"type": "string", "minLength": 1},
         "reason": {"type": "string", "minLength": 1},
         "replaced_by": {"type": "string", "minLength": 1}
+      }
+    },
+    "reservedTrigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trigger", "reason", "provenance"],
+      "properties": {
+        "trigger": {"type": "string", "minLength": 1},
+        "reason": {"type": "string", "minLength": 1},
+        "provenance": {"type": "string", "minLength": 1}
+      }
+    },
+    "generatedHelp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "trigger", "label", "page_budget", "initial_membership"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9.-]*$"},
+        "trigger": {"type": "string", "const": ";help"},
+        "label": {"type": "string", "minLength": 1},
+        "page_budget": {"type": "integer", "minimum": 1},
+        "initial_membership": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          }
+        }
       }
     }
   }

@@ -1,55 +1,112 @@
 ---
 icon: keyboard
 title: Apple text
-description: Text Replacement and Shortcuts desired-state in this repo.
+description: Compact Apple Text Replacement and Shortcut desired-state workflow.
 ---
 
-**SSOT:** `rig/home/private_dot_config/apple-text/` (Chezmoi → `~/.config/apple-text/`). Merge, stage, and Shortcut recipes are **this repo**, not [wyattowalsh/agents](https://github.com/wyattowalsh/agents). Agents may document trigger *names*; they must not own replacement phrases.
+**SSOT:** `rig/home/private_dot_config/apple-text/` (Chezmoi → `~/.config/apple-text/`). Merge, staging, help generation, and Shortcut recipes are maintained in this repository, not [wyattowalsh/agents](https://github.com/wyattowalsh/agents). Agents may name triggers; they must not own or rewrite phrases.
 
-Runtime expanders are only Apple Text Replacement (static / frequent) and Apple Shortcuts (menus, dates, clipboard, browse). No Snippety, Espanso, Raycast Snippets, or unofficial Shortcut compilers.
+Apple Text Replacement is for static, frequent phrases. Apple Shortcuts are for menus, dates, clipboard operations, and the explicit Expand Anywhere paste action. No Snippety, Espanso, Raycast Snippets, unofficial Shortcut compilers, Apple database writes, or UI automation are part of this workflow.
+
+## Profiles and counts
+
+The compact default profile contains the **51 base records** plus generated `;help`: **52 desired Text Replacements** for the supplied baseline. This is a desired count, not a claim about a live export: a live library can preserve unrelated entries and can contain fewer, more, or divergent records.
+
+| Profile | Contents | Privacy / intended use |
+| --- | --- | --- |
+| Compact (default) | 51 base entries + generated `;help` | Normal import profile; `;help` is a categorized index with labels only, never private phrase values. |
+| Full reference (opt-in) | Compact profile plus generated `;hN` pages | Local/private by default. It requires explicit private-output authorization when any resolved local value would be included. |
+
+`;help` is generated deterministically from the effective registry. Its source/content revision changes with public canonical phrase bodies and metadata, but never derives a public revision from a private value. Editing the registry alone does **not** update an installed Mac, iPhone, or iPad; rebuild, review, and import are separate steps.
+
+Plain `;` remains unassigned. Text Replacement is not a modal command language: literal full triggers can collide, and no universal backslash or doubled-prefix escape is established. `;pnl` is the approved panel trigger; `;panel` remains reserved for a browser bookmark and is not an alias.
+
+## Commands
+
+The commands below are the intended compact-profile interface tracked by the active OpenSpec change. They require the corresponding Apple Text CLI implementation; they are not evidence that an import or device verification has occurred. All mutating commands preview by default. `--apply` writes only local staging or explicitly requested local artifacts; it does not import into Apple settings.
 
 ```bash
+# Validate canonical data and a supplied local overlay.
 just apple-text validate
-just apple-text doctor
+
+# Browse safely: list is metadata-only; show emits exact selected public text.
+just apple-text list --format json
+just apple-text show ';pnl'
+just apple-text help --format text
+
+# Compare a drag-exported plist against the desired compact profile (redacted).
 just apple-text plan --existing-export ./export.plist
-just apple-text stage --existing-export ./export.plist          # dry-run
-just apple-text stage --existing-export ./export.plist --apply  # write staging only
-just apple-text open-ui
-just check-apple-text
+just apple-text stage --existing-export ./export.plist
+just apple-text stage --existing-export ./export.plist --apply
+
+# Opt in to generated full-reference pages. Private material needs explicit consent.
+just apple-text help --full-reference
+just apple-text stage --existing-export ./export.plist --full-reference --private-output --apply
+
+# Compare a fresh post-import drag export; this is not a device or iCloud test.
+just apple-text verify-export --existing-export ./after-import.plist --expected-import ./Text\ Substitutions.plist
+
+# Shortcuts remain human-built from Describe-a-Shortcut prompts.
+just apple-text shortcuts-plan
+just apple-text shortcuts-export --apply
+just apple-text shortcuts-sync --apply
 ```
+
+Use `--private-output` only for intentional local review of resolved private pages or a private full-reference guide. Normal list, plan, doctor, JSON, compact help, Shortcut dictionary, and docs output are redacted. Missing local keys stay unresolved: the tool must not guess a value or stage a placeholder as a phrase body. `show` writes bytes exactly and does not add a newline; `--copy`, where available, is an explicit macOS-only action.
 
 | Path | Role |
 | --- | --- |
-| `expansions.json` | Public Text Replacement registry |
-| `shortcuts.json` | Describe-a-Shortcut recipes + compositions |
-| `~/.config/apple-text/expansions.local.json` | Private overlay (`myaddr`), mode `0600`, chezmoi-ignored |
-| `~/.local/state/dotfiles/apple-text/` | Backups, staged import plists, prompt exports |
-| iCloud `Shortcuts/AppleText/registry.json` | Public Shortcut-readable dictionary |
+| `expansions.json` | Public canonical registry and generated-help configuration |
+| `shortcuts.json` | Describe-a-Shortcut recipes and compositions |
+| `~/.config/apple-text/expansions.local.json` | Local-only overlay for `myaddr`, phone, and other private values; mode `0600`; chezmoi-ignored |
+| `~/.local/state/dotfiles/apple-text/` | Private backups, staged plists, manifests, and optional private reference guides |
+| iCloud `Shortcuts/AppleText/registry.json` | Public Shortcut-readable dictionary only |
 
-Env **names** only: `DOTFILES_APPLE_TEXT_OVERLAY`, `DOTFILES_APPLE_TEXT_STATE`, `DOTFILES_APPLE_ICLOUD`.
+Environment-variable names only: `DOTFILES_APPLE_TEXT_OVERLAY`, `DOTFILES_APPLE_TEXT_STATE`, `DOTFILES_APPLE_ICLOUD`.
 
-## Install on this Mac
+## Review, stage, import, and verify
 
-1. System Settings → Keyboard → Text Replacements → select all → drag to a folder (Apple plist export).
-2. `just apple-text plan --existing-export PATH` — redacted. Unrelated live entries (for example `myphone`, `mysite`) stay.
-3. Confirm as a group before retire-delete, Shortcut overwrite, Accessibility, live plist import, or synthetic paste.
-4. `just apple-text stage --existing-export PATH --apply` writes a backup plus `Text Substitutions.plist`. **Drag that plist onto the Text Replacements list** (Apple’s documented import). The CLI never writes `TextReplacements.db`. `just apple-text open-ui` opens the staged folder and Keyboard settings.
-5. `just apple-text doctor` reports live trigger coverage and whether the nine Shortcuts exist. Incomplete live state is a warning, not a registry failure.
-6. Build Shortcuts from `just apple-text shortcuts-plan` / `shortcuts-export --apply` inside Apple Shortcuts. Do not compile unofficial Shortcut binaries.
-7. `just apple-text shortcuts-sync --apply` publishes the non-private dictionary to iCloud Drive.
+1. In System Settings → Keyboard → Text Replacements, select all and drag the existing library to a folder to obtain an Apple plist export.
+2. Run `just apple-text plan --existing-export PATH`. Inspect the redacted operations: safe additions, known migrations, proposed updates, unresolved private values, conflicts, reviewed retirements, and preserved unrelated entries are distinct states.
+3. Resolve conflicts deliberately. A trigger match is not permission to overwrite a divergent phrase; additions-only output cannot silently implement updates or live deletions.
+4. Run `just apple-text stage --existing-export PATH --apply`. It captures the source bytes, writes a private backup plus staged import plist and transaction manifest, and provides review/cleanup material. It never writes `TextReplacements.db` or `NSGlobalDomain` replacement keys.
+5. Review the staged output. Then, as a separate manual action, drag the staged **`Text Substitutions.plist`** onto the Text Replacements list. The generated artifact and opened settings window are not proof that import succeeded.
+6. Only after confirming the new triggers should you manually clean up specifically reviewed migrated or retired live entries. Reimporting is not proof of deterministic overwrite semantics and does not itself delete extra entries.
+7. Drag-export the resulting library again and run `verify-export` against the planned/staged import. It reports missing, divergent, and unexpected trigger/phrase pairs redacted; it verifies a supplied export snapshot, **not** typing behavior, iCloud sync, or cross-device state.
 
-Do not claim the live library is known until the export exists. Do not claim iPhone/iPad verification from this repo.
+Rollback restages the manifest-selected, hash-checked pre-apply export:
+
+```bash
+just apple-text rollback --backup PATH
+```
+
+Drag the resulting plist into Text Replacements only after review. Restaging a backup does not automatically remove entries added after the original import.
 
 ## Rules
 
 | Rule | Detail |
 | --- | --- |
-| Namespaces | `my…` `msg…` `ai…` `dev…` `md…` `sym…`. Exceptions: `==+`, `mdash`, `ndash`, `w4w` |
-| Placeholders | Only `⟦FIELD⟧` in Text Replacements |
-| Shell | Never append Return. Auto-paste only one-line `shell_safe` entries. Ghostty: Expand Anywhere (`⌃⌥Space`) + a one-line trigger, no multiline AI |
-| Private | Never commit or print `myaddr`, phone, tokens, recovery codes |
-| Triggers vs Shortcuts | Typing a Text Replacement does not run a Shortcut. Expand Anywhere is an explicit Mac hotkey |
+| Trigger scheme | Compact `;` mnemonics plus retained exceptions `==+`, `myEn`, and `w4w`; generated `;help` and optional `;hN` are explicit forms. |
+| Placeholders | Only `⟦FIELD⟧` in static Text Replacements. |
+| Editable templates | `;lnk`, `;avail`, and `;conf` retain literal editable markers; they are not native variables. |
+| Privacy | Never commit or emit address, phone, tokens, recovery codes, or resolved private reference text in public output. |
+| Shell | Never append Return. Auto-paste only one-line `shell_safe` entries. Full help and multiline prompts are never auto-paste candidates. |
+| Triggers vs. Shortcuts | Typing a Text Replacement trigger never launches a Shortcut. Expand Anywhere is an explicit Mac hotkey. |
 
-Suggested Mac hotkeys after a conflict check: Text Hub `⌃⌥T`, Copy Date `⌃⌥D`, Expand Anywhere `⌃⌥Space`.
+Suggested Mac hotkeys after a local conflict check: Text Hub `⌃⌥T`, Copy Date `⌃⌥D`, Expand Anywhere `⌃⌥Space`.
 
-Rollback restages the pre-apply export: `just apple-text rollback --backup PATH`. Drag it in. It does not write Apple internals.
+## Manual device checklist — not executed
+
+The repository does not establish device installation, iCloud synchronization, clipboard behavior, or Apple’s parsing behavior. After an approved manual import, record the OS/build, device, keyboard/language settings, app and field, date, exact terminator, and observed result in local operator notes.
+
+Use synthetic values and drafts; do not send messages or change browser settings. Check:
+
+- plain `;` and ordinary prose such as `Thanks; that works.` do not assume a command mode;
+- a full literal trigger, `;mail`, `;full`, `;pnl`, `;help`, and one enabled `;hN` when the full profile was imported;
+- start- and mid-sentence capitalization plus Space, Return, and punctuation terminators;
+- `;todo` / `;done` preserve their trailing marker space;
+- a longest phrase and the multiline signature preserve expected bytes and layout;
+- Notes, a message draft, and relevant browser/email fields; preserve the existing browser behavior for `;panel`;
+- Mac and each intended iPhone/iPad separately, including whether iCloud synchronization actually completes.
+
+Do not infer a numeric Apple phrase limit, a universal escape mechanism, or automatic expansion behavior on another build without observing it.

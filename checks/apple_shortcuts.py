@@ -17,10 +17,11 @@ from apple_text import (
     Overlay,
     _atomic_write_text,
     _check,
+    load_catalog,
     load_overlay,
-    load_registry,
     public_expansions,
-    validate_registry,
+    render_help_index,
+    validate_catalog,
 )
 
 REPO_ROOT: Final = Path(__file__).resolve().parent.parent
@@ -170,17 +171,21 @@ def render_public_shortcut_registry(
     expansions: list[Expansion],
     compositions: list[Composition],
     overlay: Overlay | None = None,
+    *,
+    help_text: str | None = None,
 ) -> dict[str, Any]:
     entries: dict[str, Any] = {}
     by_trigger = {item.trigger: phrase for item, phrase in public_expansions(expansions, overlay)}
     for expansion, phrase in public_expansions(expansions, overlay):
         entries[expansion.trigger] = {
             "id": expansion.ident,
-            "label": expansion.trigger,
+            "label": expansion.label or expansion.trigger,
             "category": expansion.category,
             "text": phrase,
             "composed": False,
         }
+    if help_text is not None:
+        entries[";help"] = {"id": "help.index", "label": "Replacement index", "category": "help", "text": help_text, "composed": False}
     for composition in compositions:
         parts: list[str] = []
         for trigger in composition.triggers:
@@ -225,16 +230,18 @@ def sync_public_registry(
     overlay_path: Path | None = None,
     home: Path | None = None,
 ) -> dict[str, Any]:
-    expansions, retired = load_registry(root=root)
+    catalog = load_catalog(root=root)
+    expansions = catalog.expansions
     overlay = load_overlay(overlay_path)
     compositions, recipes = load_shortcuts_registry(root=root)
     errors = [
-        *validate_registry(expansions, retired, overlay),
+        *validate_catalog(catalog, overlay),
         *validate_shortcuts(compositions, recipes, expansions),
     ]
     if errors:
         raise AppleTextError("; ".join(errors))
-    payload = render_public_shortcut_registry(expansions, compositions, overlay)
+    help_text = render_help_index(expansions, catalog.reserved, catalog.generated_help, overlay)
+    payload = render_public_shortcut_registry(expansions, compositions, overlay, help_text=help_text)
     target = destination or default_icloud_registry_path(home)
     result: dict[str, Any] = {
         "dry_run": not apply,
@@ -255,8 +262,9 @@ def sync_public_registry(
 
 def recipe_plan(root: Path | None = None) -> dict[str, Any]:
     compositions, recipes = load_shortcuts_registry(root=root)
-    expansions, _retired = load_registry(root=root)
-    errors = validate_shortcuts(compositions, recipes, expansions)
+    catalog = load_catalog(root=root)
+    expansions = catalog.expansions
+    errors = [*validate_catalog(catalog), *validate_shortcuts(compositions, recipes, expansions)]
     if errors:
         raise AppleTextError("; ".join(errors))
     return {
@@ -315,7 +323,7 @@ def live_shortcut_checks(recipes: list[Recipe]) -> list[dict[str, str]]:
     if sys.platform != "darwin":
         return [_check("live-shortcuts", "warn", "skipped (not macOS)", "Shortcuts install is macOS-only.")]
     if os.environ.get("DOTFILES_APPLE_TEXT_SKIP_LIVE") == "1":
-        return [_check("live-shortcuts", "ok", "skipped")]
+        return [_check("live-shortcuts", "skipped", "skipped")]
     names = list_installed_shortcut_names()
     if names is None:
         return [
@@ -419,9 +427,9 @@ def collect_shortcuts_doctor_checks(
             )
         )
     try:
-        expansions, retired = load_registry(root=root)
+        catalog = load_catalog(root=root)
         compositions, recipes = load_shortcuts_registry(root=root)
-        errors = validate_shortcuts(compositions, recipes, expansions)
+        errors = [*validate_catalog(catalog), *validate_shortcuts(compositions, recipes, catalog.expansions)]
         if errors:
             checks.append(
                 _check(
@@ -434,7 +442,6 @@ def collect_shortcuts_doctor_checks(
         else:
             checks.append(_check("shortcuts-registry", "ok", f"{len(recipes)} recipes"))
         checks.extend(live_shortcut_checks(recipes))
-        _ = retired
     except (OSError, json.JSONDecodeError, AppleTextError) as exc:
         checks.append(_check("shortcuts-registry", "fail", str(exc), "Fix the Shortcuts recipe registry."))
     return checks
