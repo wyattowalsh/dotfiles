@@ -1,0 +1,1694 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.13"
+# dependencies = []
+# ///
+"""Match Spotify Liked Songs against the beets library (export / match / playlist).
+
+Stdlib only. Never execs sockseek; never touches Soulseek `complete/` or
+`downloading/`. Structured state lives under the state dir (see `state_dir_path`).
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import csv
+import hashlib
+import http.server
+import io
+import json
+import math
+import os
+import re
+import secrets
+import shutil
+import sqlite3
+import stat
+import struct
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from collections import Counter
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+STATE_ENV = "MUSIC_LIKES_STATE_DIR"
+LIBRARY_ENV = "MUSIC_LIKES_LIBRARY_ROOT"
+BEETS_ENV = "MUSIC_LIKES_BEETS_DB"
+FIXTURE_ENV = "MUSIC_LIKES_FIXTURE_DIR"
+CLIENT_ID_ENV = "MUSIC_LIKES_SPOTIFY_CLIENT_ID"
+CLIENT_SECRET_ENV = "MUSIC_LIKES_SPOTIFY_CLIENT_SECRET"
+REFRESH_TOKEN_ENV = "MUSIC_LIKES_SPOTIFY_REFRESH_TOKEN"
+
+LIKED_NAME = "liked.csv"
+MISSING_NAME = "missing.csv"
+COMPANION_NAME = "companion-editions.csv"
+COMPANION_REPORT_NAME = "companion-report.json"
+STATE_NAME = "state.json"
+PLAYLIST_NAME = "Liked Songs.m3u"
+
+# Exportify-compatible liked.csv columns, in API order.
+EXPORTIFY_COLUMNS = [
+    "Track URI",
+    "Track Name",
+    "Artist Name(s)",
+    "Album Name",
+    "Album Artist Name(s)",
+    "ISRC",
+    "Track Duration (ms)",
+    "Disc Number",
+    "Track Number",
+    "Added At",
+]
+# missing.csv = sockseek input headers + queue columns.
+MISSING_HEADERS = "Artist,Title,Album,Length,ISRC,SpotifyId,Format,EditionId,Version,Evidence,BeetsItemId,Origin,SourceEvidence,IdentityStatus,Reason".split(",")
+COMPANION_HEADERS = "EditionId,LikedTrackId,BeetsItemId,Version,Status,Artist,Title,Album,DurationMs,ISRC,Evidence,Reason".split(",")
+
+SPOTIFY_TRACKS_URL = "https://api.spotify.com/v1/me/tracks"
+SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
+SPOTIFY_AUTHORIZE_URL = "https://accounts.spotify.com/authorize"
+SPOTIFY_SCOPE = "user-library-read"
+LOGIN_HOST = "127.0.0.1"
+LOGIN_PORT = 48721
+LOGIN_REDIRECT = f"http://{LOGIN_HOST}:{LOGIN_PORT}/callback"
+LOGIN_TIMEOUT_SEC = 600
+
+DURATION_TOLERANCE = 3.0
+LOSSLESS_FORMATS = {"FLAC", "WAVE", "AIFF"}
+PLAYLIST_PREFERENCE = ("FLAC", "WAVE", "AIFF", "MP3", "AAC")
+BACKOFF_DELAYS = (900, 3600, 21600, 86400)  # 15 m -> 1 h -> 6 h -> 24 h
+INDEX_FILES = {"flac": "index-flac.csv", "mp3-320": "index-mp3.csv"}
+ISRC_RE = re.compile(r"^[A-Z]{2}[A-Z0-9]{3}\d{7}$")
+CHUNK_RE = re.compile(r"\(([^)]+)\)|\[([^\]]+)\]")
+SUFFIX_RE = re.compile(r"(?:^|\s)-\s+(.+)$")
+ARTIST_SPLIT_RE = re.compile(r"[,&/]|\s+\b(?:feat|ft)\b\.?\s*", re.I)
+
+
+def log(msg: str) -> None:
+    print(f"[music-likes-match] {msg}", file=sys.stderr)
+
+
+def die(msg: str) -> None:
+    log(msg)
+    raise SystemExit(1)
+
+
+# ---------------------------------------------------------------------------
+# Mix parsing (donor: executable_music-dj-tag MIX_LABELS/parse_mix_version, extended)
+# ---------------------------------------------------------------------------
+
+MIX_LABELS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\bextended\s+mix\b", re.I), "Extended Mix"),
+    (re.compile(r"\bextended\s+edit\b", re.I), "Extended Edit"),
+    (re.compile(r"\bextended\s+version\b", re.I), "Extended Version"),
+    (re.compile(r"\bradio\s+edit\b", re.I), "Radio Edit"),
+    (re.compile(r"\bradio\s+mix\b", re.I), "Radio Mix"),
+    (re.compile(r"\bradio\s+cut\b", re.I), "Radio Cut"),
+    (re.compile(r"\boriginal\s+mix\b", re.I), "Original Mix"),
+    (re.compile(r"\braw\s+mix\b", re.I), "Raw Mix"),
+    (re.compile(r"\braw\s+edit\b", re.I), "Raw Edit"),
+    (re.compile(r"\bhard\s+driver\s+bootleg\b|\bbootleg\b", re.I), "Bootleg"),
+    # dj-tag bug fixed: `vip` as a word inside any paren chunk (was `\(vip\)`).
+    (re.compile(r"\bvip\b", re.I), "VIP"),
+    (re.compile(r"\blive\s+edit\b", re.I), "Live Edit"),
+    (re.compile(r"\bliveset\b", re.I), "Liveset"),
+    (re.compile(r"\bofficial\b.+\banthem\b", re.I), "Official Anthem"),
+    (re.compile(r"\bclub\s+mix\b", re.I), "Club Mix"),
+    (re.compile(r"\binstrumental\b", re.I), "Instrumental"),
+    # Bare `(Extended)` after the specific extended patterns.
+    (re.compile(r"\bextended\b", re.I), "Extended"),
+)
+
+LABEL_CLASSES = {
+    "Extended Mix": "extended",
+    "Extended Edit": "extended",
+    "Extended Version": "extended",
+    "Extended": "extended",
+    "Radio Edit": "radio",
+    "Radio Mix": "radio",
+    "Radio Cut": "radio",
+    "Original Mix": "original",
+    "VIP": "vip",
+    "Bootleg": "bootleg",
+    "Live Edit": "live",
+    "Liveset": "live",
+    "Official Anthem": "anthem",
+    "Club Mix": "club",
+    "Instrumental": "instrumental",
+    # dj-tag labels without a dedicated class land in `other`.
+    "Raw Mix": "other",
+    "Raw Edit": "other",
+}
+
+
+def mix_chunks(blob: str) -> list[str]:
+    return [a or b for a, b in CHUNK_RE.findall(blob)]
+
+
+def parse_mix_version(*parts: str | None) -> str | None:
+    """Extract a DJ mix version from title/subtitle chunks only.
+
+    Chunk scan is rightmost-wins across `(...)` and `[...]`; then a trailing
+    ` - <Label>` suffix. Never substring-matches `edit`/`anthem` on the bare
+    title (`The Anthem` stays unlabeled).
+    """
+    blob = " ".join(part.strip() for part in parts if part and part.strip())
+    if not blob:
+        return None
+    for chunk in reversed(mix_chunks(blob)):
+        for pattern, label in MIX_LABELS:
+            if pattern.search(chunk):
+                return label
+    suffix = SUFFIX_RE.search(blob)
+    if suffix:
+        for pattern, label in MIX_LABELS:
+            if pattern.search(suffix.group(1)):
+                return label
+    return None
+
+
+def mix_class(*parts: str | None) -> str:
+    """Map a title/subtitle to a mix class (`unspecified` when no chunk exists)."""
+    label = parse_mix_version(*parts)
+    if label is not None:
+        return LABEL_CLASSES.get(label, "other")
+    blob = " ".join(part.strip() for part in parts if part and part.strip())
+    if blob and mix_chunks(blob):
+        return "other"  # a chunk existed but matched no known label
+    return "unspecified"
+
+
+def mix_compatible(a: str, b: str) -> bool:
+    """Identity gate: same class, or the original-mix/unspecified pair."""
+    if a == b:
+        return True
+    return {a, b} == {"original", "unspecified"}
+
+
+# ---------------------------------------------------------------------------
+# Normalization
+# ---------------------------------------------------------------------------
+
+
+def decode_path(raw: Any) -> str:
+    """beets `items.path` is a relative BLOB live and TEXT in fixtures."""
+    if isinstance(raw, (bytes, bytearray, memoryview)):
+        return bytes(raw).decode("utf-8", "replace")
+    return str(raw)
+
+
+def normalize_isrc(raw: str | None) -> list[str]:
+    """Uppercase, strip space/hyphen, split on [;/,], keep only valid ISRCs."""
+    if not raw:
+        return []
+    cleaned = raw.upper().replace(" ", "").replace("-", "")
+    kept = [token for token in re.split(r"[;/,]", cleaned) if ISRC_RE.match(token)]
+    return kept
+
+
+def artist_set(*fields: str | None) -> set[str]:
+    """Direction-agnostic artist cores: split on , & / and feat./ft. fragments."""
+    names: set[str] = set()
+    for value in fields:
+        if not value:
+            continue
+        for name in ARTIST_SPLIT_RE.split(value):
+            name = name.strip().casefold()
+            if name:
+                names.add(name)
+    return names
+
+
+def title_core(title: str | None) -> str:
+    """Title minus mix chunks, feat. fragments, and punctuation; casefolded."""
+    if not title:
+        return ""
+    text = CHUNK_RE.sub(" ", title)
+    text = re.sub(r"\s+\b(?:feat|ft)\b\.?\s+.*$", "", text, flags=re.I)
+    text = re.sub(r"[^\w\s]", " ", text)
+    return re.sub(r"\s+", " ", text).strip().casefold()
+
+
+def titles_match(a: str, b: str) -> bool:
+    if not a or not b:
+        return False
+    return a == b or a in b or b in a
+
+
+# ---------------------------------------------------------------------------
+# Library / liked rows
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class LibraryItem:
+    path: str
+    title: str
+    artist: str
+    albumartist: str
+    album: str
+    isrc: list[str]
+    mb_trackid: str
+    length: float
+    format: str
+    subtitle: str | None
+    spotify_album_id: str | None
+    artists: set[str]
+    core: str
+    mix: str
+    bitrate: int | None = None
+    item_id: int | None = None
+    release_id: str = ""
+    release_track_id: str = ""
+    catalog_number: str = ""
+    disc: str = ""
+    track: str = ""
+    path_lossless: bool = True
+    isrc_raw: str = ""
+
+
+def load_library(db_path: Path) -> list[LibraryItem]:
+    uri = f"file:{urllib.parse.quote(str(db_path))}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    try:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(items)")}
+        # Optional native beets columns are absent in the retained minimal fixtures.
+        extra = [name if name in columns else "''" for name in
+                 ("mb_albumid", "mb_releasetrackid", "catalognum", "disc", "track")]
+        rows = conn.execute(
+            "SELECT id,path,title,artist,albumartist,album,isrc,mb_trackid,"
+            "length,format,subtitle,bitrate," + ",".join(extra) + " FROM items"
+        ).fetchall()
+        album_ids: dict[int, str] = {}
+        for entity_id, value in conn.execute(
+            "SELECT entity_id, value FROM item_attributes WHERE key = 'spotify_album_id'"
+        ):
+            album_ids[int(entity_id)] = str(value)
+    finally:
+        conn.close()
+    items: list[LibraryItem] = []
+    for row in rows:
+        (
+            item_id,
+            raw_path,
+            title,
+            artist,
+            albumartist,
+            album,
+            isrc,
+            mb_trackid,
+            length,
+            fmt,
+            subtitle,
+            bitrate,
+            release_id, release_track_id, catalog_number, disc, track,
+        ) = row
+        title = title or ""
+        items.append(
+            LibraryItem(
+                path=decode_path(raw_path),
+                title=title,
+                artist=artist or "",
+                albumartist=albumartist or "",
+                album=album or "",
+                isrc=normalize_isrc(isrc),
+                mb_trackid=mb_trackid or "",
+                length=float(length) if length is not None else 0.0,
+                format=(fmt or "").upper(),
+                subtitle=subtitle,
+                spotify_album_id=album_ids.get(int(item_id)),
+                artists=artist_set(artist, albumartist),
+                core=title_core(title),
+                mix=mix_class(title, subtitle),
+                bitrate=bitrate if type(bitrate) is int else None,
+                item_id=int(item_id),
+                release_id=str(release_id or ""),
+                release_track_id=str(release_track_id or ""),
+                catalog_number=str(catalog_number or ""),
+                disc=str(disc or ""), track=str(track or ""),
+                path_lossless=not isinstance(raw_path, (bytes, bytearray, memoryview))
+                or bytes(raw_path).decode("utf-8", "replace").encode("utf-8") == bytes(raw_path),
+                isrc_raw=str(isrc or ""),
+            )
+        )
+    return items
+
+
+@dataclass
+class LikedTrack:
+    uri: str
+    track_id: str
+    title: str
+    artists: str
+    album: str
+    album_artists: str
+    isrc_raw: str
+    duration_ms: int
+
+    @property
+    def duration_sec(self) -> float:
+        return self.duration_ms / 1000.0
+
+    @property
+    def isrc(self) -> list[str]:
+        return normalize_isrc(self.isrc_raw)
+
+    @property
+    def artist_names(self) -> set[str]:
+        return artist_set(self.artists, self.album_artists)
+
+    @property
+    def core(self) -> str:
+        return title_core(self.title)
+
+    @property
+    def mix(self) -> str:
+        return mix_class(self.title)
+
+
+def read_liked(path: Path) -> list[LikedTrack]:
+    if not path.exists():
+        die(f"liked export missing: {path} (run: music-likes export --apply)")
+    with path.open(encoding="utf-8-sig", newline="") as fh:
+        reader = csv.DictReader(fh)
+        if not reader.fieldnames or "Track URI" not in reader.fieldnames:
+            die(f"unexpected liked.csv header (expected Exportify columns): {path}")
+        tracks: list[LikedTrack] = []
+        for row in reader:
+            uri = (row.get("Track URI") or "").strip()
+            if not uri:
+                continue
+            try:
+                duration_ms = int(row.get("Track Duration (ms)") or 0)
+            except ValueError:
+                duration_ms = 0
+            tracks.append(
+                LikedTrack(
+                    uri=uri,
+                    track_id=uri.rsplit(":", 1)[-1],
+                    title=(row.get("Track Name") or "").strip(),
+                    artists=(row.get("Artist Name(s)") or "").strip(),
+                    album=(row.get("Album Name") or "").strip(),
+                    album_artists=(row.get("Album Artist Name(s)") or "").strip(),
+                    isrc_raw=(row.get("ISRC") or "").strip(),
+                    duration_ms=duration_ms,
+                )
+            )
+    return tracks
+
+
+# ---------------------------------------------------------------------------
+# Explicit companion-edition input
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CompanionEdition:
+    declaration: dict[str, str]
+    target: LikedTrack | None
+
+    @property
+    def state_id(self) -> str:
+        return "companion:" + self.declaration["EditionId"]
+
+    @property
+    def target_sha256(self) -> str:
+        return hashlib.sha256(json.dumps(self.declaration, sort_keys=True).encode()).hexdigest()
+
+
+def read_companions(path: Path, liked: list[LikedTrack], library: list[LibraryItem]) -> list[CompanionEdition]:
+    """Read explicit operator-reviewed editions; never derive a companion from a liked row."""
+    if not path.exists() and not path.is_symlink():
+        return []
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as source:
+            before = os.fstat(source.fileno())
+            if not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid() or before.st_mode & 0o022:
+                die("companion input must be an owned regular file without group/world writes")
+            raw = source.read(8 * 1024 * 1024 + 1)
+            after = os.fstat(source.fileno())
+        stamp = lambda value: (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+        if len(raw) > 8 * 1024 * 1024 or stamp(before) != stamp(after):
+            die("companion input is too large or changed while reading")
+        reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
+        if reader.fieldnames != COMPANION_HEADERS:
+            die("unexpected companion-editions.csv header")
+        parents: dict[str, list[LikedTrack]] = {}
+        for track in liked:
+            parents.setdefault(track.track_id, []).append(track)
+        beets_parents: dict[str, list[LibraryItem]] = {}
+        for item in library:
+            if item.item_id is not None:
+                beets_parents.setdefault(str(item.item_id), []).append(item)
+        editions: list[CompanionEdition] = []
+        seen: set[str] = set()
+        for number, raw_row in enumerate(reader, start=2):
+            if number > 50001 or None in raw_row or any(value is None for value in raw_row.values()):
+                die("invalid or excessive companion input rows")
+            row = {key: value.strip() for key, value in raw_row.items()}
+            edition_id = row["EditionId"]
+            if (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}", edition_id)
+                    or edition_id in seen or any(any(ord(c) < 32 or ord(c) == 127 for c in value) for value in row.values())):
+                die(f"invalid or duplicate companion edition at row {number}")
+            seen.add(edition_id)
+            if bool(row["LikedTrackId"]) == bool(row["BeetsItemId"]):
+                die(f"companion needs exactly one real parent reference at row {number}")
+            parent_uri = parent_spotify_id = ""
+            if row["LikedTrackId"]:
+                parent = parents.get(row["LikedTrackId"], [])
+                if len(parent) != 1:
+                    die(f"unknown or ambiguous Spotify companion parent at row {number}")
+                parent_uri, parent_spotify_id = parent[0].uri, parent[0].track_id
+            else:
+                parent_items = beets_parents.get(row["BeetsItemId"], [])
+                if (not re.fullmatch(r"[1-9][0-9]*", row["BeetsItemId"])
+                        or len(parent_items) != 1 or not in_library_file(parent_items[0])):
+                    die(f"unknown or stale beets companion parent at row {number}")
+            if row["Version"] not in {"extended", "radio"} or row["Status"] not in {"verified", "unresolved"}:
+                die(f"invalid companion parent/version/status at row {number}")
+            target = None
+            if row["Status"] == "verified":
+                if not all(row[key] for key in ("Artist", "Title", "Album", "Evidence")) or not re.fullmatch(r"[1-9][0-9]{0,9}", row["DurationMs"]):
+                    die(f"verified companion lacks exact target metadata/evidence at row {number}")
+                if row["ISRC"] and not ISRC_RE.fullmatch(row["ISRC"].upper().replace(" ", "").replace("-", "")):
+                    die(f"invalid companion ISRC at row {number}")
+                explicit_mix = mix_class(row["Title"])
+                if explicit_mix in {"extended", "radio"} and explicit_mix != row["Version"]:
+                    die(f"companion version contradicts its title at row {number}")
+                target = LikedTrack(parent_uri, parent_spotify_id, row["Title"], row["Artist"],
+                                    row["Album"], row["Artist"], row["ISRC"], int(row["DurationMs"]))
+            elif not row["Reason"]:
+                die(f"unresolved companion lacks a reason at row {number}")
+            editions.append(CompanionEdition(row, target))
+        return editions
+    except (OSError, UnicodeError, csv.Error, ValueError):
+        die("companion input could not be read; queue unchanged")
+
+
+def match_companion(edition: CompanionEdition, library: list[LibraryItem]) -> list[LibraryItem]:
+    """Conservative presence for one declared edition; retain every remix/title chunk."""
+    target = edition.target
+    assert target is not None
+    exact = lambda value: " ".join(value.casefold().split())
+    return [item for item in library
+            if item.mix == edition.declaration["Version"]
+            and exact(item.title) == exact(target.title)
+            and artist_set(item.artist) == artist_set(target.artists)
+            and item.length > 0 and abs(item.length - target.duration_sec) <= DURATION_TOLERANCE
+            and (not target.isrc or bool(set(target.isrc) & set(item.isrc)))]
+
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+
+
+def state_dir_path() -> Path:
+    override = os.environ.get(STATE_ENV)
+    if override:
+        return Path(override).expanduser()
+    fixture = os.environ.get(FIXTURE_ENV)
+    if fixture:
+        return Path(fixture).expanduser()
+    return Path.home() / ".local/share/music-likes"
+
+
+def playlist_path() -> Path:
+    # Fixture (--self-test) runs never touch the real $HOME: writes stay in
+    # the self-test sandbox (state-dir override first). Bats runs override
+    # HOME and MUSIC_LIKES_STATE_DIR together, so they exercise the real
+    # (space-containing) path safely.
+    if os.environ.get(FIXTURE_ENV):
+        return state_dir_path() / PLAYLIST_NAME
+    return Path.home() / "Music/Library/Playlists/Liked Songs.m3u"
+
+
+def library_root_path() -> Path:
+    return Path(os.environ[LIBRARY_ENV]) if os.environ.get(LIBRARY_ENV) else Path.home() / "Music/Library"
+
+
+_fixture_db_cache: Path | None = None
+
+
+def beets_db_path() -> Path:
+    if os.environ.get(BEETS_ENV):
+        return Path(os.environ[BEETS_ENV])
+    fixture = os.environ.get(FIXTURE_ENV)
+    if not fixture:
+        return Path.home() / ".local/share/beets/library.db"
+    global _fixture_db_cache
+    if _fixture_db_cache is None or not _fixture_db_cache.exists():
+        handle, name = tempfile.mkstemp(suffix=".db")
+        os.close(handle)
+        db_path = Path(name)
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.executescript((Path(fixture).expanduser() / "library.sql").read_text(encoding="utf-8"))
+            conn.commit()
+        finally:
+            conn.close()
+        _fixture_db_cache = db_path
+    return _fixture_db_cache
+
+
+# ---------------------------------------------------------------------------
+# Identity matching
+# ---------------------------------------------------------------------------
+
+
+def resolve_candidates(liked: LikedTrack, hits: list[LibraryItem]) -> list[LibraryItem]:
+    """Collapse hits to one identity; ambiguous and undiscriminated -> no match."""
+    if not hits:
+        return []
+    exact = [item for item in hits if item.core == liked.core]
+    if exact:
+        hits = exact
+    if len({item.core for item in hits}) > 1:
+        return []
+    return hits
+
+
+def expand_identity(
+    seeds: list[LibraryItem], compatible: list[LibraryItem]
+) -> list[LibraryItem]:
+    """Attach all compatible format rows sharing the resolved title identity."""
+    selected_cores = {item.core for item in seeds}
+    expanded = [item for item in compatible if item.core in selected_cores]
+    by_path = {item.path: item for item in [*seeds, *expanded]}
+    return list(by_path.values())
+
+
+def match_result(liked: LikedTrack, library: list[LibraryItem]) -> tuple[list[LibraryItem], str]:
+    """Match a liked row to a library identity.
+
+    Returns (items, reason): `items` holds every library row of the identity
+    (multiple formats) when reason is ""; otherwise items is empty and reason
+    is `mix-blocked` (same track present in a conflicting mix class — never
+    auto-fetch the clash), `ambiguous` (two distinct title cores, same
+    duration, no discriminator — never guess), or `absent`.
+    """
+    base = [item for item in library if item.artists & liked.artist_names]
+    soft = [
+        item
+        for item in base
+        if item.length > 0
+        and abs(item.length - liked.duration_sec) <= DURATION_TOLERANCE
+        and titles_match(item.core, liked.core)
+    ]
+    strict = [item for item in soft if mix_compatible(item.mix, liked.mix)]
+    wanted_isrc = set(liked.isrc)
+    if wanted_isrc:
+        # A shared ISRC cannot substitute a different-duration edition or format.
+        isrc_pool = [
+            item
+            for item in base
+            if item.length > 0
+            and abs(item.length - liked.duration_sec) <= DURATION_TOLERANCE
+            and wanted_isrc & set(item.isrc)
+            and mix_compatible(item.mix, liked.mix)
+        ]
+        resolved = resolve_candidates(liked, isrc_pool)
+        if resolved:
+            return expand_identity(resolved, strict), ""
+    resolved = resolve_candidates(liked, strict)
+    if resolved:
+        return expand_identity(resolved, strict), ""
+    if strict:
+        return [], "ambiguous"
+    if soft:
+        return [], "mix-blocked"
+    return [], "absent"
+
+
+def queue_formats(items: list[LibraryItem], reason: str) -> list[str]:
+    """Wanted fetch formats for a match result; suppressed reasons queue nothing."""
+    if items and not reason:
+        return wanted_formats(items)
+    if reason in {"mix-blocked", "ambiguous"}:
+        return []
+    return wanted_formats([])  # absent: nothing in the library at all
+
+
+def in_library_file(item: LibraryItem) -> bool:
+    """A beets row owns a format only when it resolves to library audio."""
+    root = library_root_path().resolve()
+    path = Path(item.path)
+    try:
+        resolved = (path if path.is_absolute() else root / path).resolve(strict=True)
+        return resolved.is_relative_to(root) and resolved.is_file()
+    except (OSError, RuntimeError):  # stale path or symlink loop
+        return False
+
+
+def owned_audio_formats(item: LibraryItem) -> set[str]:
+    """Check bounded codec headers; neither container suffix nor DB MP3 alone qualifies."""
+    if item.format not in LOSSLESS_FORMATS | {"MP3"}:
+        return set()
+    root = library_root_path().resolve()
+    path = Path(item.path)
+    try:
+        resolved = (path if path.is_absolute() else root / path).resolve(strict=True)
+        parts = resolved.relative_to(root).parts
+        if not parts:
+            return set()
+        parent_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            for part in parts[:-1]:
+                child_fd = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
+                os.close(parent_fd)
+                parent_fd = child_fd
+            expected = os.stat(parts[-1], dir_fd=parent_fd, follow_symlinks=False)
+            if not stat.S_ISREG(expected.st_mode):
+                return set()
+            fd = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent_fd)
+        finally:
+            os.close(parent_fd)
+        with os.fdopen(fd, "rb") as audio:
+            before = os.fstat(audio.fileno())
+            stamp = lambda value: (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+            if not stat.S_ISREG(before.st_mode) or stamp(before) != stamp(expected):
+                return set()
+            header = audio.read(12)
+            found: set[str] = set()
+            if item.format == "FLAC" and header[:4] == b"fLaC":
+                found.add("flac")
+            elif item.format in {"WAVE", "AIFF"}:
+                wave = header[:4] == b"RIFF" and header[8:] == b"WAVE"
+                aiff = header[:4] == b"FORM" and header[8:] in {b"AIFF", b"AIFC"}
+                if item.format == "AIFF" and aiff and header[8:] == b"AIFF":
+                    found.add("flac")  # PCM is a lossless codec, not master provenance.
+                elif (item.format == "WAVE" and wave) or (item.format == "AIFF" and aiff):
+                    for _ in range(256):
+                        chunk = audio.read(8)
+                        if len(chunk) != 8:
+                            break
+                        size = struct.unpack(("<" if wave else ">") + "I", chunk[4:])[0]
+                        start = audio.tell()
+                        if size > before.st_size - start:
+                            break
+                        if chunk[:4] == (b"fmt " if wave else b"COMM"):
+                            value = audio.read(min(size, 64))
+                            if wave and len(value) >= 16:
+                                code = struct.unpack("<H", value[:2])[0]
+                                if code == 0xFFFE and len(value) >= 40 and value[28:40] == bytes.fromhex("00001000800000aa00389b71"):
+                                    code = struct.unpack("<I", value[24:28])[0]
+                                if code in {1, 3}:
+                                    found.add("flac")
+                            elif not wave and len(value) >= 22 and value[18:22] in {b"NONE", b"sowt", b"fl32", b"fl64", b"FL32", b"FL64"}:
+                                found.add("flac")
+                            break
+                        audio.seek(start + size + size % 2)
+            elif item.format == "MP3" and item.bitrate == 320000:
+                # Skip embedded ID3, then require two consecutive MPEG1 Layer3
+                # 320kbps frame headers. This is not a whole-stream CBR claim.
+                offset = 0
+                if header[:3] == b"ID3":
+                    if any(value & 0x80 for value in header[6:10]):
+                        return set()
+                    offset = 10 + sum(value << shift for value, shift in zip(header[6:10], (21, 14, 7, 0)))
+                    if header[3] == 4 and header[5] & 0x10:
+                        offset += 10
+                audio.seek(offset)
+                data = audio.read(65536)
+                for start in range(max(0, len(data) - 4)):
+                    frame = int.from_bytes(data[start:start + 4], "big")
+                    if frame & 0xFFFEF000 != 0xFFFAE000:
+                        continue
+                    rate = (44100, 48000, 32000, 0)[(frame >> 10) & 3]
+                    if not rate:
+                        continue
+                    next_frame = start + 144000 * 320 // rate + ((frame >> 9) & 1)
+                    if next_frame + 4 <= len(data):
+                        other = int.from_bytes(data[next_frame:next_frame + 4], "big")
+                        if other & 0xFFFEFC00 == frame & 0xFFFEFC00:
+                            found.add("mp3-320")
+                            break
+            after = os.fstat(audio.fileno())
+            return found if stamp(before) == stamp(after) else set()
+    except (OSError, RuntimeError, ValueError, struct.error):
+        return set()
+
+
+def wanted_formats(items: list[LibraryItem]) -> list[str]:
+    """Queue a missing format for this resolved version, without changing its identity."""
+    owned = set().union(*(owned_audio_formats(item) for item in items))
+    has_lossless = "flac" in owned
+    has_mp3 = "mp3-320" in owned
+    wanted: list[str] = []
+    if not has_lossless:
+        wanted.append("flac")
+    if not has_mp3:
+        wanted.append("mp3-320")
+    return wanted
+
+
+def configured_library_source() -> None:
+    """Library backfill never silently chooses the historical default roots."""
+    for name, directory in ((LIBRARY_ENV, True), (BEETS_ENV, False)):
+        value = os.environ.get(name, "")
+        path = Path(value)
+        try:
+            info = path.lstat()
+            valid = (value and path.is_absolute() and path.resolve(strict=True) == path
+                     and info.st_uid == os.getuid() and not info.st_mode & 0o022
+                     and (directory or info.st_nlink == 1)
+                     and (stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode)))
+        except (OSError, RuntimeError):
+            valid = False
+        if not valid:
+            die(f"--include-library requires an explicit owned canonical {name}")
+
+
+def library_metadata(item: LibraryItem) -> dict[str, Any]:
+    return {"title": item.title, "subtitle": item.subtitle or "", "artist": item.artist,
+            "album_artist": item.albumartist, "album": item.album, "mix": item.mix,
+            "duration_seconds": item.length if math.isfinite(item.length) else None,
+            "isrc": item.isrc, "isrc_raw": item.isrc_raw,
+            "recording_id": item.mb_trackid, "release_id": item.release_id,
+            "release_track_id": item.release_track_id, "catalog_number": item.catalog_number,
+            "disc": item.disc, "track": item.track}
+
+
+def library_source_evidence(item: LibraryItem) -> dict[str, Any] | None:
+    """Hash the selected source through a held fd; refuse aliases, hydration and races."""
+    root = library_root_path()
+    path = Path(item.path)
+    path = path if path.is_absolute() else root / path
+    stamp = lambda value: tuple(getattr(value, key) for key in
+        ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink", "st_size", "st_mtime_ns", "st_ctime_ns"))
+    directory_fds: list[tuple[int, Path, tuple[int, ...]]] = []
+    try:
+        if not item.path_lossless or path.resolve(strict=True) != path:
+            return None
+        parts = path.relative_to(root).parts
+        if not parts or any(part in ("", ".", "..") for part in parts):
+            return None
+        parent = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        directory_fds.append((parent, root, stamp(os.fstat(parent))))
+        for index, part in enumerate(parts[:-1]):
+            parent = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+            directory_fds.append((parent, root.joinpath(*parts[:index + 1]), stamp(os.fstat(parent))))
+        expected = os.stat(parts[-1], dir_fd=parent, follow_symlinks=False)
+        if (not stat.S_ISREG(expected.st_mode) or expected.st_uid != os.getuid()
+                or expected.st_nlink != 1 or expected.st_size <= 0 or expected.st_mode & 0o022
+                or getattr(expected, "st_flags", 0) & 0x40000000):
+            return None
+        fd = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+        with os.fdopen(fd, "rb") as audio:
+            before = os.fstat(audio.fileno())
+            if stamp(before) != stamp(expected):
+                return None
+            digest = hashlib.sha256()
+            for chunk in iter(lambda: audio.read(1024 * 1024), b""):
+                digest.update(chunk)
+            mp3_header = False
+            if item.format == "MP3":
+                audio.seek(0)
+                tag = audio.read(10)
+                offset = 0
+                if tag[:3] == b"ID3" and len(tag) == 10 and not any(value & 0x80 for value in tag[6:10]):
+                    offset = 10 + sum(value << shift for value, shift in zip(tag[6:10], (21, 14, 7, 0)))
+                    if tag[3] == 4 and tag[5] & 0x10:
+                        offset += 10
+                audio.seek(offset)
+                probe = audio.read(65536)
+                # Recognize MPEG1 Layer3 at any ordinary bitrate, separately
+                # from the existing exact-320 format-slot check.
+                for index in range(max(0, len(probe) - 4)):
+                    frame = int.from_bytes(probe[index:index + 4], "big")
+                    rate = (44100, 48000, 32000, 0)[(frame >> 10) & 3]
+                    bitrate = (0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0)[(frame >> 12) & 15]
+                    if frame & 0xFFFE0000 != 0xFFFA0000 or not rate or not bitrate:
+                        continue
+                    next_frame = index + 144000 * bitrate // rate + ((frame >> 9) & 1)
+                    if next_frame + 4 <= len(probe):
+                        other = int.from_bytes(probe[next_frame:next_frame + 4], "big")
+                        if other & 0xFFFE0C00 == frame & 0xFFFE0C00:
+                            mp3_header = True
+                            break
+            if stamp(before) != stamp(os.fstat(audio.fileno())) or stamp(before) != stamp(path.lstat()):
+                return None
+        if any(stamp(os.fstat(fd)) != expected or stamp(path.lstat()) != expected
+               for fd, path, expected in directory_fds):
+            return None
+        return {"item_id": item.item_id, "path": item.path, "sha256": digest.hexdigest(),
+                "size": before.st_size, "stat": list(stamp(before)), "format": item.format,
+                "bitrate": item.bitrate, "mp3_header_recognized": mp3_header,
+                "metadata": library_metadata(item)}
+    except (OSError, RuntimeError, ValueError):
+        return None
+    finally:
+        for fd, _, _ in reversed(directory_fds):
+            os.close(fd)
+
+
+def library_gap_rows(library: list[LibraryItem], previous: dict[str, Any], now: int,
+                     force: bool) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Add source-anchored editions to the existing queue, retaining unresolved rows."""
+    rows: list[dict[str, Any]] = []
+    state: dict[str, Any] = {}
+    ids = Counter(item.item_id for item in library)
+    evidence = {item.item_id: library_source_evidence(item) for item in library
+                if item.item_id is not None and item.item_id > 0 and ids[item.item_id] == 1}
+    def edition_key(item: LibraryItem) -> str:
+        return json.dumps({key: value for key, value in library_metadata(item).items()
+                           if key != "duration_seconds"}, sort_keys=True)
+    by_edition: dict[str, list[LibraryItem]] = {}
+    for item in library:
+        by_edition.setdefault(edition_key(item), []).append(item)
+    seen: set[int] = set()
+    for item in library:
+        if item.item_id in seen:
+            continue
+        metadata = library_metadata(item)
+        reason = ""
+        if item.item_id is None or item.item_id <= 0 or ids[item.item_id] != 1:
+            reason = "unknown_or_ambiguous_item_id"
+        elif evidence.get(item.item_id) is None:
+            reason = "source_hash_or_custody_unproved"
+        elif (not all((item.artist, item.title, item.album))
+              or not all(re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", value, re.IGNORECASE)
+                         for value in (item.release_id, item.release_track_id))
+              or (item.mb_trackid and not re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", item.mb_trackid, re.IGNORECASE))):
+            reason = "release_identity_unresolved"
+        if not math.isfinite(item.length) or item.length <= 0:
+            reason = "duration_unresolved"
+        if any(any(ord(c) < 32 or ord(c) == 127 for c in str(value)) for value in metadata.values()):
+            reason = "metadata_controls_unresolved"
+        peers = [item]
+        if not reason:
+            # Exact release-track identity and full labels, never title cores/shared recording ID.
+            candidates = [other for other in by_edition[edition_key(item)] if other.item_id in evidence
+                     and evidence[other.item_id] is not None
+                     and math.isfinite(other.length) and other.length > 0]
+            if max(other.length for other in candidates) - min(other.length for other in candidates) > DURATION_TOLERANCE:
+                reason = "duration_identity_conflict"
+            else:
+                peers = candidates
+        seen.update(member.item_id for member in peers if member.item_id is not None)
+        members = [evidence[member.item_id] for member in peers if evidence.get(member.item_id) is not None]
+        source = {"library_root": str(library_root_path()), "beets_db": str(beets_db_path()),
+                  "members": members, "metadata": metadata, "item_ids": [member.item_id for member in peers],
+                  "paths": [member.path for member in peers]}
+        source_json = json.dumps(source, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        edition_id = hashlib.sha256(json.dumps([item.item_id, item.path, metadata], sort_keys=True).encode()).hexdigest()
+        state_id = "library:" + edition_id
+        target_hash = hashlib.sha256(source_json.encode()).hexdigest()
+        entry = dict(previous.get(state_id) or {})
+        if entry.get("target_sha256") != target_hash:
+            entry = {}
+        wanted = wanted_formats(peers) if len(members) == len(peers) else ["flac", "mp3-320"]
+        if not reason and any(not (owned_audio_formats(member) or evidence[member.item_id]["mp3_header_recognized"])
+                              for member in peers):
+            reason = "codec_unproved"
+        # Header observations must still belong to the bytes just hashed.
+        try:
+            paired = zip(peers, members, strict=True) if len(members) == len(peers) else []
+            for member, proof in paired:
+                path = Path(member.path)
+                path = path if path.is_absolute() else library_root_path() / path
+                current = path.lstat()
+                actual = [getattr(current, key) for key in
+                          ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink", "st_size", "st_mtime_ns", "st_ctime_ns")]
+                if path.resolve(strict=True) != path or actual != proof["stat"]:
+                    raise ValueError("changed source")
+        except (OSError, RuntimeError, ValueError):
+            reason = "source_changed_during_observation"
+            wanted = ["flac", "mp3-320"]
+        entry.update(origin="library", source_evidence=source, target_sha256=target_hash,
+                     identity_status="unresolved" if reason else "source-anchored", reason=reason,
+                     version="unclassified" if item.mix in {"unspecified", "other"} else item.mix,
+                     missing_formats=wanted, queued_formats=[],
+                     format_observation="unproved" if reason.startswith("source_") else "bounded_headers_only")
+        if wanted and (reason or force or int(entry.get("retry_after") or 0) <= now):
+            if not reason:
+                attempts = int(entry.get("attempts") or 0) + 1
+                entry.update(attempts=attempts, retry_after=now + BACKOFF_DELAYS[min(attempts - 1, len(BACKOFF_DELAYS) - 1)],
+                             queued_formats=wanted)
+            for fmt in wanted:
+                rows.append({"Artist": item.artist, "Title": item.title, "Album": item.album,
+                             "Length": int(item.length) if math.isfinite(item.length) else 0,
+                             "ISRC": ";".join(item.isrc), "SpotifyId": "", "Format": fmt,
+                             "EditionId": edition_id, "Version": entry["version"], "Evidence": "local_source_only",
+                             "BeetsItemId": str(item.item_id or ""), "Origin": "library", "SourceEvidence": source_json,
+                             "IdentityStatus": entry["identity_status"], "Reason": reason})
+        state[state_id] = entry
+    return rows, state
+
+
+def pick_preferred(items: list[LibraryItem]) -> LibraryItem | None:
+    """Prefer an on-disk regular file, falling back through the format order."""
+    for fmt in PLAYLIST_PREFERENCE:
+        for item in items:
+            if item.format == fmt and in_library_file(item):
+                return item
+    return None
+
+
+def relative_entry_path(item: LibraryItem) -> str:
+    if os.path.isabs(item.path):
+        return os.path.relpath(item.path, library_root_path())
+    return item.path
+
+
+# ---------------------------------------------------------------------------
+# State / backoff
+# ---------------------------------------------------------------------------
+
+
+def read_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def load_indexes(state: Path) -> dict[str, list[list[str]]]:
+    """sockseek's own per-format index CSVs; tolerate absence/garbage."""
+    indexes: dict[str, list[list[str]]] = {}
+    for fmt, name in INDEX_FILES.items():
+        rows: list[list[str]] = []
+        path = state / name
+        if path.exists():
+            try:
+                with path.open(encoding="utf-8-sig", newline="") as fh:
+                    rows = [row for row in csv.reader(fh) if row]
+            except (OSError, csv.Error):
+                rows = []
+        indexes[fmt] = rows
+    return indexes
+
+
+def index_has(rows: list[list[str]], liked: LikedTrack) -> bool:
+    core = liked.core
+    full = liked.title.casefold()
+    for row in rows:
+        for cell in row:
+            text = str(cell).casefold()
+            if (core and core in text) or (full and full in text):
+                return True
+    return False
+
+
+def write_csv(path: Path, header: list[str], rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=header, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def missing_row(liked: LikedTrack, fmt: str, edition: CompanionEdition | None = None) -> dict[str, Any]:
+    return {
+        "Artist": liked.artists,
+        "Title": liked.title,
+        "Album": liked.album,
+        "Length": liked.duration_ms // 1000,
+        "ISRC": liked.isrc_raw,
+        "SpotifyId": liked.track_id,
+        "Format": fmt,
+        "EditionId": edition.declaration["EditionId"] if edition else "",
+        "Version": edition.declaration["Version"] if edition else "",
+        "Evidence": edition.declaration["Evidence"] if edition else "",
+        "BeetsItemId": edition.declaration["BeetsItemId"] if edition else "",
+    }
+
+
+def write_companion_report(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                         prefix=".companion-report.", delete=False) as handle:
+            temp_path = Path(handle.name)
+            os.fchmod(handle.fileno(), 0o600)
+            json.dump(value, handle, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+
+
+def cmd_match(*, apply: bool, force: bool, include_library: bool = False) -> int:
+    state = state_dir_path()
+    if include_library:
+        configured_library_source()
+    liked_path = state / LIKED_NAME
+    # Explicit library-only input can work before Spotify setup, without fabricating an export.
+    liked = read_liked(liked_path) if liked_path.exists() or not (include_library or (state / COMPANION_NAME).exists()) else []
+    library = load_library(beets_db_path())
+    companions = read_companions(state / COMPANION_NAME, liked, library)
+    now = int(time.time())
+    previous = read_json(state / STATE_NAME)
+    indexes = load_indexes(state)
+    rows: list[dict[str, Any]] = []
+    new_state: dict[str, Any] = {}
+    reports = {edition.state_id: {"declaration": edition.declaration,
+                "declaration_sha256": edition.target_sha256,
+                "state": "unresolved" if edition.target is None else "pending",
+                "missing_formats": [], "queued_formats": [], "matched_paths": []}
+               for edition in companions}
+    targets = [(track, None) for track in liked] + [(edition.target, edition) for edition in companions if edition.target is not None]
+    matched = 0
+    suppressed = 0
+    omitted = 0
+    unmatched = 0
+    for track, edition in targets:
+        assert track is not None
+        state_id = edition.state_id if edition else track.track_id
+        entry = dict(previous.get(state_id) or {})
+        if edition:
+            if entry.get("target_sha256") != edition.target_sha256:
+                entry = {}
+            entry["target_sha256"] = edition.target_sha256
+            items = match_companion(edition, library)
+            reason = "" if items else "absent"
+        else:
+            items, reason = match_result(track, library)
+        wanted = queue_formats(items, reason)
+        report = reports.get(state_id)
+        if report is not None:
+            report.update({"missing_formats": wanted, "matched_paths": [item.path for item in items]})
+        entry["isrc"] = track.isrc
+        entry["matched_paths"] = [item.path for item in items]
+        entry["last_seen"] = now
+        if items and not wanted:
+            matched += 1
+            entry["attempts"] = 0
+            entry["retry_after"] = 0
+            new_state[state_id] = entry
+            if report is not None:
+                report["state"] = "present_metadata_and_headers"
+            continue
+        if not wanted:  # mix-blocked / ambiguous: identity undecidable, never fetch
+            suppressed += 1
+            entry["attempts"] = 0
+            entry["retry_after"] = 0
+            new_state[state_id] = entry
+            continue
+        unmatched += 1
+        attempts = int(entry.get("attempts") or 0)
+        retry_after = int(entry.get("retry_after") or 0)
+        # A generic title-core download index must not join separate declared editions.
+        indexed = not edition and any(index_has(indexes[fmt], track) for fmt in wanted)
+        if not indexed and retry_after > now and not force:
+            entry["attempts"] = attempts
+            entry["retry_after"] = retry_after
+            new_state[state_id] = entry
+            if report is not None:
+                report["state"] = "retry_backoff"
+            omitted += len(wanted)
+            continue
+        if indexed:
+            attempts = 0
+            retry_after = 0
+        else:
+            # This row is being queued now. Advance backoff only when a retry is
+            # actually due (or explicitly forced), never on every polling tick.
+            attempts += 1
+            retry_after = now + BACKOFF_DELAYS[min(attempts - 1, len(BACKOFF_DELAYS) - 1)]
+        entry["attempts"] = attempts
+        entry["retry_after"] = retry_after
+        new_state[state_id] = entry
+        if report is not None:
+            report.update({"state": "queued", "queued_formats": wanted})
+        for fmt in wanted:
+            rows.append(missing_row(track, fmt, edition))
+    if include_library:
+        library_rows, library_state = library_gap_rows(library, previous, now, force)
+        rows.extend(library_rows)
+        new_state.update(library_state)
+        log(f"library editions={len(library_state)} unresolved={sum(entry['identity_status'] == 'unresolved' for entry in library_state.values())}")
+    missing_path = state / MISSING_NAME
+    state_path = state / STATE_NAME
+    if apply:
+        write_csv(missing_path, MISSING_HEADERS, rows)
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(json.dumps(new_state, indent=2) + "\n", encoding="utf-8")
+        if companions or (state / COMPANION_NAME).exists() or (state / COMPANION_REPORT_NAME).exists():
+            write_companion_report(state / COMPANION_REPORT_NAME, {
+                "schema": "music-likes-companion-report-v1", "generated_at": now,
+                "verification": "operator-attested target metadata; no automatic catalog or audio-identity proof",
+                "editions": list(reports.values()), "download_or_library_mutation_performed": False,
+            })
+        log(
+            f"match: liked={len(liked)} companions={len(companions)} matched={matched} unmatched={unmatched} "
+            f"suppressed={suppressed} queued={len(rows)} backoff_omitted={omitted}"
+        )
+    else:
+        log(
+            f"match dry-run: liked={len(liked)} companions={len(companions)} matched={matched} unmatched={unmatched} "
+            f"suppressed={suppressed} queued={len(rows)} backoff_omitted={omitted}"
+        )
+        print(f"would write {missing_path} ({len(rows)} rows) and {state_path}")
+        if companions:
+            print(f"would write {state / COMPANION_REPORT_NAME} ({len(companions)} declared editions; unresolved editions never queued)")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Playlist
+# ---------------------------------------------------------------------------
+
+
+def render_m3u(entries: list[tuple[LikedTrack, LibraryItem]]) -> str:
+    lines = ["#EXTM3U"]
+    for track, item in entries:
+        lines.append(f"#EXTINF:{track.duration_ms // 1000},{track.artists} - {track.title}")
+        lines.append(f"../{relative_entry_path(item)}")
+    return "\n".join(lines) + "\n"
+
+
+def publish_playlist(path: Path, text: str) -> None:
+    """Replace a playlist only after its complete contents are durable on disk."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    def existing_target() -> os.stat_result | None:
+        try:
+            target = path.lstat()  # never follow a symlink at the destination
+        except FileNotFoundError:
+            return None
+        if not stat.S_ISREG(target.st_mode):
+            raise OSError(f"refusing to replace non-regular playlist: {path}")
+        return target
+
+    before = existing_target()
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", newline="", dir=path.parent,
+            prefix=f".{path.name}.", suffix=".tmp", delete=False,
+        ) as handle:
+            temp_path = Path(handle.name)
+            handle.write(text)
+            # A new playlist is readable by the scanner; retain an existing
+            # playlist's ordinary permissions, but never carry special bits.
+            os.fchmod(handle.fileno(), (stat.S_IMODE(before.st_mode) & 0o777) if before else 0o644)
+            handle.flush()
+            os.fsync(handle.fileno())
+        current = existing_target()
+        if (before is None) != (current is None) or (
+            before is not None and current is not None
+            and (before.st_dev, before.st_ino) != (current.st_dev, current.st_ino)
+        ):
+            raise OSError(f"playlist changed during publication: {path}")
+        os.replace(temp_path, path)  # same directory / filesystem, atomic for readers
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+
+
+def cmd_playlist(*, apply: bool) -> int:
+    state = state_dir_path()
+    liked = read_liked(state / LIKED_NAME)
+    library = load_library(beets_db_path())
+    entries: list[tuple[LikedTrack, LibraryItem]] = []
+    for track in liked:
+        items, _reason = match_result(track, library)
+        chosen = pick_preferred(items) if items else None
+        if chosen is not None:
+            entries.append((track, chosen))
+    text = render_m3u(entries)
+    path = playlist_path()
+    if apply:
+        try:
+            publish_playlist(path, text)
+        except OSError as exc:
+            die(f"playlist publication failed: {exc}")
+        log(f"playlist: wrote {len(entries)} tracks -> {path}")
+    else:
+        current = path.read_text(encoding="utf-8") if path.exists() else ""
+        new_lines = {line for line in text.splitlines() if line and not line.startswith("#")}
+        old_lines = {line for line in current.splitlines() if line and not line.startswith("#")}
+        print(
+            f"would write {path} ({len(entries)} tracks; "
+            f"+{len(new_lines - old_lines)} -{len(old_lines - new_lines)} paths vs current)"
+        )
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Spotify export + login
+# ---------------------------------------------------------------------------
+
+
+def token_request(params: dict[str, str], client_id: str, client_secret: str) -> dict[str, Any]:
+    body = urllib.parse.urlencode(params).encode("utf-8")
+    basic = base64.b64encode(f"{client_id}:{client_secret}".encode("utf-8")).decode("ascii")
+    req = urllib.request.Request(
+        SPOTIFY_TOKEN_URL,
+        data=body,
+        headers={"Authorization": f"Basic {basic}"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8") or "{}")
+    except urllib.error.HTTPError as exc:
+        # Never include the body: it can echo credentials.
+        die(f"spotify token endpoint error: HTTP {exc.code}")
+    except urllib.error.URLError as exc:
+        die(f"spotify token endpoint unreachable: {exc.reason}")
+
+
+def refresh_access_token(client_id: str, client_secret: str, refresh_token: str) -> str:
+    payload = token_request(
+        {"grant_type": "refresh_token", "refresh_token": refresh_token},
+        client_id,
+        client_secret,
+    )
+    access = payload.get("access_token")
+    if not access:
+        die("spotify token endpoint returned no access_token")
+    log("spotify access token refreshed: True")
+    return access
+
+
+def exportify_row(item: dict[str, Any]) -> dict[str, Any]:
+    track = item.get("track") or {}
+    album = track.get("album") or {}
+    return {
+        "Track URI": track.get("uri") or "",
+        "Track Name": track.get("name") or "",
+        "Artist Name(s)": ", ".join(a.get("name") or "" for a in track.get("artists") or []),
+        "Album Name": album.get("name") or "",
+        "Album Artist Name(s)": ", ".join(a.get("name") or "" for a in album.get("artists") or []),
+        "ISRC": (track.get("external_ids") or {}).get("isrc") or "",
+        "Track Duration (ms)": track.get("duration_ms") or 0,
+        "Disc Number": track.get("disc_number") or 0,
+        "Track Number": track.get("track_number") or 0,
+        "Added At": item.get("added_at") or "",
+    }
+
+
+def csv_row_count(path: Path) -> int:
+    if not path.exists():
+        return 0
+    with path.open(encoding="utf-8-sig", newline="") as fh:
+        return max(sum(1 for _ in csv.reader(fh)) - 1, 0)
+
+
+def cmd_export(*, apply: bool) -> int:
+    path = state_dir_path() / LIKED_NAME
+    if not apply:
+        print(f"would write {path} (current rows: {csv_row_count(path)})")
+        return 0
+    client_id = os.environ.get(CLIENT_ID_ENV, "")
+    client_secret = (
+        os.environ.get(CLIENT_SECRET_ENV, "")
+    )
+    refresh_token = (
+        os.environ.get(REFRESH_TOKEN_ENV, "")
+    )
+    log(
+        f"credentials present: client_id={bool(client_id)} "
+        f"client set: {bool(client_secret)} refresh set: {bool(refresh_token)}"
+    )
+    if not (client_id and client_secret and refresh_token):
+        die(f"{CLIENT_ID_ENV}/{CLIENT_SECRET_ENV}/{REFRESH_TOKEN_ENV} are required for export --apply")
+    access = refresh_access_token(client_id, client_secret, refresh_token)
+    exported: list[dict[str, Any]] = []
+    url: str | None = f"{SPOTIFY_TRACKS_URL}?limit=50"
+    refreshed = False
+    rate_retries = 0
+    while url:
+        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {access}"})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                payload = json.loads(resp.read().decode("utf-8") or "{}")
+            rate_retries = 0
+        except urllib.error.HTTPError as exc:
+            if exc.code == 429 and rate_retries < 3:
+                rate_retries += 1
+                try:
+                    wait = max(int(exc.headers.get("Retry-After") or "1"), 1)
+                except ValueError:
+                    wait = 1
+                log(f"spotify 429; sleeping {wait}s (retry {rate_retries}/3)")
+                time.sleep(wait)
+                continue
+            if exc.code == 401 and not refreshed:
+                refreshed = True
+                access = refresh_access_token(client_id, client_secret, refresh_token)
+                continue
+            die(f"spotify api error: HTTP {exc.code}")
+        except urllib.error.URLError as exc:
+            die(f"spotify api unreachable: {exc.reason}")
+        exported.extend(payload.get("items") or [])
+        url = payload.get("next") or None
+    write_csv(path, EXPORTIFY_COLUMNS, [exportify_row(item) for item in exported])
+    log(f"export: wrote {len(exported)} tracks -> {path}")
+    return 0
+
+
+class _CallbackHandler(http.server.BaseHTTPRequestHandler):
+    code: str | None = None
+    error: str | None = None
+    expected_state: str | None = None
+
+    def do_GET(self) -> None:  # noqa: N802 (http.server API)
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path != "/callback":
+            self.send_response(404)
+            self.end_headers()
+            return
+        params = urllib.parse.parse_qs(parsed.query)
+        callback_state = (params.get("state") or [None])[0]
+        if not secrets.compare_digest(callback_state or "", _CallbackHandler.expected_state or ""):
+            body = b"music-likes: invalid OAuth state; return to your terminal."
+            self.send_response(400)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        _CallbackHandler.code = (params.get("code") or [None])[0]
+        _CallbackHandler.error = (params.get("error") or [None])[0]
+        body = b"music-likes: login complete; return to your terminal."
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args: Any) -> None:
+        return  # never log request lines: the query string carries the auth code
+
+
+def wait_for_login_code(expected_state: str) -> str:
+    _CallbackHandler.code = None
+    _CallbackHandler.error = None
+    _CallbackHandler.expected_state = expected_state
+    server = http.server.HTTPServer((LOGIN_HOST, LOGIN_PORT), _CallbackHandler)
+    server.timeout = 1.0
+    deadline = time.monotonic() + LOGIN_TIMEOUT_SEC
+    try:
+        while _CallbackHandler.code is None and _CallbackHandler.error is None:
+            if time.monotonic() > deadline:
+                die("login timed out waiting for the callback")
+            server.handle_request()
+    finally:
+        server.server_close()
+        _CallbackHandler.expected_state = None
+    if _CallbackHandler.code is None:
+        die(f"login failed: {_CallbackHandler.error or 'no code returned'}")
+    return _CallbackHandler.code
+
+
+def write_refresh_token(token: str) -> None:
+    path = Path.home() / ".config/music-likes/secrets.env"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines: list[str] = []
+    if path.exists():
+        lines = path.read_text(encoding="utf-8").splitlines()
+    lines = [line for line in lines if not line.startswith(f"{REFRESH_TOKEN_ENV}=")]
+    if lines and lines[-1].strip():
+        lines.append("")
+    lines.append(f"{REFRESH_TOKEN_ENV}={token}")
+    text = "\n".join(lines).rstrip("\n") + "\n"
+    existed = path.exists()
+    path.write_text(text, encoding="utf-8")
+    os.chmod(path, 0o600)
+    log(f"secrets.env updated (created={not existed}, mode=0600)")
+
+
+def cmd_login() -> int:
+    client_id = os.environ.get(CLIENT_ID_ENV, "")
+    client_secret = (
+        os.environ.get(CLIENT_SECRET_ENV, "")
+    )
+    if not (client_id and client_secret):
+        die(f"{CLIENT_ID_ENV} and {CLIENT_SECRET_ENV} are required for --login")
+    oauth_state = secrets.token_urlsafe(32)
+    url = SPOTIFY_AUTHORIZE_URL + "?" + urllib.parse.urlencode(
+        {
+            "client_id": client_id,
+            "response_type": "code",
+            "redirect_uri": LOGIN_REDIRECT,
+            "scope": SPOTIFY_SCOPE,
+            "state": oauth_state,
+        }
+    )
+    print(f"Open this URL in a browser, approve access, then come back:\n  {url}")
+    code = wait_for_login_code(oauth_state)
+    payload = token_request(
+        {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": LOGIN_REDIRECT,
+        },
+        client_id,
+        client_secret,
+    )
+    refresh = payload.get("refresh_token")
+    if not refresh:
+        die("spotify returned no refresh_token for this session")
+    write_refresh_token(refresh)
+    log("login complete: refresh token stored: True (value never logged)")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Self-test
+# ---------------------------------------------------------------------------
+
+
+def _strip_trailing_newline(text: str) -> str:
+    return text[:-1] if text.endswith("\n") else text
+
+
+def self_test() -> int:
+    failures: list[str] = []
+
+    def check(name: str, got: object, expected: object) -> None:
+        if got != expected:
+            failures.append(f"{name}: got {got!r} expected {expected!r}")
+
+    def test_item(
+        *,
+        path: str,
+        fmt: str,
+        title: str = "Test Song",
+        isrc: list[str] | None = None,
+        spotify_album_id: str | None = None,
+    ) -> LibraryItem:
+        return LibraryItem(
+            path=path,
+            title=title,
+            artist="Test Artist",
+            albumartist="Test Artist",
+            album="Test Album",
+            isrc=isrc or [],
+            mb_trackid="",
+            length=180.0,
+            format=fmt,
+            subtitle=None,
+            spotify_album_id=spotify_album_id,
+            artists=artist_set("Test Artist"),
+            core=title_core(title),
+            mix=mix_class(title),
+        )
+
+    # Mix parser contract (§9.2 asserts, verbatim).
+    check("mix-extended", parse_mix_version("Feeling Fly (Extended Mix)"), "Extended Mix")
+    check("mix-radio", parse_mix_version("Aaa (Radio Edit)"), "Radio Edit")
+    check("mix-no-bare-anthem", parse_mix_version("The Anthem"), None)
+    check("class-radio-cut", mix_class("Hear This (Radio Cut)"), "radio")
+    check("class-trailing-radio", mix_class("Title - Radio Edit"), "radio")
+    check("class-bracket-extended", mix_class("Title [Extended Mix]"), "extended")
+    check("class-bare-extended", mix_class("Bare (Extended)"), "extended")
+    check("class-none", mix_class(None), "unspecified")
+    check("compat-radio-extended", mix_compatible("radio", "extended"), False)
+    check("compat-unspecified-extended", mix_compatible("unspecified", "extended"), False)
+    check("compat-unspecified-unspecified", mix_compatible("unspecified", "unspecified"), True)
+    check("compat-original-unspecified", mix_compatible("original", "unspecified"), True)
+    for cls in ("radio", "vip", "bootleg", "club", "instrumental", "live", "other"):
+        check(f"compat-unspecified-{cls}", mix_compatible("unspecified", cls), False)
+
+    # Donor regressions + extensions.
+    check(
+        "mix-multi-paren-rightmost",
+        parse_mix_version("Craving For The Beat (Official Decibel 2013 Anthem) (Radio Mix)"),
+        "Radio Mix",
+    )
+    check("mix-vip-bare-paren", parse_mix_version("Wombass (VIP)"), "VIP")
+    check("class-trailing-extended", mix_class("Title - Extended Mix"), "extended")
+    check("class-extended-version", mix_class("Title (Extended Version)"), "extended")
+    check("class-raw-mix-other", mix_class("Title (Raw Mix)"), "other")
+    check("class-junk-chunk-other", mix_class("Title (ClapCrate.net)"), "other")
+    check("class-empty", mix_class("", None), "unspecified")
+
+    # Normalization helpers.
+    check("isrc-junk-dropped", normalize_isrc("PMEDIA"), [])
+    check("isrc-split-keep", normalize_isrc("us abc12 00012;junk,GB-AAA06-00012"), ["USABC1200012", "GBAAA0600012"])
+    check("path-bytes", decode_path(b"FLAC/Tuneboy/x.flac"), "FLAC/Tuneboy/x.flac")
+    check("path-memoryview", decode_path(memoryview(b"MP3/y.mp3")), "MP3/y.mp3")
+    check("path-text", decode_path("FLAC/plain.flac"), "FLAC/plain.flac")
+    check(
+        "artist-set-direction-agnostic",
+        bool(artist_set("Tiësto & Oliver Heldens") & artist_set("Oliver Heldens, Tiësto")),
+        True,
+    )
+    check("artist-set-feat", bool(artist_set("A feat. B") & {"a"}), True)
+    check("title-core-strips-mix", title_core("Spaceship (Original Mix)"), "spaceship")
+    check("title-core-punct", title_core("Hear-This!"), "hear this")
+
+    # Identity/format regressions found during the merge audit.
+    liked_track = LikedTrack(
+        uri="spotify:track:test",
+        track_id="test",
+        title="Test Song",
+        artists="Test Artist",
+        album="Test Album",
+        album_artists="Test Artist",
+        isrc_raw="USABC0012345",
+        duration_ms=180000,
+    )
+    mp3_with_isrc = test_item(
+        path="MP3/Test Artist/Test Album/Test Song.mp3",
+        fmt="MP3",
+        isrc=["USABC0012345"],
+    )
+    flac_without_isrc = test_item(
+        path="FLAC/Test Artist/Test Album/Test Song.flac",
+        fmt="FLAC",
+    )
+    identity_items, identity_reason = match_result(
+        liked_track, [mp3_with_isrc, flac_without_isrc]
+    )
+    check("isrc-expands-format-rows-reason", identity_reason, "")
+    check(
+        "isrc-expands-format-rows",
+        sorted(item.format for item in identity_items),
+        ["FLAC", "MP3"],
+    )
+    check(
+        "aac-does-not-own-mp3-slot",
+        wanted_formats(
+            [test_item(path="AAC/Test Artist/Test Album/Test Song.m4a", fmt="AAC")]
+        ),
+        ["flac", "mp3-320"],
+    )
+    ambiguous = [
+        test_item(
+            path="MP3/Test Artist/Test Album/Test Song One.mp3",
+            fmt="MP3",
+            title="Test Song One",
+            spotify_album_id="album-hint",
+        ),
+        test_item(
+            path="FLAC/Test Artist/Test Album/Test Song Two.flac",
+            fmt="FLAC",
+            title="Test Song Two",
+        ),
+    ]
+    check("album-metadata-does-not-break-ambiguity", resolve_candidates(liked_track, ambiguous), [])
+
+    # Fixture contract: match + playlist outputs byte-for-byte vs expected.
+    fixture = os.environ.get(FIXTURE_ENV)
+    if fixture:
+        fixture_dir = Path(fixture).expanduser()
+        old_home, old_state = os.environ.get("HOME"), os.environ.get(STATE_ENV)
+        try:
+            with tempfile.TemporaryDirectory(prefix="music-likes-selftest-") as tmp:
+                sandbox = Path(tmp)
+                os.environ["HOME"] = str(sandbox)
+                os.environ[STATE_ENV] = str(sandbox)
+                shutil.copyfile(fixture_dir / LIKED_NAME, sandbox / LIKED_NAME)
+                # Synthetic codec headers exercise presence without real audio.
+                for item in load_library(beets_db_path()):
+                    audio = library_root_path() / item.path
+                    audio.parent.mkdir(parents=True, exist_ok=True)
+                    frame = b"\xff\xfb\xe0\x00" + bytes(1040)
+                    audio.write_bytes(b"fLaC" + bytes(38) if item.format == "FLAC" else frame * 2)
+                check("fixture-match-rc", cmd_match(apply=True, force=False), 0)
+                got_missing = (sandbox / MISSING_NAME).read_text(encoding="utf-8")
+                want_missing = (fixture_dir / "expected-missing.csv").read_text(encoding="utf-8")
+                if _strip_trailing_newline(got_missing) != _strip_trailing_newline(want_missing):
+                    failures.append(f"fixture missing.csv mismatch:\n--- got ---\n{got_missing}--- want ---\n{want_missing}")
+                first_retry = read_json(sandbox / STATE_NAME)["gone"]
+                check("fixture-backoff-second-match-rc", cmd_match(apply=True, force=False), 0)
+                second_retry = read_json(sandbox / STATE_NAME)["gone"]
+                check("backoff-attempt-stable-before-deadline", second_retry["attempts"], first_retry["attempts"])
+                check(
+                    "backoff-deadline-stable-before-deadline",
+                    second_retry["retry_after"],
+                    first_retry["retry_after"],
+                )
+                check("fixture-playlist-rc", cmd_playlist(apply=True), 0)
+                got_m3u = (sandbox / PLAYLIST_NAME).read_text(encoding="utf-8")
+                want_m3u = (fixture_dir / "expected-liked-songs.m3u").read_text(encoding="utf-8")
+                if _strip_trailing_newline(got_m3u) != _strip_trailing_newline(want_m3u):
+                    failures.append(f"fixture m3u mismatch:\n--- got ---\n{got_m3u}--- want ---\n{want_m3u}")
+        finally:
+            for name, value in (("HOME", old_home), (STATE_ENV, old_state)):
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+
+    if failures:
+        for item in failures:
+            log(f"self-test FAIL {item}")
+        return 1
+    log("self-test ok")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if not argv:
+        print(
+            "usage: music-likes-match {export [--apply] [--login] | match [--apply] [--force] "
+            "| playlist [--apply] | --self-test}",
+            file=sys.stderr,
+        )
+        return 2
+    parser = argparse.ArgumentParser(
+        prog="music-likes-match",
+        description="Spotify Liked Songs export, beets matcher, missing queue, and m3u writer.",
+    )
+    parser.add_argument("--self-test", action="store_true", help="Run contract tests and exit.")
+    sub = parser.add_subparsers(dest="command")
+    p_export = sub.add_parser("export", help="Refresh liked.csv from the Spotify Web API.")
+    p_export.add_argument("--apply", action="store_true", help="Write liked.csv (default: dry-run).")
+    p_export.add_argument("--login", action="store_true", help="Loopback OAuth; store the refresh token.")
+    p_match = sub.add_parser("match", help="Match beets; write missing.csv + state.json.")
+    p_match.add_argument("--apply", action="store_true", help="Write outputs (default: dry-run).")
+    p_match.add_argument("--force", action="store_true", help="Include rows held in retry backoff.")
+    p_match.add_argument("--include-library", action="store_true", help="Include configured Library editions without requiring Spotify.")
+    p_playlist = sub.add_parser("playlist", help="Rewrite Liked Songs.m3u from beets matches.")
+    p_playlist.add_argument("--apply", action="store_true", help="Write the m3u (default: dry-run).")
+    args = parser.parse_args(argv)
+    if args.self_test:
+        return self_test()
+    if not args.command:
+        parser.print_usage(sys.stderr)
+        return 2
+    if args.command == "export":
+        if args.login:
+            return cmd_login()
+        return cmd_export(apply=args.apply)
+    if args.command == "match":
+        return cmd_match(apply=args.apply, force=args.force, include_library=args.include_library)
+    return cmd_playlist(apply=args.apply)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

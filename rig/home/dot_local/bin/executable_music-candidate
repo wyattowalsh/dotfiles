@@ -1,0 +1,350 @@
+#!/usr/bin/env python3
+"""Verify one edition-bound audio candidate and stage a private writer handoff.
+
+This helper never downloads, retags, imports into Beets, publishes an epoch or
+writes the canonical library. The existing guarded writer consumes the result.
+Use the prepared Python/FFmpeg runtimes; no dependency resolution occurs here.
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+from contextlib import closing
+import fcntl
+import hashlib
+import io
+import json
+import math
+import os
+from pathlib import Path
+import re
+import shutil
+import sqlite3
+import stat
+import subprocess
+import tempfile
+
+MAX_CONTROL = 16 * 1024**2
+GIB = 1024**3
+SHA = re.compile(r"[0-9a-f]{64}")
+REQUIRED_ROW = {"Artist", "Title", "Album", "Length", "Format", "EditionId", "Version", "Evidence", "SourceEvidence"}
+
+
+def need(ok: bool, reason: str) -> None:
+    if not ok:
+        raise ValueError(reason)
+
+
+def encoded(value: object) -> bytes:
+    return (json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+                       allow_nan=False) + "\n").encode()
+
+
+def sha(raw: bytes) -> str:
+    return hashlib.sha256(raw).hexdigest()
+
+
+def stamp(info: os.stat_result) -> dict:
+    return dict(zip(("dev", "ino", "size", "mtime_ns", "ctime_ns"),
+                    (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)))
+
+
+def checked_file(path: Path, private: bool = False) -> os.stat_result:
+    info = path.lstat()
+    need(path.is_absolute() and path.resolve(strict=True) == path
+         and stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid()
+         and info.st_nlink == 1 and not info.st_mode & 0o022, "owned_regular_file_required")
+    need(not private or stat.S_IMODE(info.st_mode) == 0o600, "private_control_required")
+    return info
+
+
+def file_hash(path: Path, expected: str | None = None) -> tuple[str, dict]:
+    before = checked_file(path)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    digest = hashlib.sha256()
+    with os.fdopen(fd, "rb") as stream:
+        need(stamp(os.fstat(stream.fileno())) == stamp(before), "opened_file_changed")
+        for block in iter(lambda: stream.read(1024**2), b""):
+            digest.update(block)
+        need(stamp(os.fstat(stream.fileno())) == stamp(path.lstat()) == stamp(before), "file_changed")
+    actual = digest.hexdigest()
+    need(expected is None or actual == expected, "file_hash_changed")
+    return actual, stamp(before)
+
+
+def raw_ref(ref: dict) -> bytes:
+    need(isinstance(ref, dict) and set(ref) == {"path", "sha256"}
+         and isinstance(ref["sha256"], str) and SHA.fullmatch(ref["sha256"]), "bound_reference_required")
+    path = Path(ref["path"])
+    before = checked_file(path, True)
+    need(0 < before.st_size <= MAX_CONTROL, "control_size_limit")
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(fd, "rb") as stream:
+        need(stamp(os.fstat(stream.fileno())) == stamp(before), "opened_control_changed")
+        raw = stream.read(MAX_CONTROL + 1)
+        need(stamp(os.fstat(stream.fileno())) == stamp(path.lstat()) == stamp(before), "control_changed")
+    need(len(raw) == before.st_size and sha(raw) == ref["sha256"], "control_pin")
+    return raw
+
+
+def bound(ref: dict) -> dict:
+    value = json.loads(raw_ref(ref))
+    need(isinstance(value, dict), "object_control_required")
+    return value
+
+
+def owned_dir(path: Path) -> None:
+    info = path.lstat()
+    need(path.is_absolute() and path.resolve(strict=True) == path
+         and stat.S_ISDIR(info.st_mode) and info.st_uid == os.getuid()
+         and not info.st_mode & 0o077, "private_real_directory_required")
+
+
+def save(path: Path, value: dict) -> dict:
+    payload = encoded(value)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "wb") as stream:
+        stream.write(payload)
+        stream.flush()
+        os.fsync(stream.fileno())
+    parent_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(parent_fd)
+    finally:
+        os.close(parent_fd)
+    return {"path": str(path), "sha256": sha(payload)}
+
+
+def executable(ref: dict) -> str:
+    need(isinstance(ref, dict) and set(ref) == {"path", "sha256"}, "tool_reference_required")
+    path = Path(ref["path"])
+    # Homebrew's bin symlink is resolved and pinned during preparation.
+    need(path.is_absolute() and path.resolve(strict=True) == path
+         and path.is_file() and os.access(path, os.X_OK)
+         and not path.stat().st_mode & 0o022, "prepared_tool_required")
+    with path.open("rb") as stream:
+        actual = hashlib.file_digest(stream, "sha256").hexdigest()
+    need(actual == ref["sha256"], "tool_pin")
+    return str(path)
+
+
+def run_checked(argv: list[str], *, json_output: bool = False) -> dict:
+    # Temp files bound memory even if an untrusted media tag is unusually large.
+    with tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as errors:
+        completed = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=output,
+                                   stderr=errors, check=False)
+        need(completed.returncode == 0, "media_probe_or_decode_failed")
+        need(output.tell() <= MAX_CONTROL and errors.tell() == 0, "media_output_or_error_limit")
+        if not json_output:
+            return {}
+        output.seek(0)
+        result = json.load(output)
+        need(isinstance(result, dict), "probe_object_required")
+        return result
+
+
+def bindings(contract_ref: dict) -> tuple[dict, dict, dict, dict, Path]:
+    contract = bound(contract_ref)
+    need(set(contract) == {"schema", "candidate", "queue", "row_sha256", "identity_review",
+                          "current_descriptor", "beets_database", "ffprobe", "ffmpeg",
+                          "source_root", "ready_root", "writer_lock", "canonical_root"}
+         and contract["schema"] == "music-candidate-verification-v1", "closed_candidate_contract")
+    candidate = bound(contract["candidate"])
+    need(candidate.get("schema") == 1 and candidate.get("source_kind") in {"slskd", "sockseek"}
+         and candidate.get("identity_status") == "review_required"
+         and candidate.get("canonical_effects") is False, "private_source_candidate_required")
+    need(isinstance(candidate.get("candidate_id"), str)
+         and re.fullmatch(r"[a-z0-9][a-zA-Z0-9._-]{1,127}", candidate["candidate_id"]), "candidate_id")
+    queue_raw = raw_ref(contract["queue"])
+    reader = csv.DictReader(io.StringIO(queue_raw.decode()))
+    need(reader.fieldnames is not None and REQUIRED_ROW <= set(reader.fieldnames), "full_queue_fields_required")
+    rows = [dict(row) for row in reader]
+    selected = [row for row in rows if sha(encoded(row)) == contract["row_sha256"]]
+    need(len(selected) == 1, "unique_current_requirement_required")
+    row = selected[0]
+    need(all(row.get(k) for k in REQUIRED_ROW) and row["Format"] in {"flac", "mp3-320"}
+         and row.get("IdentityStatus") == "source-anchored", "resolved_edition_requirement_required")
+    source = json.loads(row["SourceEvidence"])
+    need(isinstance(source, dict) and source.get("members") and source.get("metadata"), "source_provenance_required")
+    review = bound(contract["identity_review"])
+    need(review.get("schema") == "music-candidate-identity-review-v1"
+         and review.get("requirement_row_sha256") == contract["row_sha256"]
+         and review.get("candidate_sha256") == candidate.get("file_sha256")
+         and review.get("edition_id") == row["EditionId"] and review.get("version") == row["Version"]
+         and review.get("identity_verified") is True and isinstance(review.get("evidence"), list)
+         and review["evidence"], "reviewed_exact_identity_required")
+    expected = review.get("expected_tags")
+    need(isinstance(expected, dict) and {"artist", "title", "album"} <= set(expected)
+         and all(isinstance(v, str) and v for v in expected.values()), "reviewed_tags_required")
+    raw_ref(contract["current_descriptor"])
+    database = Path(contract["beets_database"]["path"])
+    file_hash(database, contract["beets_database"]["sha256"])
+    need(not any(Path(str(database) + suffix).exists() for suffix in ("-wal", "-journal")),
+         "closed_current_database_required")
+    canonical = Path(contract["canonical_root"])
+    need(canonical.is_absolute() and canonical.resolve(strict=True) == canonical
+         and canonical.is_dir() and canonical.stat().st_uid == os.getuid(), "canonical_root_binding")
+    need(source.get("library_root") == str(canonical) and source.get("beets_db") == str(database),
+         "requirement_source_binding_mismatch")
+    metadata = source["metadata"]
+    need(isinstance(metadata, dict)
+         and all(metadata.get(key) for key in ("release_id", "release_track_id", "title", "artist", "album")),
+         "release_track_identity_required")
+    # Exact release-track/full-label identity, never recording ID or title core.
+    with closing(sqlite3.connect(database.as_uri() + "?mode=ro&immutable=1", uri=True)) as connection:
+        existing = connection.execute(
+            "SELECT format, bitrate FROM items WHERE mb_albumid=? AND mb_releasetrackid=? AND title=? AND artist=? AND album=?",
+            tuple(metadata[key] for key in ("release_id", "release_track_id", "title", "artist", "album")),
+        ).fetchall()
+    need(not any((row["Format"] == "flac" and str(fmt).upper() in {"FLAC", "WAVE", "AIFF"})
+                 or (row["Format"] == "mp3-320" and str(fmt).upper() == "MP3" and bitrate == 320000)
+                 for fmt, bitrate in existing), "requested_format_already_present_or_unproved")
+    for member in source["members"]:
+        member_path = Path(member["path"])
+        if not member_path.is_absolute():
+            member_path = canonical / member_path
+        need(member_path.is_relative_to(canonical), "source_member_outside_canonical")
+        file_hash(member_path, member["sha256"])
+    path = Path(candidate["local_path"])
+    root = Path(contract["source_root"])
+    owned_dir(root)
+    ready = Path(contract["ready_root"])
+    owned_dir(ready)
+    need(not root.is_relative_to(canonical) and not ready.is_relative_to(canonical),
+         "sidecar_roots_must_not_be_canonical")
+    need(path.is_relative_to(root) and path != root, "candidate_outside_source_root")
+    actual, current_stamp = file_hash(path, candidate["file_sha256"])
+    need(current_stamp == candidate["file_stamp"] and current_stamp["size"] == candidate["file_size"]
+         and current_stamp["size"] > 0, "candidate_changed")
+    file_hash(database, contract["beets_database"]["sha256"])
+    return contract, candidate, row, review, path
+
+
+def verify(contract_ref: dict) -> dict:
+    contract, candidate, row, review, path = bindings(contract_ref)
+    probe = executable(contract["ffprobe"])
+    decoder = executable(contract["ffmpeg"])
+    result = run_checked([probe, "-v", "error", "-protocol_whitelist", "file,pipe",
+        "-select_streams", "a", "-show_entries",
+        "format=format_name,duration:format_tags=artist,title,album,version,subtitle,musicbrainz_albumid,musicbrainz_releasetrackid,isrc:stream=codec_type,codec_name,bit_rate,duration,sample_rate,channels",
+        "-of", "json", str(path)], json_output=True)
+    streams = result.get("streams", [])
+    need(len(streams) == 1 and streams[0].get("codec_type") == "audio", "one_audio_stream_required")
+    audio = streams[0]
+    codec = audio.get("codec_name")
+    actual_container = result.get("format", {}).get("format_name")
+    expected_container = "flac" if row["Format"] == "flac" else "mp3"
+    need(actual_container == expected_container, "requested_actual_container_mismatch")
+    need((row["Format"] == "flac" and codec == "flac")
+         or (row["Format"] == "mp3-320" and codec == "mp3" and int(audio.get("bit_rate", 0)) == 320000),
+         "requested_actual_codec_or_bitrate_mismatch")
+    duration = float(audio.get("duration") or result.get("format", {}).get("duration", 0))
+    need(math.isfinite(duration) and duration > 0
+         and abs(duration - float(row["Length"])) <= 3, "duration_mismatch")
+    tags = {str(k).lower(): str(v) for k, v in result.get("format", {}).get("tags", {}).items()}
+    need(all(tags.get(key.lower()) == value for key, value in review["expected_tags"].items()),
+         "reviewed_metadata_mismatch")
+    run_checked([decoder, "-nostdin", "-v", "error", "-xerror",
+                 "-protocol_whitelist", "file,pipe", "-i", str(path),
+                 "-map", "0:a:0", "-f", "null", "-"])
+    # Full bytes, all bound metadata and tool pins remain stable across decoding.
+    bindings(contract_ref)
+    executable(contract["ffprobe"])
+    executable(contract["ffmpeg"])
+    return {"schema": "music-candidate-verified-v1", "verified": True,
+            "contract": contract_ref, "candidate_id": candidate["candidate_id"],
+            "candidate_sha256": candidate["file_sha256"], "row_sha256": contract["row_sha256"],
+            "edition_id": row["EditionId"], "version": row["Version"], "format": row["Format"],
+            "actual_codec": codec, "actual_container": actual_container, "duration_seconds": duration,
+            "complete_decode_passed": True, "full_file_hash_verified": True,
+            "mp3_cbr_mode": "UNKNOWN" if codec == "mp3" else None,
+            "lossless_master_provenance": "not established by codec",
+            "canonical_effects": False, "automatic_replay": False}
+
+
+def stage(proof_ref: dict, writer_fd: int) -> dict:
+    proof = bound(proof_ref)
+    need(proof.get("schema") == "music-candidate-verified-v1" and proof.get("verified") is True,
+         "verified_proof_required")
+    contract, candidate, row, _review, source = bindings(proof["contract"])
+    need(proof["candidate_sha256"] == candidate["file_sha256"]
+         and proof["row_sha256"] == contract["row_sha256"], "proof_binding_mismatch")
+    lock = Path(contract["writer_lock"])
+    lock_info = checked_file(lock, True)
+    opened = os.fstat(writer_fd)
+    need((opened.st_dev, opened.st_ino) == (lock_info.st_dev, lock_info.st_ino), "held_native_writer_required")
+    fcntl.flock(writer_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    ready = Path(contract["ready_root"])
+    owned_dir(ready)
+    source_root = Path(contract["source_root"])
+    need(not ready.is_relative_to(source_root) and not source_root.is_relative_to(ready),
+         "separate_ready_root_required")
+    destination = ready / candidate["candidate_id"]
+    receipt_path = destination / "READY.private.json"
+    if destination.exists() or destination.is_symlink():
+        owned_dir(destination)
+        need(receipt_path.is_file(), "partial_handoff_requires_reconciliation_no_replay")
+        existing_ref = {"path": str(receipt_path), "sha256": file_hash(receipt_path)[0]}
+        existing = bound(existing_ref)
+        need(existing.get("proof") == proof_ref and existing.get("ready") is True,
+             "existing_handoff_binding_changed")
+        file_hash(Path(existing["audio"]["path"]), candidate["file_sha256"])
+        return existing | {"reused": True}
+    need(shutil.disk_usage(ready).free >= 32 * GIB + candidate["file_size"], "capacity_floor")
+    # State advances once. Interrupted copies retain the directory/PENDING record.
+    destination.mkdir(mode=0o700)
+    save(destination / "PENDING.private.json", {"schema": 1, "proof": proof_ref, "automatic_replay": False})
+    suffix = ".flac" if row["Format"] == "flac" else ".mp3"
+    audio = destination / ("audio" + suffix)
+    fd = os.open(audio, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "wb") as output, source.open("rb") as input_file:
+        shutil.copyfileobj(input_file, output, 1024**2)
+        output.flush()
+        os.fsync(output.fileno())
+    file_hash(audio, candidate["file_sha256"])
+    bindings(proof["contract"])
+    receipt = {"schema": "music-candidate-ready-v1", "ready": True, "proof": proof_ref,
+               "candidate_id": candidate["candidate_id"], "edition_id": row["EditionId"],
+               "version": row["Version"], "format": row["Format"],
+               "audio": {"path": str(audio), "sha256": candidate["file_sha256"]},
+               "canonical_effects": False, "Beets_imported": False,
+               "requires_existing_guarded_epoch_writer": True, "automatic_replay": False}
+    save(receipt_path, receipt)
+    return receipt
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("action", choices=("verify", "stage"))
+    parser.add_argument("--contract", required=True, type=Path)
+    parser.add_argument("--contract-sha256", required=True)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--writer-fd", type=int, default=7)
+    parser.add_argument("--apply", action="store_true")
+    args = parser.parse_args()
+    os.umask(0o077)
+    reference = {"path": str(args.contract), "sha256": args.contract_sha256}
+    try:
+        if not args.apply:
+            raw_ref(reference)
+            print(json.dumps({"dry_run": True, "action": args.action, "writes_performed": False}))
+        elif args.action == "verify":
+            need(args.output is not None, "new_private_output_required")
+            owned_dir(args.output.parent)
+            proof = verify(reference)
+            receipt = save(args.output, proof)
+            print(json.dumps({"verified": True, "proof": receipt, "canonical_effects": False}))
+        else:
+            receipt = stage(reference, args.writer_fd)
+            print(json.dumps({"ready": True, "candidate_id": receipt["candidate_id"],
+                              "reused": receipt.get("reused", False), "canonical_effects": False}))
+        return 0
+    except (OSError, ValueError, KeyError, TypeError, sqlite3.Error, subprocess.SubprocessError):
+        # Do not print candidate tags, command output, credentials or task data.
+        print(json.dumps({"ok": False, "status": "held_for_reconciliation", "automatic_replay": False}))
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

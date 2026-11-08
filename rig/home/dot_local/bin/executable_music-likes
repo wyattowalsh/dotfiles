@@ -1,0 +1,938 @@
+#!/usr/bin/env bash
+# Spotify Liked Songs → beets match → sockseek sidecar fetch → promote for ingest.
+# StartInterval LaunchAgent runs `sync --apply --scheduled`. Default CLI is doctor.
+set -euo pipefail
+
+export PATH="/opt/homebrew/opt/ffmpeg-full/bin:/opt/homebrew/bin:${HOME}/.local/bin:/usr/bin:/bin${PATH:+:$PATH}"
+
+LABEL="com.wyattowalsh.music-likes"
+PLIST_NAME="com.wyattowalsh.music-likes.plist"
+DEST_RUNNER="${HOME}/.local/bin/music-likes"
+DEST_MATCH="${HOME}/.local/bin/music-likes-match"
+LOG_DIR="${HOME}/Library/Logs/music-likes"
+STATE_DIR="${MUSIC_LIKES_STATE_DIR:-${HOME}/.local/share/music-likes}"
+LOCK_FILE="${LOG_DIR}/sync.lock"
+WRITER_LOCK="${HOME}/.local/share/music-ingest/music-writer.lock"
+
+lock_music_writer() {
+  mkdir -p "$(dirname "$WRITER_LOCK")"
+  exec 7>"$WRITER_LOCK"
+  if ! flock -n 7; then
+    return 1
+  fi
+  local pending="${HOME}/.local/share/music-ingest/pending-imports" marker
+  for marker in "$pending"/*; do
+    [[ ! -f "$marker" ]] || die "unresolved import marker: ${marker}; reconcile before writing"
+  done
+  pending="${STATE_DIR}/pending-fetch"
+  for marker in "$pending"/*; do
+    [[ ! -f "$marker" ]] || die "unresolved fetch marker: ${marker}; reconcile before promoting"
+  done
+}
+REPO_RUNNER_REL="rig/home/dot_local/bin/executable_music-likes"
+REPO_MATCH_REL="rig/home/dot_local/bin/executable_music-likes-match"
+PLIST_REL="rig/home/Library/LaunchAgents/com.wyattowalsh.music-likes.plist.tmpl"
+PIN_REL="rig/brew/sockseek-pin.json"
+SOCKSEEK_BIN="${HOME}/.local/bin/sockseek"
+SOCKSEEK_CONF="${HOME}/.config/sockseek/sockseek.conf"
+SECRETS_STUB="${HOME}/.config/music-likes/secrets.env"
+
+AUDIO_FIND=(-iname '*.mp3' -o -iname '*.flac' -o -iname '*.m4a' -o -iname '*.aac'
+  -o -iname '*.wav' -o -iname '*.aiff' -o -iname '*.aif')
+
+log() {
+  printf '[music-likes] %s\n' "$*" >&2
+}
+
+die() {
+  log "error: $*" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'USAGE'
+Usage: music-likes [doctor]
+       music-likes export  [--dry-run|--apply] [--login]
+       music-likes match   [--dry-run|--apply] [--force] [--include-library]
+       music-likes playlist [--dry-run|--apply]
+       music-likes fetch   [--dry-run|--apply]
+       music-likes promote [--dry-run|--apply]
+       music-likes sync    [--dry-run|--apply] [--scheduled] [--force] [--include-library]
+       music-likes sockseek <args...>
+       music-likes install [--dry-run]
+
+  doctor    Presence checks only (default): dest runners, sockseek, uv, beet,
+            beets db, complete/library/state dirs, secrets files, pin JSON,
+            dest plist, agent state. Booleans only; never prints values.
+  export    Export Spotify Liked Songs to liked.csv via the match helper.
+            Default --dry-run; --apply writes. --login runs the loopback
+            OAuth flow and always executes (stores the refresh token in the
+            secrets overlay; never logs values).
+  match     Match liked.csv against beets and write missing.csv
+            (default --dry-run). --force bypasses the unmatched backoff.
+            --include-library includes configured existing editions; unresolved
+            source/version identities are retained for review, never fetched.
+  playlist  Rewrite Liked Songs.m3u from beets (default --dry-run).
+  fetch     Run sockseek passes into the sidecar inbox (never complete/).
+            rc=0 still leaves a review marker; no automatic promotion.
+  promote   Preview unverified sidecar candidates. --apply is disabled until
+            per-row identity, hash, and decoder proof can be reviewed.
+  sync      export → match → playlist → fetch under one writer lock
+            (default --dry-run; the LaunchAgent passes --apply --scheduled,
+            which skips with exit 0 while secrets are missing).
+  sockseek   Manual passthrough to the pinned sockseek binary after sourcing
+            secrets. sync/fetch never route here.
+  install   Sync dest runners, render plist, ensure dirs, install the pinned
+            sockseek binary, write sockseek.conf (only when Soulseek secrets
+            exist) plus a comment-only secrets stub, bootstrap the agent.
+
+  MUSIC_LIKES_REPO        repo root for runner/helper/plist/pin sources
+                           (just music-likes and music-likes-install set this)
+  MUSIC_LIKES_STATE_DIR   override the state dir (liked.csv, missing.csv,
+                           inbox, per-format indexes); default
+                           ~/.local/share/music-likes
+  MUSIC_LIKES_LIBRARY_ROOT and MUSIC_LIKES_BEETS_DB
+                           explicit canonical paths required by --include-library;
+                           no Spotify credentials needed for local matching
+USAGE
+}
+
+usage_error() {
+  usage >&2
+  log "error: $*" >&2
+  exit 2
+}
+
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || die "missing command: $1"
+}
+
+gui_domain() {
+  printf 'gui/%s' "$(id -u)"
+}
+
+label_path() {
+  printf '%s/%s' "$(gui_domain)" "$1"
+}
+
+agent_loaded() {
+  launchctl print "$(label_path "$1")" >/dev/null 2>&1
+}
+
+print_login_item_hint() {
+  cat <<'HINT'
+If a LaunchAgent is not loaded, allow it under:
+  System Settings → General → Login Items & Extensions → Allow in the Background
+Then re-run: just music-likes-install
+HINT
+}
+
+repo_root() {
+  if [[ -n "${MUSIC_LIKES_REPO:-}" && -f "${MUSIC_LIKES_REPO}/${REPO_RUNNER_REL}" ]]; then
+    printf '%s\n' "${MUSIC_LIKES_REPO}"
+    return 0
+  fi
+  return 1
+}
+
+library_dir() {
+  printf '%s\n' "${HOME}/Music/Library"
+}
+
+complete_dir() {
+  printf '%s\n' "${HOME}/Soulseek Downloads/complete"
+}
+
+render_plist() {
+  local src="$1"
+  local dest="$2"
+  mkdir -p "$(dirname "$dest")"
+  sed "s#{{ \.chezmoi\.homeDir }}#${HOME}#g" "$src" >"$dest"
+}
+
+ensure_dirs() {
+  mkdir -p "${STATE_DIR}" "${STATE_DIR}/inbox" "${STATE_DIR}/failed" \
+    "${LOG_DIR}" "$(library_dir)/Playlists" "$(complete_dir)" \
+    "$(dirname "${SOCKSEEK_BIN}")"
+}
+
+source_secrets() {
+  set -a
+  # shellcheck disable=SC1090,SC1091
+  [ -f "${HOME}/.zsh/secrets.env" ] && . "${HOME}/.zsh/secrets.env"
+  # shellcheck disable=SC1090,SC1091
+  [ -f "${HOME}/.config/music-likes/secrets.env" ] && . "${HOME}/.config/music-likes/secrets.env"
+  set +a
+}
+
+sync_secrets_ready() {
+  [[ -n "${MUSIC_LIKES_SPOTIFY_CLIENT_ID:-}" &&
+    -n "${MUSIC_LIKES_SPOTIFY_CLIENT_SECRET:-}" &&
+    -n "${MUSIC_LIKES_SPOTIFY_REFRESH_TOKEN:-}" &&
+    -n "${MUSIC_LIKES_SOULSEEK_USER:-}" &&
+    -n "${MUSIC_LIKES_SOULSEEK_PASS:-}" ]]
+}
+
+file_sha256() {
+  /usr/bin/shasum -a 256 "$1" | awk '{print $1}'
+}
+
+read_pin() {
+  local json="$1"
+  if command -v jq >/dev/null 2>&1; then
+    PIN_URL="$(jq -r '.darwin_arm64.url // empty' "$json")"
+    PIN_SHA256="$(jq -r '.darwin_arm64.sha256 // empty' "$json")"
+  else
+    PIN_URL="$(sed -n 's/.*"url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$json" | sed -n '1p')"
+    PIN_SHA256="$(sed -n 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$json" | sed -n '1p')"
+  fi
+  [[ -n "${PIN_URL}" && -n "${PIN_SHA256}" ]] || die "invalid pin JSON: ${json}"
+}
+
+# Validate the entire pinned archive before writing anything. Never unpack archive paths:
+# only stream the one regular sockseek member to a fresh, empty temp directory.
+extract_sockseek_pin() { # $1=verified archive, $2=empty temp directory
+  require_cmd uv
+  UV_NO_PROJECT=1 uv run --offline --no-project python -I - "$1" "$2" <<'PY'
+import os
+import sys
+import tarfile
+from pathlib import PurePosixPath
+
+archive, dest_dir = sys.argv[1:]
+max_members = 1024
+max_member_size = 128 * 1024 * 1024
+max_total_size = 256 * 1024 * 1024
+chunk_size = 1024 * 1024
+
+if not os.path.isdir(dest_dir) or os.listdir(dest_dir):
+    raise SystemExit("sockseek extraction directory must be empty")
+
+try:
+    with tarfile.open(archive, "r:gz") as tar:
+        seen = set()
+        candidate = None
+        total_size = 0
+        for count, member in enumerate(tar, 1):
+            if count > max_members:
+                raise ValueError("too many archive members")
+            name = member.name
+            parts = name.split("/")
+            path = PurePosixPath(name)
+            if (not name or name.startswith("/") or "\\" in name
+                    or ".." in parts or str(path) == "."):
+                raise ValueError("unsafe archive member path")
+            normalized = str(path)
+            if normalized in seen:
+                raise ValueError("duplicate archive member")
+            seen.add(normalized)
+            if not (member.isfile() or member.isdir()) or member.issparse():
+                raise ValueError("non-regular archive member")
+            if member.isfile():
+                if member.size < 0 or member.size > max_member_size:
+                    raise ValueError("archive member exceeds size limit")
+                total_size += member.size
+                if total_size > max_total_size:
+                    raise ValueError("archive exceeds total size limit")
+                if path.name == "sockseek":
+                    if candidate is not None:
+                        raise ValueError("multiple sockseek members")
+                    candidate = member
+        if candidate is None:
+            raise ValueError("regular sockseek member not found")
+        source = tar.extractfile(candidate)
+        if source is None:
+            raise ValueError("sockseek member cannot be read")
+        target = os.path.join(dest_dir, "sockseek")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+        with source, os.fdopen(os.open(target, flags, 0o600), "wb") as out:
+            remaining = candidate.size
+            while remaining:
+                data = source.read(min(chunk_size, remaining))
+                if not data:
+                    raise ValueError("truncated sockseek member")
+                out.write(data)
+                remaining -= len(data)
+except (OSError, tarfile.TarError, ValueError) as exc:
+    raise SystemExit(f"unsafe sockseek archive: {exc}") from exc
+PY
+}
+
+install_sockseek_pin() {
+  local root="" json="" archive="" dl_dir="" download="" extract=""
+  if ! root="$(repo_root)"; then
+    log "repo root missing; skip sockseek pin download"
+    return 0
+  fi
+  json="${root}/${PIN_REL}"
+  if [[ ! -f "$json" ]]; then
+    log "pin JSON missing (${json}); skip sockseek install"
+    return 0
+  fi
+  read_pin "$json"
+  dl_dir="${STATE_DIR}/downloads"
+  archive="${dl_dir}/$(basename "${PIN_URL%%\?*}")"
+  local need_extract=0
+  if [[ ! -f "$archive" || "$(file_sha256 "$archive")" != "${PIN_SHA256}" ]]; then
+    command -v curl >/dev/null 2>&1 || die "missing command: curl"
+    mkdir -p "$dl_dir"
+    download="$(mktemp -d "${TMPDIR:-/tmp}/sockseek-download.XXXXXX")"
+    log "fetching sockseek archive from pin (${PIN_URL})"
+    if ! curl --fail --location --retry 3 --retry-delay 2 --connect-timeout 20 \
+      -o "${download}/archive.tar.gz" "${PIN_URL}"; then
+      rm -rf "$download"
+      die "sockseek download failed"
+    fi
+    if [[ "$(file_sha256 "${download}/archive.tar.gz")" != "${PIN_SHA256}" ]]; then
+      rm -rf "$download"
+      die "sockseek sha256 mismatch for downloaded archive"
+    fi
+    if ! mv "${download}/archive.tar.gz" "$archive"; then
+      rm -rf "$download"
+      die "failed to cache sockseek archive"
+    fi
+    rmdir "$download"
+    need_extract=1
+  fi
+  if [[ "$need_extract" -eq 0 && -x "${SOCKSEEK_BIN}" ]]; then
+    log "sockseek pin already satisfied (${SOCKSEEK_BIN})"
+    return 0
+  fi
+  extract="$(mktemp -d "${TMPDIR:-/tmp}/sockseek.XXXXXX")"
+  if ! extract_sockseek_pin "$archive" "$extract"; then
+    rm -rf "$extract"
+    die "sockseek archive validation failed: ${archive}"
+  fi
+  mkdir -p "$(dirname "${SOCKSEEK_BIN}")"
+  if ! /bin/chmod +x "${extract}/sockseek" || ! mv "${extract}/sockseek" "${SOCKSEEK_BIN}"; then
+    rm -rf "$extract"
+    die "failed to install validated sockseek binary"
+  fi
+  xattr -d com.apple.quarantine "${SOCKSEEK_BIN}" >/dev/null 2>&1 || true
+  rm -rf "$extract"
+  log "installed sockseek → ${SOCKSEEK_BIN}"
+}
+
+write_sockseek_conf() {
+  if [[ -z "${MUSIC_LIKES_SOULSEEK_USER:-}" || -z "${MUSIC_LIKES_SOULSEEK_PASS:-}" ]]; then
+    log "Soulseek secrets absent; skip ${SOCKSEEK_CONF} (add MUSIC_LIKES_SOULSEEK_USER/MUSIC_LIKES_SOULSEEK_PASS, then re-run just music-likes-install)"
+    return 0
+  fi
+  mkdir -p "$(dirname "${SOCKSEEK_CONF}")"
+  (
+    umask 177
+    printf '%s\n' \
+      "username = ${MUSIC_LIKES_SOULSEEK_USER}" \
+      "password = ${MUSIC_LIKES_SOULSEEK_PASS}" \
+      "listen-port = 49998" >"${SOCKSEEK_CONF}"
+  )
+  chmod 600 "${SOCKSEEK_CONF}"
+  log "wrote ${SOCKSEEK_CONF} (0600)"
+}
+
+write_secrets_stub() {
+  if [[ -f "${SECRETS_STUB}" ]]; then
+    return 0
+  fi
+  mkdir -p "$(dirname "${SECRETS_STUB}")"
+  (
+    umask 177
+    cat >"${SECRETS_STUB}" <<'STUB'
+# music-likes secrets overlay (wins over ~/.zsh/secrets.env when values are
+# uncommented). Fill only the names you want to override; keep mode 0600.
+# Generated by music-likes install.
+# MUSIC_LIKES_SPOTIFY_CLIENT_ID=
+# MUSIC_LIKES_SPOTIFY_CLIENT_SECRET=
+# MUSIC_LIKES_SPOTIFY_REFRESH_TOKEN=
+# MUSIC_LIKES_SOULSEEK_USER=
+# MUSIC_LIKES_SOULSEEK_PASS=
+STUB
+  )
+  chmod 600 "${SECRETS_STUB}"
+  log "wrote secrets stub ${SECRETS_STUB} (fill the MUSIC_LIKES_* values)"
+}
+
+bootstrap_agent() {
+  local label="$1"
+  local dest="$2"
+  if [[ ! -f "$dest" ]]; then
+    die "dest plist missing (${dest}); apply Chezmoi from rig/home or set MUSIC_LIKES_REPO"
+  fi
+  if agent_loaded "$label"; then
+    launchctl bootout "$(label_path "$label")" >/dev/null 2>&1 || true
+  fi
+  if ! launchctl bootstrap "$(gui_domain)" "$dest"; then
+    log "bootstrap failed for ${label}"
+    print_login_item_hint
+    return 1
+  fi
+  launchctl enable "$(label_path "$label")" >/dev/null 2>&1 || true
+  if agent_loaded "$label"; then
+    log "loaded ${label}"
+  else
+    log "${label} not visible to launchctl after bootstrap"
+    print_login_item_hint
+    return 1
+  fi
+}
+
+# Invoke the match helper. $1 = apply|dry; rest = helper argv. Dry-run only
+# prints the command (uv may be missing); apply dies when uv/source missing.
+run_helper() {
+  local mode="$1"
+  shift
+  local root="" script=""
+  if root="$(repo_root)"; then
+    script="${root}/${REPO_MATCH_REL}"
+  elif [[ -f "${DEST_MATCH}" ]]; then
+    script="${DEST_MATCH}"
+  else
+    if [[ "$mode" == apply ]]; then
+      die "match helper missing (set MUSIC_LIKES_REPO or run: just music-likes-install)"
+    fi
+    log "dry-run: helper skipped (repo source and ${DEST_MATCH} missing)"
+    return 0
+  fi
+  if [[ ! -f "$script" ]]; then
+    if [[ "$mode" == apply ]]; then
+      die "match helper source missing: ${script}"
+    fi
+    log "dry-run: helper skipped (missing ${script})"
+    return 0
+  fi
+  if ! command -v uv >/dev/null 2>&1; then
+    if [[ "$mode" == apply ]]; then
+      die "missing command: uv"
+    fi
+    log "dry-run: uv missing; would run: uv run --script ${script} $*"
+    return 0
+  fi
+  if [[ "$mode" == apply ]]; then
+    uv run --script "$script" "$@"
+    return 0
+  fi
+  log "dry-run: would run: uv run --script ${script} $*"
+}
+
+# Filenames, suffixes and sockseek rc=0 cannot prove a match to missing.csv.
+# A future reviewed per-row manifest/decoder gate is needed before any promotion.
+promote_finished_audio() { # $1 = 1 for dry-run
+  local dry_run="${1:-1}" inbox="${STATE_DIR}/inbox" f
+  if [[ "$dry_run" -eq 0 ]]; then
+    die "promote --apply disabled: sidecar audio lacks reviewed per-row identity, hash and decoder proof"
+  fi
+  [ -d "$inbox" ] || return 0
+  while IFS= read -r f; do
+    [[ -n "$f" ]] && log "dry-run: unverified sidecar candidate (not promotable): ${f}"
+  done < <(find "$inbox" -maxdepth 1 -type f \( "${AUDIO_FIND[@]}" \) \
+    ! -iname '*.incomplete')
+}
+
+# Split missing.csv by Format into two temp CSVs keeping only the sockseek
+# headers Artist,Title,Album,Length (drops ISRC/SpotifyId/Format).
+split_missing_csv() {
+  require_cmd uv
+  UV_NO_PROJECT=1 uv run --offline --no-project python -I - "$1" "$2" "$3" <<'PY'
+import csv
+import json
+import re
+import sys
+
+src, flac_out, mp3_out = sys.argv[1], sys.argv[2], sys.argv[3]
+keep = ["Artist", "Title", "Album", "Length"]
+with open(src, newline="", encoding="utf-8") as f:
+    reader = csv.DictReader(f)
+    required = set(keep + ["Format"])
+    if not reader.fieldnames or not required.issubset(reader.fieldnames):
+        raise SystemExit("missing.csv lacks required headers")
+    rows = list(reader)
+
+def fmt(r):
+    return (r.get("Format") or "").strip().lower()
+
+# Keep complete provenance in missing.csv/state.json; only queryable, source-
+# anchored library editions may reach the existing acquisition subprocess.
+held = [r for r in rows if r.get("Origin") == "library" and r.get("IdentityStatus") != "source-anchored"]
+rows = [r for r in rows if r.get("Origin") != "library" or r.get("IdentityStatus") == "source-anchored"]
+for row in rows:
+    if fmt(row) not in ("flac", "mp3-320", "mp3") or any(not row.get(k) for k in keep):
+        raise SystemExit("missing.csv has invalid or incomplete rows")
+    if row.get("Origin") == "library":
+        try:
+            evidence = json.loads(row.get("SourceEvidence") or "")
+            members = evidence["members"]
+            if not members or any(not re.fullmatch(r"[0-9a-f]{64}", member.get("sha256", ""))
+                                  or not member.get("path") for member in members):
+                raise ValueError
+        except (KeyError, TypeError, ValueError):
+            raise SystemExit("library queue lacks source evidence; no fetch")
+if held:
+    print(f"library editions held for identity/source review: {len(held)} format rows", file=sys.stderr)
+
+flac = [r for r in rows if fmt(r) == "flac"]
+mp3 = [r for r in rows if fmt(r) in ("mp3-320", "mp3")]
+for path, subset in ((flac_out, flac), (mp3_out, mp3)):
+    with open(path, "w", newline="", encoding="utf-8") as out:
+        writer = csv.DictWriter(out, fieldnames=keep, extrasaction="ignore")
+        writer.writeheader()
+        for r in subset:
+            writer.writerow({k: r.get(k) or "" for k in keep})
+print(f"missing rows: {len(flac)} flac, {len(mp3)} mp3")
+PY
+}
+
+run_sockseek_pass() { # $1=csv  $2=flac|mp3; reads the caller's dry_run local
+  local -a args=("$1" --input-type csv
+    --title-col Title --artist-col Artist --album-col Album --length-col Length
+    --time-format s --length-tol 3 --strict-title --strict-artist
+    --output-dir "${STATE_DIR}/inbox"
+    --no-listen --fast-search --skip-not-found --no-progress)
+  if [[ "$2" == flac ]]; then
+    args+=(--format flac --index-path "${STATE_DIR}/index-flac.csv")
+  else
+    args+=(--format mp3 --min-bitrate 320 --skip-check-cond
+      --index-path "${STATE_DIR}/index-mp3.csv")
+  fi
+  if [[ "$dry_run" -eq 1 ]]; then
+    log "dry-run: sockseek ${args[*]}"
+    return 0
+  fi
+  if command -v caffeinate >/dev/null 2>&1; then
+    caffeinate -i -- "$SOCKSEEK_BIN" "${args[@]}" || return $?
+  else
+    "$SOCKSEEK_BIN" "${args[@]}" || return $?
+  fi
+}
+
+cmd_export() {
+  local dry_run=1 login=0 arg
+  source_secrets
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) dry_run=1 ;;
+      --apply) dry_run=0 ;;
+      --login) login=1 ;;
+      *) usage_error "unknown export flag: ${arg}" ;;
+    esac
+  done
+  if [[ "$login" -eq 1 ]]; then
+    run_helper apply export --login
+    return 0
+  fi
+  if [[ "$dry_run" -eq 1 ]]; then
+    run_helper dry export --apply
+  else
+    run_helper apply export --apply
+  fi
+}
+
+cmd_match() {
+  local dry_run=1 force=0 arg
+  local -a extra=()
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) dry_run=1 ;;
+      --apply) dry_run=0 ;;
+      --force) force=1 ;;
+      --include-library) extra+=(--include-library) ;;
+      *) usage_error "unknown match flag: ${arg}" ;;
+    esac
+  done
+  if [[ "$force" -eq 1 ]]; then
+    if [[ "$dry_run" -eq 1 ]]; then
+      run_helper dry match --apply --force "${extra[@]}"
+    else
+      run_helper apply match --apply --force "${extra[@]}"
+    fi
+  else
+    if [[ "$dry_run" -eq 1 ]]; then
+      run_helper dry match --apply "${extra[@]}"
+    else
+      run_helper apply match --apply "${extra[@]}"
+    fi
+  fi
+}
+
+cmd_playlist() {
+  local dry_run=1 arg
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) dry_run=1 ;;
+      --apply) dry_run=0 ;;
+      *) usage_error "unknown playlist flag: ${arg}" ;;
+    esac
+  done
+  if [[ "$dry_run" -eq 1 ]]; then
+    run_helper dry playlist --apply
+  else
+    run_helper apply playlist --apply
+  fi
+}
+
+cmd_promote() {
+  local dry_run=1 arg
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) dry_run=1 ;;
+      --apply) dry_run=0 ;;
+      *) usage_error "unknown promote flag: ${arg}" ;;
+    esac
+  done
+  promote_finished_audio "$dry_run"
+}
+
+cmd_fetch() {
+  local dry_run=1 arg
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) dry_run=1 ;;
+      --apply) dry_run=0 ;;
+      *) usage_error "unknown fetch flag: ${arg}" ;;
+    esac
+  done
+  local missing="${STATE_DIR}/missing.csv"
+  if [[ ! -f "$missing" ]]; then
+    log "nothing queued; sidecar stays untouched (missing queue)"
+    return 0
+  fi
+  local tmpdir="" flac_csv="" mp3_csv="" counts=""
+  tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/music-likes-fetch.XXXXXX")"
+  flac_csv="${tmpdir}/missing-flac.csv"
+  mp3_csv="${tmpdir}/missing-mp3.csv"
+  counts="$(split_missing_csv "$missing" "$flac_csv" "$mp3_csv")" || {
+    rm -rf "$tmpdir"
+    die "failed to split ${missing}"
+  }
+  log "$counts"
+  if [[ "$counts" == 'missing rows: 0 flac, 0 mp3' ]]; then
+    rm -rf "$tmpdir"
+    log "no valid queue rows; no sidecar promotion"
+    return 0
+  fi
+  if [[ "$dry_run" -eq 1 ]]; then
+    run_sockseek_pass "$flac_csv" flac
+    run_sockseek_pass "$mp3_csv" mp3
+    log "dry-run: fetch preview only; no downloads started"
+    promote_finished_audio 1
+    rm -rf "$tmpdir"
+    return 0
+  fi
+  if [[ ! -x "${SOCKSEEK_BIN}" ]]; then
+    rm -rf "$tmpdir"
+    die "sockseek missing at ${SOCKSEEK_BIN} (run: just music-likes-install)"
+  fi
+  mkdir -p "${STATE_DIR}/inbox" "${STATE_DIR}/pending-fetch"
+  local rc=0 marker
+  marker="$(mktemp "${STATE_DIR}/pending-fetch/fetch.XXXXXX")"
+  printf 'status=started\n' >"$marker"
+  run_sockseek_pass "$flac_csv" flac || rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    rm -rf "$tmpdir"
+    die "sockseek FLAC pass failed (rc=${rc}); no promotion"
+  fi
+  run_sockseek_pass "$mp3_csv" mp3 || rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    rm -rf "$tmpdir"
+    die "sockseek MP3 pass failed (rc=${rc}); no promotion"
+  fi
+  rm -rf "$tmpdir"
+  printf 'status=review-required\n' >"$marker"
+  die "sockseek exited 0 but per-row results are unverified; no promotion; reconcile ${marker}"
+}
+
+cmd_sync() {
+  local dry_run=1 apply=0 scheduled=0 force=0 include_library=0 arg
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run)
+        apply=0
+        dry_run=1
+        ;;
+      --apply)
+        apply=1
+        dry_run=0
+        ;;
+      --scheduled) scheduled=1 ;;
+      --force) force=1 ;;
+      --include-library) include_library=1 ;;
+      *) usage_error "unknown sync flag: ${arg}" ;;
+    esac
+  done
+  if [[ "$apply" -eq 1 ]]; then
+    mkdir -p "$LOG_DIR" "$STATE_DIR"
+    exec 9>"$LOCK_FILE"
+    if ! flock -n 9; then
+      log "already running"
+      exit 0
+    fi
+  fi
+  source_secrets
+  if [[ "$include_library" -eq 1 ]]; then
+    local mode=dry action=--dry-run
+    local -a match_args=(--apply --include-library)
+    if [[ "$apply" -eq 1 ]]; then
+      mode=apply
+      action=--apply
+    fi
+    [[ "$force" -eq 0 ]] || match_args+=(--force)
+    if [[ -n "${MUSIC_LIKES_SPOTIFY_CLIENT_ID:-}" && -n "${MUSIC_LIKES_SPOTIFY_CLIENT_SECRET:-}" &&
+      -n "${MUSIC_LIKES_SPOTIFY_REFRESH_TOKEN:-}" ]]; then
+      run_helper "$mode" export --apply
+    else
+      log "Spotify export unavailable; matching configured Library and any retained liked.csv"
+    fi
+    run_helper "$mode" match "${match_args[@]}"
+    [[ ! -f "${STATE_DIR}/liked.csv" ]] || run_helper "$mode" playlist --apply
+    if [[ -n "${MUSIC_LIKES_SOULSEEK_USER:-}" && -n "${MUSIC_LIKES_SOULSEEK_PASS:-}" ]]; then
+      cmd_fetch "$action"
+    else
+      log "acquisition credentials absent; Library gap queue remains available for review"
+    fi
+    return 0
+  fi
+  local secrets_ready=0
+  if sync_secrets_ready; then
+    secrets_ready=1
+  fi
+  if [[ "$secrets_ready" -ne 1 ]]; then
+    if [[ "$scheduled" -eq 1 ]]; then
+      log "secrets missing; sync skipped (run: just music-likes export --login)"
+      exit 0
+    fi
+    if [[ "$apply" -eq 1 ]]; then
+      die "secrets missing (configure via just music-likes export --login)"
+    fi
+    log "secrets missing; skipping fetch steps (run: just music-likes export --login)"
+  fi
+  # export --apply → match --apply [--force] → playlist --apply → fetch → promote
+  if [[ "$apply" -eq 1 ]]; then
+    run_helper apply export --apply
+    if [[ "$force" -eq 1 ]]; then
+      run_helper apply match --apply --force
+    else
+      run_helper apply match --apply
+    fi
+    run_helper apply playlist --apply
+    if [[ "$secrets_ready" -eq 1 ]]; then
+      cmd_fetch --apply
+    fi
+  else
+    run_helper dry export --apply
+    if [[ "$force" -eq 1 ]]; then
+      run_helper dry match --apply --force
+    else
+      run_helper dry match --apply
+    fi
+    run_helper dry playlist --apply
+    if [[ "$secrets_ready" -eq 1 ]]; then
+      cmd_fetch --dry-run
+    fi
+    promote_finished_audio 1
+  fi
+}
+
+cmd_sockseek() {
+  if [[ "$#" -eq 0 ]]; then
+    usage_error "sockseek requires arguments (manual passthrough)"
+  fi
+  if [[ ! -x "${SOCKSEEK_BIN}" ]]; then
+    die "sockseek missing at ${SOCKSEEK_BIN} (run: just music-likes-install)"
+  fi
+  source_secrets
+  exec "${SOCKSEEK_BIN}" "$@"
+}
+
+legacy_music_install_retired() {
+  local native_os native_host native_user native_uid
+  native_os="$(uname -s)" || die "cannot establish native host identity"
+  [[ "$native_os" == Darwin ]] || return 1
+  native_host="$(hostname -s)" || die "cannot establish native hostname"
+  native_user="$(id -un)" || die "cannot establish native account"
+  native_uid="$(id -u)" || die "cannot establish native uid"
+  case "${native_host}:${native_user}:${native_uid}" in
+    w4w-mbp:ww:502 | MacBookAir:wyattwalsh:501) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+cmd_install() {
+  local dry_run=0 arg
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) dry_run=1 ;;
+      *) usage_error "unknown install flag: ${arg}" ;;
+    esac
+  done
+  if legacy_music_install_retired; then
+    if [[ "$dry_run" -eq 1 ]]; then
+      log "dry-run: legacy music service install retired; no copy, render or activation"
+      log "MBA services use the reviewed contract installer; manual rollback uses retained plists"
+      return 0
+    fi
+    die "legacy music service install retired on this host; use the MBA contract installer or retained manual rollback plists"
+  fi
+  local root=""
+  local dest_plist="${HOME}/Library/LaunchAgents/${PLIST_NAME}"
+  if [[ "$dry_run" -eq 1 ]]; then
+    if root="$(repo_root)"; then
+      log "dry-run: would /bin/cp -f ${root}/${REPO_RUNNER_REL} ${DEST_RUNNER}"
+      log "dry-run: would /bin/cp -f ${root}/${REPO_MATCH_REL} ${DEST_MATCH}"
+      log "dry-run: would render plist → ${dest_plist}"
+      log "dry-run: would download sockseek from pin if missing or sha256 mismatch"
+    else
+      log "dry-run: MUSIC_LIKES_REPO unset or source missing; would skip dest runner/plist sync and pin download"
+    fi
+    log "dry-run: would ensure dirs (${STATE_DIR}, inbox, failed, ${LOG_DIR}, $(library_dir)/Playlists, $(complete_dir))"
+    log "dry-run: would write ${SOCKSEEK_CONF} if Soulseek secrets present"
+    log "dry-run: would write ${SECRETS_STUB} stub if absent"
+    log "dry-run: would bootstrap com.wyattowalsh.music-likes"
+    return 0
+  fi
+  if root="$(repo_root)"; then
+    mkdir -p "$(dirname "${DEST_RUNNER}")" "$LOG_DIR"
+    /bin/cp -f "${root}/${REPO_RUNNER_REL}" "$DEST_RUNNER"
+    /bin/chmod +x "$DEST_RUNNER"
+    if [[ -f "${root}/${REPO_MATCH_REL}" ]]; then
+      /bin/cp -f "${root}/${REPO_MATCH_REL}" "$DEST_MATCH"
+      /bin/chmod +x "$DEST_MATCH"
+    else
+      log "match helper source missing; skip ${DEST_MATCH} sync"
+    fi
+    if [[ -f "${root}/${PLIST_REL}" ]]; then
+      render_plist "${root}/${PLIST_REL}" "$dest_plist"
+    else
+      log "plist template missing (${root}/${PLIST_REL}); skip render"
+    fi
+  fi
+  ensure_dirs
+  install_sockseek_pin
+  source_secrets
+  write_sockseek_conf
+  write_secrets_stub
+  require_cmd launchctl
+  bootstrap_agent "$LABEL" "$dest_plist"
+}
+
+cmd_doctor() {
+  if [[ -f "$DEST_RUNNER" ]]; then
+    log "dest runner: ${DEST_RUNNER}"
+  else
+    log "dest runner: missing"
+  fi
+  if [[ -f "$DEST_MATCH" ]]; then
+    log "dest match helper: ${DEST_MATCH}"
+  else
+    log "dest match helper: missing"
+  fi
+  if [[ -x "${SOCKSEEK_BIN}" ]]; then
+    log "sockseek: ${SOCKSEEK_BIN}"
+  else
+    log "sockseek: missing"
+  fi
+  if command -v uv >/dev/null 2>&1; then
+    log "uv: $(command -v uv)"
+  else
+    log "uv: missing"
+  fi
+  if command -v beet >/dev/null 2>&1; then
+    log "beet: $(command -v beet)"
+  else
+    log "beet: missing"
+  fi
+  local beets_db="${HOME}/.local/share/beets/library.db"
+  if [[ -f "$beets_db" ]]; then
+    log "beets db: ${beets_db}"
+  else
+    log "beets db: missing"
+  fi
+  if [[ -d "$(complete_dir)" ]]; then
+    log "complete inbox: $(complete_dir)"
+  else
+    log "complete inbox: missing"
+  fi
+  if [[ -d "$(library_dir)" ]]; then
+    log "library: $(library_dir)"
+  else
+    log "library: missing"
+  fi
+  if [[ -d "$STATE_DIR" ]]; then
+    log "state dir: ${STATE_DIR}"
+  else
+    log "state dir: missing"
+  fi
+  if [[ -f "${HOME}/.zsh/secrets.env" ]]; then
+    log "secrets ${HOME}/.zsh/secrets.env: present"
+  else
+    log "secrets ${HOME}/.zsh/secrets.env: missing"
+  fi
+  if [[ -f "${HOME}/.config/music-likes/secrets.env" ]]; then
+    log "secrets overlay ${HOME}/.config/music-likes/secrets.env: present"
+  else
+    log "secrets overlay ${HOME}/.config/music-likes/secrets.env: missing"
+  fi
+  local root=""
+  if root="$(repo_root)" && [[ -f "${root}/${PIN_REL}" ]]; then
+    log "pin json: ${root}/${PIN_REL}"
+  else
+    log "pin json: missing"
+  fi
+  local dest_plist="${HOME}/Library/LaunchAgents/${PLIST_NAME}"
+  if [[ -f "$dest_plist" ]]; then
+    log "dest plist: ${dest_plist}"
+  else
+    log "dest plist: missing"
+  fi
+  if agent_loaded "$LABEL"; then
+    log "agent ${LABEL}: loaded"
+  else
+    log "agent ${LABEL}: not loaded"
+  fi
+  return 0
+}
+
+main() {
+  local cmd="${1:-doctor}" arg needs_lock=0
+  shift || true
+  case "$cmd" in
+    export | match | playlist | fetch | promote | sync)
+      for arg in "$@"; do
+        case "$arg" in
+          --apply | --login) needs_lock=1 ;;
+          --dry-run) needs_lock=0 ;;
+        esac
+      done
+      if [[ "$cmd" == export ]]; then
+        for arg in "$@"; do
+          [[ "$arg" != --login ]] || needs_lock=1
+        done
+      fi
+      ;;
+    sockseek) needs_lock=1 ;;
+  esac
+  if [[ "$needs_lock" -eq 1 ]] && ! lock_music_writer; then
+    if [[ "$cmd" == sync && " $* " == *' --scheduled '* ]]; then
+      log "music writer already running; scheduled sync skipped"
+      return 0
+    fi
+    die "music writer already running: ${WRITER_LOCK}"
+  fi
+  case "$cmd" in
+    -h | --help) usage ;;
+    doctor) cmd_doctor "$@" ;;
+    export) cmd_export "$@" ;;
+    match) cmd_match "$@" ;;
+    playlist) cmd_playlist "$@" ;;
+    fetch) cmd_fetch "$@" ;;
+    promote) cmd_promote "$@" ;;
+    sync) cmd_sync "$@" ;;
+    sockseek) cmd_sockseek "$@" ;;
+    install) cmd_install "$@" ;;
+    *)
+      usage_error "unknown command: ${cmd}"
+      ;;
+  esac
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

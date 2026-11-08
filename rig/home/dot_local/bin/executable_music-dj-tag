@@ -1,0 +1,953 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.13"
+# dependencies = ["mutagen"]
+# ///
+"""Fill missing musical key + Camelot (+ BPM) without stripping unknown frames."""
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+from mutagen import File
+from mutagen.flac import FLAC
+from mutagen.id3 import ID3, ID3NoHeaderError, TBPM, TKEY, TXXX
+from mutagen.mp4 import MP4, MP4FreeForm
+
+AUDIO_EXT = {".mp3", ".flac", ".m4a", ".mp4", ".alac", ".aac", ".wav", ".aiff", ".aif", ".ogg", ".opus"}
+SERATO_VORBIS_PREFIX = "SERATO_"
+MIN_DURATION_SEC = 10.0
+UF_DATALESS = 0x00004000
+
+SKIP_DIR_NAMES = {
+    "_serato_",
+    "ableton",
+    "garageband",
+    "logic",
+    "mixxx",
+    "pioneerdj",
+    "audio damage",
+    "cableguys",
+    "spitfire audio",
+    "supercollider recordings",
+    "audio music apps",
+    "staging",
+    "quarantine",
+}
+
+NOTE_TO_CAMELOT = {
+    "C": "8B",
+    "C#": "3B",
+    "DB": "3B",
+    "D": "10B",
+    "D#": "5B",
+    "EB": "5B",
+    "E": "12B",
+    "F": "7B",
+    "F#": "2B",
+    "GB": "2B",
+    "G": "9B",
+    "G#": "4B",
+    "AB": "4B",
+    "A": "11B",
+    "A#": "6B",
+    "BB": "6B",
+    "B": "1B",
+    "CM": "5A",
+    "C#M": "12A",
+    "DBM": "12A",
+    "DM": "7A",
+    "D#M": "2A",
+    "EBM": "2A",
+    "EM": "9A",
+    "FM": "4A",
+    "F#M": "11A",
+    "GBM": "11A",
+    "GM": "6A",
+    "G#M": "1A",
+    "ABM": "1A",
+    "AM": "8A",
+    "A#M": "3A",
+    "BBM": "3A",
+    "BM": "10A",
+}
+
+CAMELOT_TO_NOTE = {
+    "8B": "C",
+    "3B": "C#",
+    "10B": "D",
+    "5B": "D#",
+    "12B": "E",
+    "7B": "F",
+    "2B": "F#",
+    "9B": "G",
+    "4B": "G#",
+    "11B": "A",
+    "6B": "A#",
+    "1B": "B",
+    "5A": "Cm",
+    "12A": "C#m",
+    "7A": "Dm",
+    "2A": "D#m",
+    "9A": "Em",
+    "4A": "Fm",
+    "11A": "F#m",
+    "6A": "Gm",
+    "1A": "G#m",
+    "8A": "Am",
+    "3A": "A#m",
+    "10A": "Bm",
+}
+
+MIX_LABELS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\bextended\s+mix\b", re.I), "Extended Mix"),
+    (re.compile(r"\bradio\s+edit\b", re.I), "Radio Edit"),
+    (re.compile(r"\bradio\s+mix\b", re.I), "Radio Mix"),
+    (re.compile(r"\boriginal\s+mix\b", re.I), "Original Mix"),
+    (re.compile(r"\braw\s+mix\b", re.I), "Raw Mix"),
+    (re.compile(r"\braw\s+edit\b", re.I), "Raw Edit"),
+    (re.compile(r"\bhard\s+driver\s+bootleg\b|\bbootleg\b", re.I), "Bootleg"),
+    (re.compile(r"\bvip\s+mix\b|\(vip\)", re.I), "VIP"),
+    (re.compile(r"\blive\s+edit\b", re.I), "Live Edit"),
+    (re.compile(r"\bliveset\b", re.I), "Liveset"),
+    (re.compile(r"\bofficial\b.+\banthem\b", re.I), "Official Anthem"),
+    (re.compile(r"\bclub\s+mix\b", re.I), "Club Mix"),
+    (re.compile(r"\binstrumental\b", re.I), "Instrumental"),
+)
+
+
+def parse_mix_version(*parts: str | None) -> str | None:
+    """Extract a DJ mix version from title/subtitle parentheticals only.
+
+    Hardstyle singles are usually `Title (Extended Mix)` / `(Radio Edit)`.
+    Do not scan the bare title for `anthem`/`edit` — too many false hits.
+    """
+    blob = " ".join(part.strip() for part in parts if part and part.strip())
+    if not blob:
+        return None
+    parens = re.findall(r"\(([^)]+)\)", blob)
+    for chunk in reversed(parens):
+        for pattern, label in MIX_LABELS:
+            if pattern.search(chunk):
+                return label
+    return None
+
+
+CAMELOT_TO_OPENKEY = {
+    "8B": "1d",
+    "8A": "1m",
+    "3B": "2d",
+    "3A": "2m",
+    "10B": "3d",
+    "10A": "3m",
+    "5B": "4d",
+    "5A": "4m",
+    "12B": "5d",
+    "12A": "5m",
+    "7B": "6d",
+    "7A": "6m",
+    "2B": "7d",
+    "2A": "7m",
+    "9B": "8d",
+    "9A": "8m",
+    "4B": "9d",
+    "4A": "9m",
+    "11B": "10d",
+    "11A": "10m",
+    "6B": "11d",
+    "6A": "11m",
+    "1B": "12d",
+    "1A": "12m",
+}
+
+CAMELOT_RE = re.compile(r"^([1-9]|1[0-2])[AB]$", re.IGNORECASE)
+NOTE_RE = re.compile(
+    r"^(?P<note>[A-G])(?P<accidental>#|b)?\s*(?P<minor>m|min|minor)?$",
+    re.IGNORECASE,
+)
+
+
+@dataclass
+class Counts:
+    scanned: int = 0
+    skipped: int = 0
+    filled_key: int = 0
+    filled_camelot: int = 0
+    filled_bpm: int = 0
+    unchanged: int = 0
+    errors: int = 0
+
+
+def log(msg: str) -> None:
+    print(f"[music-dj-tag] {msg}", file=sys.stderr)
+
+
+def which(name: str) -> str | None:
+    return shutil.which(name)
+
+
+def run_cmd(argv: list[str]) -> str | None:
+    try:
+        proc = subprocess.run(argv, check=False, capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    return (proc.stdout or "").strip() or (proc.stderr or "").strip()
+
+
+def normalize_note(raw: str) -> str | None:
+    text = raw.strip()
+    if not text or CAMELOT_RE.match(text):
+        return None
+    text = text.replace("minor", "m").replace("min", "m").replace(" ", "")
+    match = NOTE_RE.match(text)
+    if not match:
+        return None
+    note = match.group("note").upper()
+    acc = match.group("accidental") or ""
+    minor = "m" if match.group("minor") else ""
+    return f"{note}{acc}{minor}"
+
+
+def normalize_camelot(raw: str) -> str | None:
+    text = raw.strip().upper()
+    if CAMELOT_RE.match(text):
+        return text[0:-1] + text[-1]
+    return None
+
+
+def camelot_from_note(note: str) -> str | None:
+    key = note.strip().upper().replace("MINOR", "M").replace("MIN", "M")
+    if key.endswith("M") and len(key) > 1 and not key[-2].isdigit():
+        key = key[:-1] + "M"
+    return NOTE_TO_CAMELOT.get(key)
+
+
+def note_from_camelot(camelot: str) -> str | None:
+    normalized = normalize_camelot(camelot)
+    if not normalized:
+        return None
+    return CAMELOT_TO_NOTE.get(normalized)
+
+
+def first_tag(audio, names: tuple[str, ...]) -> str | None:
+    for name in names:
+        value = audio.get(name) if hasattr(audio, "get") else None
+        if value:
+            item = value[0] if isinstance(value, list) else value
+            text = str(item).strip()
+            if text:
+                return text
+    return None
+
+
+def id3_text(tags: ID3, frame_id: str) -> str | None:
+    frames = tags.getall(frame_id)
+    if not frames:
+        return None
+    text = str(frames[0].text[0]).strip() if frames[0].text else ""
+    return text or None
+
+
+def id3_txxx(tags: ID3, desc: str) -> str | None:
+    for frame in tags.getall("TXXX"):
+        if str(frame.desc).lower() == desc.lower() and frame.text:
+            text = str(frame.text[0]).strip()
+            if text:
+                return text
+    return None
+
+
+def set_txxx(tags: ID3, desc: str, value: str) -> None:
+    tags.delall(f"TXXX:{desc}")
+    tags.add(TXXX(encoding=3, desc=desc, text=[value]))
+
+
+def is_dataless(path: Path) -> bool:
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return True
+    if st.st_size == 0:
+        return True
+    flags = int(getattr(st, "st_flags", 0) or 0)
+    if flags & UF_DATALESS:
+        return True
+    # iCloud File Provider placeholders often omit UF_DATALESS in Python
+    # st_flags but keep full logical size with zero allocated blocks.
+    blocks = int(getattr(st, "st_blocks", 1) or 0)
+    return bool(st.st_size > 0 and blocks == 0)
+
+
+def should_skip_dir(path: Path) -> bool:
+    for part in path.parts:
+        name = part.lower()
+        if name in SKIP_DIR_NAMES or name.startswith("_serato_backup"):
+            return True
+        if name.endswith(".musiclibrary") or name.endswith(".band"):
+            return True
+    return False
+
+
+def analyze_key(path: Path) -> str | None:
+    binary = which("keyfinder-cli")
+    if binary is None:
+        return None
+    raw = run_cmd([binary, "-n", "standard", str(path)])
+    if not raw:
+        return None
+    return normalize_note(raw.splitlines()[-1].strip())
+
+
+def analyze_bpm(path: Path) -> str | None:
+    binary = which("aubio") or which("aubiotempo")
+    if binary is None:
+        return None
+    argv = [binary, "tempo", str(path)] if Path(binary).name == "aubio" else [binary, str(path)]
+    raw = run_cmd(argv)
+    if not raw:
+        return None
+    match = re.search(r"(\d+(?:\.\d+)?)", raw)
+    if not match:
+        return None
+    bpm = float(match.group(1))
+    if bpm < 40 or bpm > 240:
+        return None
+    if abs(bpm - round(bpm)) < 0.05:
+        return str(int(round(bpm)))
+    return f"{bpm:.1f}"
+
+
+def duration_ok(path: Path, ffprobe: str | None) -> bool:
+    if ffprobe is None:
+        return True
+    raw = run_cmd(
+        [
+            ffprobe,
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "csv=p=0",
+            str(path),
+        ]
+    )
+    if not raw:
+        return False
+    try:
+        return float(raw.splitlines()[0]) >= MIN_DURATION_SEC
+    except ValueError:
+        return False
+
+
+def ffprobe_bin() -> str | None:
+    full = Path("/opt/homebrew/opt/ffmpeg-full/bin/ffprobe")
+    if full.is_file():
+        return str(full)
+    return which("ffprobe")
+
+
+def complementary(note: str | None, camelot: str | None) -> tuple[str | None, str | None]:
+    if note and not camelot:
+        camelot = camelot_from_note(note)
+    if camelot and not note:
+        note = note_from_camelot(camelot)
+    return note, camelot
+
+
+def split_key_value(raw: str | None) -> tuple[str | None, str | None]:
+    if not raw:
+        return None, None
+    as_camelot = normalize_camelot(raw)
+    if as_camelot:
+        return None, as_camelot
+    as_note = normalize_note(raw)
+    if as_note:
+        return as_note, None
+    return None, None
+
+
+def actual_writes(changed: list[str]) -> bool:
+    return any(
+        item.startswith(("key=", "camelot=", "bpm=", "key-aliases", "openkey=", "mixversion="))
+        for item in changed
+    )
+
+
+def save_id3(tags: ID3, path: Path) -> None:
+    """Rewrite ID3 only when filling missing frames. Keep the file's v2.3 vs v2.4."""
+    version = getattr(tags, "version", (2, 4, 0))
+    minor = int(version[1]) if isinstance(version, tuple) and len(version) > 1 else 4
+    tags.save(path, v2_version=3 if minor == 3 else 4)
+
+
+def plan_fill(
+    *,
+    has_primary_key: bool,
+    has_camelot_frame: bool,
+    note_value: str | None,
+    camelot_value: str | None,
+    has_bpm: bool,
+    analyzed_note: str | None,
+    analyzed_bpm: str | None,
+) -> tuple[str | None, str | None, str | None, list[str]]:
+    """Return (note_to_write, camelot_to_write, bpm_to_write, reasons).
+
+    Occupied primary key text (TKEY / INITIALKEY, including Camelot stored there)
+    and an existing CAMELOT frame are never replaced. Analysis runs only when both
+    slots are empty. Disagreeing note + Camelot frames are both kept.
+    """
+    reasons: list[str] = []
+    note = note_value
+    camelot = camelot_value
+    if note is None and camelot:
+        derived_note = note_from_camelot(camelot)
+        if derived_note:
+            note = derived_note
+            reasons.append(f"camelot-derived-note:{camelot}->{note}")
+    note, camelot = complementary(note, camelot)
+    can_analyze_key = (not has_primary_key) and (not has_camelot_frame) and note is None
+    if can_analyze_key and analyzed_note:
+        note = analyzed_note
+        note, camelot = complementary(note, camelot)
+        reasons.append(f"analyzed-key:{note}")
+    if note_value and camelot_value:
+        derived = camelot_from_note(note_value)
+        if derived and derived != camelot_value:
+            reasons.append(f"mismatch-kept key={note_value} camelot={camelot_value}")
+    write_note = None if has_primary_key else note
+    write_camelot = None if has_camelot_frame else camelot
+    write_bpm = None if has_bpm else analyzed_bpm
+    return write_note, write_camelot, write_bpm, reasons
+
+
+def self_test() -> int:
+    failures: list[str] = []
+
+    def check(name: str, got: object, expected: object) -> None:
+        if got != expected:
+            failures.append(f"{name}: got {got!r} expected {expected!r}")
+
+    for camelot, note in CAMELOT_TO_NOTE.items():
+        check(f"roundtrip {camelot}", note_from_camelot(camelot), note)
+        check(f"roundtrip {note}", camelot_from_note(note), camelot)
+
+    n, c, b, _r = plan_fill(
+        has_primary_key=False,
+        has_camelot_frame=False,
+        note_value=None,
+        camelot_value=None,
+        has_bpm=False,
+        analyzed_note="C",
+        analyzed_bpm="128",
+    )
+    check("empty+analyzed", (n, c, b), ("C", "8B", "128"))
+
+    n, c, b, _r = plan_fill(
+        has_primary_key=True,
+        has_camelot_frame=False,
+        note_value="Am",
+        camelot_value=None,
+        has_bpm=True,
+        analyzed_note="F",
+        analyzed_bpm="90",
+    )
+    check("tkey-note-fills-camelot", (n, c, b), (None, "8A", None))
+
+    n, c, b, reasons = plan_fill(
+        has_primary_key=True,
+        has_camelot_frame=False,
+        note_value=None,
+        camelot_value="8A",
+        has_bpm=False,
+        analyzed_note="F",
+        analyzed_bpm="140",
+    )
+    check("tkey-camelot-not-replaced", n, None)
+    check("tkey-camelot-copies-frame", c, "8A")
+    check("tkey-camelot-bpm-fill", b, "140")
+
+    n, c, b, reasons = plan_fill(
+        has_primary_key=True,
+        has_camelot_frame=True,
+        note_value="Am",
+        camelot_value="8A",
+        has_bpm=True,
+        analyzed_note="C",
+        analyzed_bpm="99",
+    )
+    check("both-present-match", (n, c, b), (None, None, None))
+
+    n, c, b, reasons = plan_fill(
+        has_primary_key=True,
+        has_camelot_frame=True,
+        note_value="Am",
+        camelot_value="1A",
+        has_bpm=True,
+        analyzed_note="C",
+        analyzed_bpm="99",
+    )
+    check("mismatch-no-writes", (n, c, b), (None, None, None))
+    check("mismatch-logged", any(item.startswith("mismatch-kept") for item in reasons), True)
+
+    n, c, b, _r = plan_fill(
+        has_primary_key=False,
+        has_camelot_frame=True,
+        note_value=None,
+        camelot_value="8A",
+        has_bpm=False,
+        analyzed_note="F",
+        analyzed_bpm="100",
+    )
+    check("camelot-frame-fills-tkey", (n, c, b), ("Am", None, "100"))
+
+    n, c, b, _r = plan_fill(
+        has_primary_key=True,
+        has_camelot_frame=True,
+        note_value=None,
+        camelot_value="1A",
+        has_bpm=True,
+        analyzed_note="C",
+        analyzed_bpm="110",
+    )
+    check("tkey-camelot-plus-other-frame", (n, c, b), (None, None, None))
+
+    check("mix-extended", parse_mix_version("Feeling Fly (Extended Mix)"), "Extended Mix")
+    check("mix-original", parse_mix_version("Feeling Fly (Original Mix)"), "Original Mix")
+    check("mix-radio", parse_mix_version("Aaa (Radio Edit)"), "Radio Edit")
+    check(
+        "mix-anthem-paren",
+        parse_mix_version("Craving For The Beat (Official Decibel 2013 Anthem) (Radio Mix)"),
+        "Radio Mix",
+    )
+    check("mix-bootleg", parse_mix_version("Welcome To The Jungle (Hard Driver Bootleg)"), "Bootleg")
+    check("mix-no-bare-anthem", parse_mix_version("The Anthem"), None)
+    check("mix-empty", parse_mix_version(None, ""), None)
+
+    if failures:
+        for item in failures:
+            log(f"self-test FAIL {item}")
+        return 1
+    log("self-test ok")
+    return 0
+
+
+def apply_id3(
+    path: Path,
+    *,
+    note: str | None,
+    camelot: str | None,
+    bpm: str | None,
+    dry_run: bool,
+) -> list[str]:
+    changed: list[str] = []
+    try:
+        tags = ID3(path)
+    except ID3NoHeaderError:
+        tags = ID3()
+    except Exception as exc:  # noqa: BLE001
+        return [f"error-id3-load:{exc}"]
+    tkey_raw = id3_text(tags, "TKEY")
+    alias_raw = id3_txxx(tags, "initialkey") or id3_txxx(tags, "KEY")
+    existing_note, tkey_camelot = split_key_value(tkey_raw)
+    alias_note, alias_camelot = split_key_value(alias_raw)
+    if existing_note is None:
+        existing_note = alias_note
+    camelot_frame = normalize_camelot(id3_txxx(tags, "CAMELOT") or "")
+    if camelot_frame:
+        camelot_known = camelot_frame
+    elif tkey_camelot:
+        camelot_known = tkey_camelot
+    elif existing_note is None:
+        camelot_known = alias_camelot
+    else:
+        camelot_known = None
+    existing_bpm = id3_text(tags, "TBPM")
+    existing_openkey = id3_txxx(tags, "OPENKEY")
+    write_note, write_camelot, write_bpm, reasons = plan_fill(
+        has_primary_key=tkey_raw is not None,
+        has_camelot_frame=camelot_frame is not None,
+        note_value=existing_note,
+        camelot_value=camelot_known,
+        has_bpm=existing_bpm is not None,
+        analyzed_note=note,
+        analyzed_bpm=bpm,
+    )
+    changed.extend(reasons)
+    if write_note:
+        if not dry_run:
+            tags.delall("TKEY")
+            tags.add(TKEY(encoding=3, text=[write_note]))
+        changed.append(f"key={write_note}")
+    known_note = existing_note or write_note or note_from_camelot(write_camelot or camelot_known or "")
+    if known_note:
+        wrote_alias = False
+        if not id3_txxx(tags, "initialkey"):
+            if not dry_run:
+                set_txxx(tags, "initialkey", known_note)
+            wrote_alias = True
+        if not id3_txxx(tags, "KEY"):
+            if not dry_run:
+                set_txxx(tags, "KEY", known_note)
+            wrote_alias = True
+        if wrote_alias:
+            changed.append("key-aliases")
+    if write_bpm:
+        if not dry_run:
+            tags.delall("TBPM")
+            tags.add(TBPM(encoding=3, text=[write_bpm]))
+        changed.append(f"bpm={write_bpm}")
+    if write_camelot:
+        if not dry_run:
+            set_txxx(tags, "CAMELOT", write_camelot)
+        changed.append(f"camelot={write_camelot}")
+    known_camelot = camelot_frame or write_camelot or tkey_camelot
+    if known_camelot is None and existing_note is None:
+        known_camelot = alias_camelot
+    if known_camelot and not existing_openkey:
+        openkey = CAMELOT_TO_OPENKEY.get(known_camelot)
+        if openkey:
+            if not dry_run:
+                set_txxx(tags, "OPENKEY", openkey)
+            changed.append(f"openkey={openkey}")
+    if not id3_txxx(tags, "MIXVERSION"):
+        mix = parse_mix_version(id3_text(tags, "TIT2"), id3_text(tags, "TIT3"))
+        if mix:
+            if not dry_run:
+                set_txxx(tags, "MIXVERSION", mix)
+            changed.append(f"mixversion={mix}")
+    # Never delete GEOB / PRIV / SERATO frames; only add missing TKEY/TXXX/TBPM.
+    if actual_writes(changed) and not dry_run:
+        save_id3(tags, path)
+    return changed
+
+
+def apply_vorbis(
+    audio: FLAC,
+    *,
+    note: str | None,
+    camelot: str | None,
+    bpm: str | None,
+    dry_run: bool,
+) -> list[str]:
+    changed: list[str] = []
+    raw_key = first_tag(audio, ("INITIALKEY", "KEY", "initialkey"))
+    existing_note, key_camelot = split_key_value(raw_key)
+    camelot_frame = normalize_camelot(first_tag(audio, ("CAMELOT",)) or "")
+    camelot_known = camelot_frame or key_camelot
+    existing_bpm = first_tag(audio, ("BPM", "TEMPO"))
+    existing_openkey = first_tag(audio, ("OPENKEY",))
+    write_note, write_camelot, write_bpm, reasons = plan_fill(
+        has_primary_key=raw_key is not None,
+        has_camelot_frame=camelot_frame is not None,
+        note_value=existing_note,
+        camelot_value=camelot_known,
+        has_bpm=existing_bpm is not None,
+        analyzed_note=note,
+        analyzed_bpm=bpm,
+    )
+    changed.extend(reasons)
+    if write_note:
+        if not dry_run:
+            if not first_tag(audio, ("INITIALKEY", "initialkey")):
+                audio["INITIALKEY"] = [write_note]
+            if not first_tag(audio, ("KEY",)):
+                audio["KEY"] = [write_note]
+        changed.append(f"key={write_note}")
+    known_note = existing_note or write_note or note_from_camelot(write_camelot or camelot_known or "")
+    if known_note:
+        wrote_alias = False
+        if not first_tag(audio, ("INITIALKEY", "initialkey")):
+            if not dry_run:
+                audio["INITIALKEY"] = [known_note]
+            wrote_alias = True
+        if not first_tag(audio, ("KEY",)):
+            if not dry_run:
+                audio["KEY"] = [known_note]
+            wrote_alias = True
+        if wrote_alias:
+            changed.append("key-aliases")
+    if write_bpm:
+        if not dry_run:
+            audio["BPM"] = [write_bpm]
+        changed.append(f"bpm={write_bpm}")
+    if write_camelot:
+        if not dry_run:
+            audio["CAMELOT"] = [write_camelot]
+        changed.append(f"camelot={write_camelot}")
+    known_camelot = camelot_frame or write_camelot or key_camelot
+    if known_camelot and not existing_openkey:
+        openkey = CAMELOT_TO_OPENKEY.get(known_camelot)
+        if openkey:
+            if not dry_run:
+                audio["OPENKEY"] = [openkey]
+            changed.append(f"openkey={openkey}")
+    if not first_tag(audio, ("MIXVERSION",)):
+        mix = parse_mix_version(first_tag(audio, ("TITLE",)), first_tag(audio, ("SUBTITLE",)))
+        if mix:
+            if not dry_run:
+                audio["MIXVERSION"] = [mix]
+            changed.append(f"mixversion={mix}")
+    if actual_writes(changed) and not dry_run:
+        audio.save()
+    return changed
+
+
+def apply_mp4(
+    audio: MP4,
+    *,
+    note: str | None,
+    camelot: str | None,
+    bpm: str | None,
+    dry_run: bool,
+) -> list[str]:
+    changed: list[str] = []
+    bpm_atom = "----:com.apple.iTunes:BPM"
+    key_atom = "----:com.apple.iTunes:initialkey"
+    key_atom_alt = "----:com.apple.iTunes:KEY"
+    camelot_atom = "----:com.apple.iTunes:CAMELOT"
+    openkey_atom = "----:com.apple.iTunes:OPENKEY"
+    mix_atom = "----:com.apple.iTunes:MIXVERSION"
+
+    def freeform(atom: str) -> str | None:
+        values = audio.get(atom)
+        if not values:
+            return None
+        raw = values[0]
+        if isinstance(raw, bytes):
+            return raw.decode("utf-8", "replace").strip() or None
+        return str(raw).strip() or None
+
+    raw_key = freeform(key_atom) or freeform(key_atom_alt)
+    existing_note, key_camelot = split_key_value(raw_key)
+    camelot_frame = normalize_camelot(freeform(camelot_atom) or "")
+    camelot_known = camelot_frame or key_camelot
+    existing_bpm = None
+    if "tmpo" in audio and audio["tmpo"]:
+        existing_bpm = str(int(audio["tmpo"][0]))
+    existing_bpm = existing_bpm or freeform(bpm_atom)
+    existing_openkey = freeform(openkey_atom)
+    write_note, write_camelot, write_bpm, reasons = plan_fill(
+        has_primary_key=raw_key is not None,
+        has_camelot_frame=camelot_frame is not None,
+        note_value=existing_note,
+        camelot_value=camelot_known,
+        has_bpm=existing_bpm is not None,
+        analyzed_note=note,
+        analyzed_bpm=bpm,
+    )
+    changed.extend(reasons)
+    if write_note:
+        if not dry_run:
+            encoded = write_note.encode()
+            if not freeform(key_atom):
+                audio[key_atom] = [MP4FreeForm(encoded)]
+            if not freeform(key_atom_alt):
+                audio[key_atom_alt] = [MP4FreeForm(encoded)]
+        changed.append(f"key={write_note}")
+    if write_bpm:
+        if not dry_run:
+            if not freeform(bpm_atom):
+                audio[bpm_atom] = [MP4FreeForm(write_bpm.encode())]
+            if "tmpo" not in audio or not audio["tmpo"]:
+                try:
+                    audio["tmpo"] = [int(float(write_bpm))]
+                except ValueError:
+                    pass
+        changed.append(f"bpm={write_bpm}")
+    if write_camelot:
+        if not dry_run:
+            audio[camelot_atom] = [MP4FreeForm(write_camelot.encode())]
+        changed.append(f"camelot={write_camelot}")
+    known_camelot = camelot_frame or write_camelot or key_camelot
+    if known_camelot and not existing_openkey:
+        openkey = CAMELOT_TO_OPENKEY.get(known_camelot)
+        if openkey:
+            if not dry_run:
+                audio[openkey_atom] = [MP4FreeForm(openkey.encode())]
+            changed.append(f"openkey={openkey}")
+    if not freeform(mix_atom):
+        title = None
+        names = audio.get("\xa9nam")
+        if names:
+            title = str(names[0])
+        mix = parse_mix_version(title)
+        if mix:
+            if not dry_run:
+                audio[mix_atom] = [MP4FreeForm(mix.encode())]
+            changed.append(f"mixversion={mix}")
+    if actual_writes(changed) and not dry_run:
+        audio.save()
+    return changed
+
+
+def process_file(path: Path, *, dry_run: bool, force_analyze: bool, counts: Counts) -> None:
+    counts.scanned += 1
+    if should_skip_dir(path.parent):
+        counts.skipped += 1
+        log(f"skip (daw/system dir): {path}")
+        return
+    if is_dataless(path):
+        counts.skipped += 1
+        log(f"skip (dataless/empty): {path}")
+        return
+    if path.suffix.lower() in {".wav", ".wave", ".aiff", ".aif"}:
+        counts.skipped += 1
+        log(f"skip (wav/aiff PCM; will not prepend ID3): {path}")
+        return
+    if not duration_ok(path, ffprobe_bin()):
+        counts.skipped += 1
+        log(f"skip (duration/probe): {path}")
+        return
+    try:
+        audio = File(path, easy=False)
+    except Exception as exc:  # noqa: BLE001
+        counts.errors += 1
+        log(f"error {path}: {exc}")
+        return
+    if audio is None:
+        counts.skipped += 1
+        log(f"skip (unreadable): {path}")
+        return
+    skip_key_analyze = False
+    existing_bpm = None
+    if isinstance(audio, FLAC):
+        raw_key = first_tag(audio, ("INITIALKEY", "KEY", "initialkey"))
+        camelot_frame = normalize_camelot(first_tag(audio, ("CAMELOT",)) or "")
+        skip_key_analyze = bool(raw_key or camelot_frame)
+        existing_bpm = first_tag(audio, ("BPM", "TEMPO"))
+        if any(str(k).upper().startswith(SERATO_VORBIS_PREFIX) for k in audio.keys()):
+            log(f"preserving Serato vorbis on {path.name}")
+    elif isinstance(audio, MP4):
+        raw_key = None
+        key_atom = "----:com.apple.iTunes:initialkey"
+        key_atom_alt = "----:com.apple.iTunes:KEY"
+        camelot_atom = "----:com.apple.iTunes:CAMELOT"
+        values = audio.get(key_atom) or audio.get(key_atom_alt)
+        if values:
+            raw = values[0]
+            raw_key = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw)
+        camelot_vals = audio.get(camelot_atom)
+        skip_key_analyze = bool(raw_key or camelot_vals)
+        if "tmpo" in audio and audio["tmpo"]:
+            existing_bpm = str(int(audio["tmpo"][0]))
+        if existing_bpm is None and audio.get("----:com.apple.iTunes:BPM"):
+            existing_bpm = "present"
+    else:
+        try:
+            tags = ID3(path)
+            skip_key_analyze = bool(
+                id3_text(tags, "TKEY") or id3_txxx(tags, "CAMELOT") or id3_txxx(tags, "initialkey")
+            )
+            existing_bpm = id3_text(tags, "TBPM")
+        except Exception:
+            skip_key_analyze = False
+    analyzed_note = None if (skip_key_analyze and not force_analyze) else analyze_key(path)
+    analyzed_bpm = None if (existing_bpm and not force_analyze) else analyze_bpm(path)
+    if isinstance(audio, FLAC):
+        changed = apply_vorbis(audio, note=analyzed_note, camelot=None, bpm=analyzed_bpm, dry_run=dry_run)
+    elif isinstance(audio, MP4):
+        changed = apply_mp4(audio, note=analyzed_note, camelot=None, bpm=analyzed_bpm, dry_run=dry_run)
+    elif path.suffix.lower() in {".mp3"}:
+        changed = apply_id3(path, note=analyzed_note, camelot=None, bpm=analyzed_bpm, dry_run=dry_run)
+    else:
+        counts.skipped += 1
+        log(f"unsupported container: {path}")
+        return
+    prefix = "dry-run " if dry_run else ""
+    if any(item.startswith("error-") for item in changed):
+        counts.errors += 1
+        log(f"{prefix}{path.name}: {', '.join(changed)}")
+        return
+    if not changed:
+        counts.unchanged += 1
+        log(f"{prefix}unchanged: {path.name}")
+        return
+    if any(item.startswith("key=") for item in changed):
+        counts.filled_key += 1
+    if any(item.startswith("camelot=") for item in changed):
+        counts.filled_camelot += 1
+    if any(item.startswith("bpm=") for item in changed):
+        counts.filled_bpm += 1
+    log(f"{prefix}{path.name}: {', '.join(changed)}")
+
+
+def iter_audio(root: Path) -> list[Path]:
+    if root.is_file():
+        return [root] if root.suffix.lower() in AUDIO_EXT else []
+    found: list[Path] = []
+    for path in root.rglob("*"):
+        if not path.is_file() or path.suffix.lower() not in AUDIO_EXT:
+            continue
+        if should_skip_dir(path.parent):
+            continue
+        found.append(path)
+    return sorted(found)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Fill missing musical key and Camelot (and BPM) in-place. Never overwrites a real key."
+    )
+    parser.add_argument("paths", nargs="*", type=Path)
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--report",
+        action="store_true",
+        help="Same as --dry-run (no writes). Kept as an explicit audit flag.",
+    )
+    parser.add_argument(
+        "--force-analyze",
+        action="store_true",
+        help="Re-analyze even when BPM/key exist. Refused by music-ingest refine.",
+    )
+    parser.add_argument(
+        "--self-test",
+        action="store_true",
+        help="Run fill-if-missing contract tests and exit. No files are touched.",
+    )
+    args = parser.parse_args()
+    if args.self_test:
+        return self_test()
+    if not args.paths:
+        parser.error("paths are required unless --self-test")
+    dry_run = bool(args.dry_run or args.report)
+    counts = Counts()
+    status = 0
+    for raw in args.paths:
+        path = raw.expanduser()
+        if not path.exists():
+            log(f"missing: {path}")
+            status = 1
+            continue
+        for audio_path in iter_audio(path):
+            try:
+                process_file(audio_path, dry_run=dry_run, force_analyze=args.force_analyze, counts=counts)
+            except Exception as exc:  # noqa: BLE001
+                counts.errors += 1
+                log(f"error {audio_path}: {exc}")
+    log(
+        "summary scanned={scanned} skipped={skipped} filled_key={filled_key} "
+        "filled_camelot={filled_camelot} filled_bpm={filled_bpm} unchanged={unchanged} errors={errors}".format(
+            scanned=counts.scanned,
+            skipped=counts.skipped,
+            filled_key=counts.filled_key,
+            filled_camelot=counts.filled_camelot,
+            filled_bpm=counts.filled_bpm,
+            unchanged=counts.unchanged,
+            errors=counts.errors,
+        )
+    )
+    return status
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

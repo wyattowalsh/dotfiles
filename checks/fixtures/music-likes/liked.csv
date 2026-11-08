@@ -1,0 +1,6 @@
+Track URI,Track Name,Artist Name(s),Album Name,Album Artist Name(s),ISRC,Track Duration (ms),Disc Number,Track Number,Added At
+spotify:track:isrcHit,Hear This,Showtek,Analogue Players In A Digital World,Showtek,ITC941001118,222000,1,1,2024-01-01T00:00:00Z
+spotify:track:fuzzyHit,Spaceship (Original Mix),Headhunterz,Studio Sessions,Headhunterz,,210000,1,1,2024-01-02T00:00:00Z
+spotify:track:mixMiss,Feeling Fly (Radio Edit),Artist,Album,Artist,,180000,1,1,2024-01-03T00:00:00Z
+spotify:track:gone,Not In Library (Extended Mix),Missing Artist,Missing Album,Missing Artist,,240000,1,1,2024-01-04T00:00:00Z
+spotify:track:both,Already Both,Both Artist,Both Album,Both Artist,USABC0012345,200000,1,1,2024-01-05T00:00:00Z

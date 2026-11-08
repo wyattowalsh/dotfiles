@@ -1,0 +1,1042 @@
+#!/usr/bin/env bash
+# Offline-gated Soulseek-complete import copies into Library; no automatic enrichment.
+# LaunchAgent watches the complete folder. Default CLI is doctor (no writes).
+set -euo pipefail
+
+export PATH="/opt/homebrew/opt/ffmpeg-full/bin:/opt/homebrew/bin:${HOME}/.local/bin:/usr/bin:/bin${PATH:+:$PATH}"
+
+LABEL_INGEST="com.wyattowalsh.music-ingest"
+LABEL_NAVIDROME="com.wyattowalsh.navidrome"
+PLIST_INGEST_NAME="com.wyattowalsh.music-ingest.plist"
+PLIST_NAVIDROME_NAME="com.wyattowalsh.navidrome.plist"
+DEST_RUNNER="${HOME}/.local/bin/music-ingest"
+DEST_DJ_TAG="${HOME}/.local/bin/music-dj-tag"
+LOG_DIR="${HOME}/Library/Logs/music-ingest"
+STATE_DIR="${HOME}/.local/share/music-ingest"
+REPO_RUNNER_REL="rig/home/dot_local/bin/executable_music-ingest"
+REPO_DJ_TAG_REL="rig/home/dot_local/bin/executable_music-dj-tag"
+PLIST_INGEST_REL="rig/home/Library/LaunchAgents/com.wyattowalsh.music-ingest.plist.tmpl"
+PLIST_NAVIDROME_REL="rig/home/Library/LaunchAgents/com.wyattowalsh.navidrome.plist.tmpl"
+STIGNORE_REL="rig/home/private_dot_config/music/stignore"
+NDIGNORE_REL="rig/home/private_dot_config/music/ndignore"
+SETTLE_SEC="${MUSIC_INGEST_SETTLE_SEC:-45}"
+BEET_BIN="${MUSIC_INGEST_BEET_BIN:-beet}"
+# Cooperative single-writer lock for ingest, catalog, refine and likes playlist/promotion.
+# Other writers must adopt this same path before a machine handover is safe.
+WRITER_LOCK="${HOME}/.local/share/music-ingest/music-writer.lock"
+
+lock_music_writer() {
+  mkdir -p "$(dirname "$WRITER_LOCK")"
+  exec 7>"$WRITER_LOCK"
+  if ! flock -n 7; then
+    die "music writer already running: ${WRITER_LOCK}"
+  fi
+}
+
+# Preserve a marker across failures/signals; no automatic retry of an ambiguous
+# import until its on-disk and beets state has been reconciled by an operator.
+assert_no_pending_imports() {
+  local pending="${STATE_DIR}/pending-imports" marker
+  [[ -d "$pending" ]] || return 0
+  for marker in "$pending"/*; do
+    if [[ -f "$marker" ]]; then
+      die "unresolved import marker: ${marker}; reconcile before retry"
+    fi
+  done
+}
+
+log() {
+  printf '[music-ingest] %s\n' "$*" >&2
+}
+
+die() {
+  log "error: $*" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'USAGE'
+Usage: music-ingest doctor
+       music-ingest ingest [--dry-run]
+       music-ingest refine [--dry-run|--apply] [paths...]
+       music-ingest prepare [--dry-run|--apply] [paths...]
+       music-ingest catalog [--dry-run|--apply] [path]
+       music-ingest enrich [--dry-run|--apply]
+       music-ingest install [--dry-run]
+
+  doctor    Check binaries, paths, and LaunchAgent files (default).
+  ingest    Copy settled complete downloads via beets (--copy), retaining inbox
+            originals. Require exact new beets IDs and readable Library paths
+            per unit. Leave enrichment proposal-only and failed/ambiguous units
+            untouched for manual reconciliation. downloading/ is never touched.
+  refine    In-place fill-if-missing musical key + Camelot (+ BPM, Open Key)
+            on existing files. Default is --dry-run. --apply is required to
+            write. Never moves/renames, never overwrites occupied TKEY (note
+            or Camelot-in-TKEY), CAMELOT, or BPM, never hydrates iCloud.
+  prepare   Alias for refine (existing-library path; does not run beets).
+  catalog   Autotag a tree through MusicBrainz + AcoustID (title/artist/album,
+            dates, label, catalog, ISRC, MB IDs, genres, cover art, lyrics,
+            external IDs). Incoming/ staging is --move (same-volume rename);
+            other trees follow beets copy. No automatic enrich. Default --dry-run.
+  enrich    Proposal-only preview of library metadata operations. --apply is
+            refused until a reviewed, exact-ID writer replaces this command.
+  install   Sync dest runners, render plists, ensure library dirs, install
+            beets via uv, build keyfinder-cli if missing, bootstrap agents.
+
+  MUSIC_INGEST_REPO            repo root (just music-ingest-install sets this)
+  MUSIC_INGEST_SETTLE_SEC      mtime quiet period before ingest (default 45)
+  MUSIC_INGEST_INCLUDE_ICLOUD  set to 1 to also refine local (non-dataless)
+                               iCloud Music files; default skips them
+USAGE
+}
+
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || die "missing command: $1"
+}
+
+gui_domain() {
+  printf 'gui/%s' "$(id -u)"
+}
+
+label_path() {
+  printf '%s/%s' "$(gui_domain)" "$1"
+}
+
+agent_loaded() {
+  launchctl print "$(label_path "$1")" >/dev/null 2>&1
+}
+
+print_login_item_hint() {
+  cat <<'HINT'
+If a LaunchAgent is not loaded, allow it under:
+  System Settings → General → Login Items & Extensions → Allow in the Background
+Then re-run: just music-ingest-install
+HINT
+}
+
+repo_root() {
+  if [[ -n "${MUSIC_INGEST_REPO:-}" && -f "${MUSIC_INGEST_REPO}/${REPO_RUNNER_REL}" ]]; then
+    printf '%s\n' "${MUSIC_INGEST_REPO}"
+    return 0
+  fi
+  return 1
+}
+
+library_dir() {
+  printf '%s\n' "${HOME}/Music/Library"
+}
+
+complete_dir() {
+  printf '%s\n' "${HOME}/Soulseek Downloads/complete"
+}
+
+incoming_dir() {
+  printf '%s\n' "$(library_dir)/Incoming"
+}
+
+ffprobe_bin() {
+  if [[ -n "${MUSIC_INGEST_FFPROBE_BIN:-}" ]]; then
+    [[ -x "$MUSIC_INGEST_FFPROBE_BIN" ]] || return 1
+    printf '%s\n' "$MUSIC_INGEST_FFPROBE_BIN"
+    return 0
+  fi
+  if [[ -x /opt/homebrew/opt/ffmpeg-full/bin/ffprobe ]]; then
+    printf '%s\n' /opt/homebrew/opt/ffmpeg-full/bin/ffprobe
+    return 0
+  fi
+  command -v ffprobe
+}
+
+render_plist() {
+  local src="$1"
+  local dest="$2"
+  mkdir -p "$(dirname "$dest")"
+  sed "s#{{ \.chezmoi\.homeDir }}#${HOME}#g" "$src" >"$dest"
+}
+
+ensure_dirs() {
+  mkdir -p "$(library_dir)/Incoming/staging" \
+    "$(library_dir)/Incoming/review" \
+    "$(library_dir)/Incoming/quarantine" \
+    "$(complete_dir)" \
+    "$LOG_DIR" \
+    "$STATE_DIR" \
+    "${HOME}/.local/share/beets" \
+    "${HOME}/.local/share/navidrome" \
+    "${HOME}/Library/Logs/navidrome"
+}
+
+sync_library_ignores() {
+  local root dest src
+  if ! root="$(repo_root)"; then
+    return 0
+  fi
+  src="${root}/${STIGNORE_REL}"
+  dest="$(library_dir)/.stignore"
+  if [[ -f "$src" ]]; then
+    /bin/cp -f "$src" "$dest"
+    log "wrote ${dest}"
+  fi
+  src="${root}/${NDIGNORE_REL}"
+  dest="$(library_dir)/.ndignore"
+  if [[ -f "$src" ]]; then
+    /bin/cp -f "$src" "$dest"
+    log "wrote ${dest}"
+  fi
+}
+
+install_beets() {
+  require_cmd uv
+  if command -v beet >/dev/null 2>&1; then
+    log "beet already on PATH: $(command -v beet)"
+    return 0
+  fi
+  log "installing beets via uv tool"
+  uv tool install --with beets-filetote \
+    "beets[chroma,discogs,fetchart,embedart,lyrics,replaygain]"
+}
+
+install_keyfinder_cli() {
+  if command -v keyfinder-cli >/dev/null 2>&1; then
+    log "keyfinder-cli already on PATH"
+    return 0
+  fi
+  if [[ ! -d /opt/homebrew/opt/libkeyfinder ]]; then
+    log "libkeyfinder missing; skip keyfinder-cli build (brew install libkeyfinder)"
+    return 0
+  fi
+  require_cmd cmake
+  require_cmd git
+  local src="${STATE_DIR}/keyfinder-cli-src"
+  if [[ ! -d "$src/.git" ]]; then
+    git clone --depth 1 https://github.com/evanpurkhiser/keyfinder-cli.git "$src"
+  fi
+  cmake -S "$src" -B "${src}/build" -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX="${HOME}/.local"
+  cmake --build "${src}/build"
+  cmake --install "${src}/build"
+  log "installed keyfinder-cli → ${HOME}/.local/bin/keyfinder-cli"
+}
+
+link_picard() {
+  local bundled="/Applications/MusicBrainz Picard.app/Contents/MacOS/picard-run"
+  local dest="${HOME}/.local/bin/picard"
+  if [[ -x "$bundled" && ! -e "$dest" ]]; then
+    ln -sfn "$bundled" "$dest"
+    log "linked picard CLI → ${dest}"
+  fi
+}
+
+bootstrap_agent() {
+  local label="$1"
+  local dest="$2"
+  if [[ ! -f "$dest" ]]; then
+    die "dest plist missing (${dest}); apply Chezmoi from rig/home or set MUSIC_INGEST_REPO"
+  fi
+  if agent_loaded "$label"; then
+    launchctl bootout "$(label_path "$label")" >/dev/null 2>&1 || true
+  fi
+  if ! launchctl bootstrap "$(gui_domain)" "$dest"; then
+    log "bootstrap failed for ${label}"
+    print_login_item_hint
+    return 1
+  fi
+  launchctl enable "$(label_path "$label")" >/dev/null 2>&1 || true
+  if agent_loaded "$label"; then
+    log "loaded ${label}"
+  else
+    log "${label} not visible to launchctl after bootstrap"
+    print_login_item_hint
+    return 1
+  fi
+}
+
+legacy_music_install_retired() {
+  local native_os native_host native_user native_uid
+  native_os="$(uname -s)" || die "cannot establish native host identity"
+  [[ "$native_os" == Darwin ]] || return 1
+  native_host="$(hostname -s)" || die "cannot establish native hostname"
+  native_user="$(id -un)" || die "cannot establish native account"
+  native_uid="$(id -u)" || die "cannot establish native uid"
+  case "${native_host}:${native_user}:${native_uid}" in
+    w4w-mbp:ww:502 | MacBookAir:wyattwalsh:501) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+cmd_install() {
+  local dry_run=0
+  if [[ "${1:-}" == "--dry-run" ]]; then
+    dry_run=1
+  fi
+  if legacy_music_install_retired; then
+    if [[ "$dry_run" -eq 1 ]]; then
+      log "dry-run: legacy music service install retired; no copy, render or activation"
+      log "MBA services use the reviewed contract installer; manual rollback uses retained plists"
+      return 0
+    fi
+    die "legacy music service install retired on this host; use the MBA contract installer or retained manual rollback plists"
+  fi
+  local root=""
+  local dest_ingest="${HOME}/Library/LaunchAgents/${PLIST_INGEST_NAME}"
+  local dest_navidrome="${HOME}/Library/LaunchAgents/${PLIST_NAVIDROME_NAME}"
+  if root="$(repo_root)"; then
+    if [[ "$dry_run" -eq 1 ]]; then
+      log "dry-run: would /bin/cp -f ${root}/${REPO_RUNNER_REL} ${DEST_RUNNER}"
+      log "dry-run: would /bin/cp -f ${root}/${REPO_DJ_TAG_REL} ${DEST_DJ_TAG}"
+      log "dry-run: would render dest plists"
+      log "dry-run: would ensure $(library_dir) and Incoming/"
+      log "dry-run: would uv tool install beets extras"
+      log "dry-run: would build keyfinder-cli if missing"
+      log "dry-run: would bootstrap ${LABEL_INGEST} and ${LABEL_NAVIDROME}"
+      return 0
+    fi
+    mkdir -p "$(dirname "${DEST_RUNNER}")" "$LOG_DIR"
+    /bin/cp -f "${root}/${REPO_RUNNER_REL}" "$DEST_RUNNER"
+    /bin/chmod +x "$DEST_RUNNER"
+    /bin/cp -f "${root}/${REPO_DJ_TAG_REL}" "$DEST_DJ_TAG"
+    /bin/chmod +x "$DEST_DJ_TAG"
+    render_plist "${root}/${PLIST_INGEST_REL}" "$dest_ingest"
+    render_plist "${root}/${PLIST_NAVIDROME_REL}" "$dest_navidrome"
+  elif [[ "$dry_run" -eq 1 ]]; then
+    log "dry-run: MUSIC_INGEST_REPO unset or source missing; would skip dest runner sync"
+    return 0
+  fi
+  ensure_dirs
+  sync_library_ignores
+  install_beets
+  install_keyfinder_cli || log "keyfinder-cli build skipped"
+  link_picard
+  require_cmd launchctl
+  bootstrap_agent "$LABEL_INGEST" "$dest_ingest"
+  if command -v navidrome >/dev/null 2>&1; then
+    bootstrap_agent "$LABEL_NAVIDROME" "$dest_navidrome"
+  else
+    log "navidrome binary missing; skip ${LABEL_NAVIDROME} (brew install navidrome)"
+  fi
+}
+
+AUDIO_FIND=(
+  -iname '*.mp3' -o -iname '*.flac' -o -iname '*.m4a' -o -iname '*.alac' -o
+  -iname '*.aac' -o -iname '*.wav' -o -iname '*.aiff' -o -iname '*.aif' -o
+  -iname '*.ogg' -o -iname '*.opus'
+)
+
+dir_has_direct_audio() {
+  find "$1" -maxdepth 1 -type f \( "${AUDIO_FIND[@]}" \) -print -quit 2>/dev/null | grep -q .
+}
+
+dir_has_nested_audio() {
+  find "$1" -mindepth 2 -type f \( "${AUDIO_FIND[@]}" \) -print -quit 2>/dev/null | grep -q .
+}
+
+list_direct_audio() {
+  find "$1" -maxdepth 1 -type f \( "${AUDIO_FIND[@]}" \) 2>/dev/null | LC_ALL=C sort
+}
+
+# Soulseek complete is usually uploader/…/album, not a flat album list.
+iter_inbox_units() {
+  local complete="$1"
+  local dir
+  while IFS= read -r dir; do
+    [[ -z "$dir" || "$dir" == "$complete" ]] && continue
+    if dir_has_direct_audio "$dir"; then
+      printf '%s\n' "$dir"
+    fi
+  done < <(find "$complete" -type d ! -name '.DS_Store' | LC_ALL=C sort)
+}
+
+album_settled() {
+  local dir="$1"
+  local newest="" mtime
+  while IFS= read -r mtime; do
+    if [[ -z "$newest" || "$mtime" -gt "$newest" ]]; then
+      newest="$mtime"
+    fi
+  done < <(find "$dir" -type f ! -name '.DS_Store' -exec stat -f '%m' {} + 2>/dev/null || true)
+  if [[ -z "$newest" ]]; then
+    return 1
+  fi
+  local now
+  now="$(date +%s)"
+  if ((now - newest < SETTLE_SEC)); then
+    return 1
+  fi
+  return 0
+}
+
+seen_file() {
+  printf '%s\n' "${STATE_DIR}/seen.log"
+}
+
+# Audio identity is independent of artwork/lyrics/other sidecars. Hash bytes,
+# not mtime or size: in-place same-size edits must invalidate audio identity.
+# `all` preserves the old key format only for safe migration and for detecting
+# source changes during an import (including a sidecar racing beets).
+# shellcheck disable=SC2094 # Failure cleanup removes temp files; it never rewrites an input.
+dir_seen_key() {
+  local dir="$1" kind="${2:-all}" list manifest file digest key
+  list="$(mktemp "${TMPDIR:-/tmp}/music-unit-list.XXXXXX")" || return 1
+  manifest="$(mktemp "${TMPDIR:-/tmp}/music-unit-hashes.XXXXXX")" || {
+    rm -f "$list"
+    return 1
+  }
+  case "$kind" in
+    audio) find "$dir" -maxdepth 1 -type f \( "${AUDIO_FIND[@]}" \) -print0 >"$list" ;;
+    sidecar) find "$dir" -maxdepth 1 -type f ! -name '.DS_Store' ! \( "${AUDIO_FIND[@]}" \) -print0 >"$list" ;;
+    all) find "$dir" -maxdepth 1 -type f ! -name '.DS_Store' -print0 >"$list" ;;
+    *)
+      rm -f "$list" "$manifest"
+      return 1
+      ;;
+  esac || {
+    rm -f "$list" "$manifest"
+    return 1
+  }
+  while IFS= read -r -d '' file; do
+    digest="$(/usr/bin/shasum -a 256 "$file")" || {
+      rm -f "$list" "$manifest"
+      return 1
+    }
+    printf '%s\t%q\n' "${digest%% *}" "$file" >>"$manifest" || {
+      rm -f "$list" "$manifest"
+      return 1
+    }
+  done <"$list"
+  key="$(LC_ALL=C sort "$manifest" | /usr/bin/shasum -a 256)" || {
+    rm -f "$list" "$manifest"
+    return 1
+  }
+  rm -f "$list" "$manifest"
+  printf '%s\n' "${key%% *}"
+}
+
+unit_path_key() {
+  local key
+  key="$(printf '%s' "$1" | /usr/bin/shasum -a 256)" || return 1
+  printf '%s\n' "${key%% *}"
+}
+
+mark_seen() {
+  local dir_key="$1" audio_key="$2" sidecar_key="$3" unit_kind="$4"
+  mkdir -p "$STATE_DIR"
+  printf 'audio-v2:%s:%s\nsidecar-v1:%s:%s:%s\nunit-v2:%s:%s\n' \
+    "$dir_key" "$audio_key" "$dir_key" "$audio_key" "$sidecar_key" \
+    "$dir_key" "$unit_kind" >>"$(seen_file)"
+}
+
+already_seen() {
+  local dir="$1" dry_run="$2" dir_key audio_key sidecar_key old_key post_key seen count unit_kind
+  seen="$(seen_file)"
+  dir_key="$(unit_path_key "$dir")" || die "cannot fingerprint unit path: $dir"
+  audio_key="$(dir_seen_key "$dir" audio)" || die "cannot fingerprint audio: $dir"
+  sidecar_key="$(dir_seen_key "$dir" sidecar)" || die "cannot fingerprint sidecars: $dir"
+  [[ -f "$seen" ]] || return 1
+  if grep -qxF "audio-v2:${dir_key}:${audio_key}" "$seen"; then
+    if ! grep -qF "unit-v2:${dir_key}:" "$seen"; then
+      die "incomplete seen receipt; reconcile manually: ${dir}"
+    fi
+    if ! grep -qxF "sidecar-v1:${dir_key}:${audio_key}:${sidecar_key}" "$seen"; then
+      log "sidecars changed (proposal only; audio already verified): ${dir}"
+    fi
+    return 0
+  fi
+  # A changed multi-track unit cannot be reimported wholesale: unchanged
+  # tracks would be duplicated because beets duplicate_action is `keep`.
+  if grep -qF "audio-v2:${dir_key}:" "$seen"; then
+    count="$(find "$dir" -maxdepth 1 -type f \( "${AUDIO_FIND[@]}" \) -print | wc -l)" || die "cannot enumerate changed audio: ${dir}"
+    if [[ "$count" -ne 1 ]] || ! grep -qxF "unit-v2:${dir_key}:single" "$seen"; then
+      die "audio changed in previously verified multi-track unit; reconcile manually: ${dir}"
+    fi
+    return 1
+  fi
+  # Old seen.log entries are anonymous all-file hashes. Migrate only when
+  # the *entire* old unit still matches; otherwise ownership cannot be proven.
+  if grep -qE '^[[:xdigit:]]{64}$' "$seen"; then
+    old_key="$(dir_seen_key "$dir" all)" || die "cannot fingerprint legacy unit: $dir"
+    if grep -qxF "$old_key" "$seen"; then
+      audio_key="$(dir_seen_key "$dir" audio)" || die "cannot fingerprint legacy audio: $dir"
+      sidecar_key="$(dir_seen_key "$dir" sidecar)" || die "cannot fingerprint legacy sidecars: $dir"
+      post_key="$(dir_seen_key "$dir" all)" || die "cannot recheck legacy unit: $dir"
+      [[ "$old_key" == "$post_key" ]] || die "legacy unit changed during fingerprint: ${dir}"
+      count="$(find "$dir" -maxdepth 1 -type f \( "${AUDIO_FIND[@]}" \) -print | wc -l)" || die "cannot enumerate legacy audio: ${dir}"
+      [[ "$count" -gt 0 ]] || die "legacy unit has no direct audio: ${dir}"
+      unit_kind=multi
+      [[ "$count" -eq 1 ]] && unit_kind=single
+      if [[ "$dry_run" -eq 0 ]]; then
+        mark_seen "$dir_key" "$audio_key" "$sidecar_key" "$unit_kind" || die "cannot migrate legacy receipt: ${dir}"
+      fi
+      return 0
+    fi
+    die "legacy seen state cannot identify changed unit; reconcile manually before import: ${dir}"
+  fi
+  return 1
+}
+
+validate_audio() {
+  local file="$1"
+  local probe
+  probe="$(ffprobe_bin)" || return 1
+  if ! "$probe" -v error -show_entries format=duration -of csv=p=0 "$file" >/dev/null 2>&1; then
+    return 1
+  fi
+  return 0
+}
+
+dj_tag_fill() {
+  local target="$1"
+  local dry_flag=()
+  if [[ "${2:-}" == "dry" ]]; then
+    dry_flag=(--dry-run)
+  fi
+  local tagger="${DEST_DJ_TAG}"
+  local root
+  if root="$(repo_root)"; then
+    tagger="${root}/${REPO_DJ_TAG_REL}"
+  fi
+  if [[ ! -x "$tagger" && ! -f "$tagger" ]]; then
+    if [[ "${2:-}" == dry ]]; then
+      log "music-dj-tag missing; preview cannot run"
+      return 0
+    fi
+    die "music-dj-tag missing; refusing refine --apply"
+  fi
+  uv run --script "$tagger" "${dry_flag[@]}" "$target"
+}
+
+cmd_refine() {
+  local dry_run=1
+  local -a paths=()
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run)
+        dry_run=1
+        ;;
+      --apply)
+        dry_run=0
+        ;;
+      --force-analyze)
+        die "refine refuses --force-analyze (would overwrite existing keys)"
+        ;;
+      --*)
+        die "unknown refine flag: ${arg}"
+        ;;
+      *)
+        paths+=("$arg")
+        ;;
+    esac
+  done
+  if [[ "${#paths[@]}" -eq 0 ]]; then
+    paths+=("$(library_dir)")
+    paths+=("$(complete_dir)")
+    if [[ "${MUSIC_INGEST_INCLUDE_ICLOUD:-}" == "1" ]]; then
+      paths+=("${HOME}/Library/Mobile Documents/com~apple~CloudDocs/Music")
+    else
+      log "skipping iCloud Music placeholders (set MUSIC_INGEST_INCLUDE_ICLOUD=1 to include local-only files)"
+    fi
+  fi
+  if [[ "$dry_run" -eq 0 ]]; then
+    lock_music_writer
+    assert_no_pending_imports
+  fi
+  if [[ "$dry_run" -eq 1 ]]; then
+    log "refine dry-run (no writes). Pass --apply to fill missing key/Camelot/BPM only."
+  else
+    log "refine --apply: fill-if-missing musical key + Camelot + BPM; will not move files, overwrite occupied TKEY/CAMELOT/BPM, or run beets"
+  fi
+  local root
+  for root in "${paths[@]}"; do
+    if [[ ! -e "$root" ]]; then
+      log "skip missing: ${root}"
+      continue
+    fi
+    if [[ "$dry_run" -eq 1 ]]; then
+      dj_tag_fill "$root" dry
+    else
+      dj_tag_fill "$root"
+    fi
+  done
+}
+
+move_to_review() {
+  local review="$1"
+  shift
+  mkdir -p "$review"
+  local src
+  for src in "$@"; do
+    [[ -e "$src" ]] || continue
+    mv "$src" "$review/"
+  done
+}
+
+unit_has_audio() {
+  local dir="$1"
+  local audio
+  audio="$(find "$dir" -type f \( -iname '*.mp3' -o -iname '*.flac' -o -iname '*.m4a' -o -iname '*.aac' -o -iname '*.wav' -o -iname '*.aiff' -o -iname '*.aif' \) -print -quit 2>/dev/null || true)"
+  [[ -n "$audio" ]]
+}
+
+prune_unit_if_no_audio() {
+  local dir="$1"
+  local complete
+  complete="$(complete_dir)"
+  [[ -n "$dir" && -d "$dir" ]] || return 0
+  [[ "$dir" != "$complete" ]] || return 0
+  if unit_has_audio "$dir"; then
+    return 0
+  fi
+  rm -rf "$dir"
+}
+
+prune_empty_complete_dirs() {
+  local complete
+  complete="$(complete_dir)"
+  [[ -d "$complete" ]] || return 0
+  find "$complete" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+}
+
+# Byte-identical complete/ copies of Library audio. One pass (size then sha256).
+# Prints "drained leftover" counts to stdout.
+drain_matching_library_copies() {
+  local dry_run="$1"
+  local complete lib
+  complete="$(complete_dir)"
+  lib="$(library_dir)"
+  [[ -d "$complete" && -d "$lib" ]] || {
+    printf '0 0\n'
+    return 0
+  }
+  require_cmd uv
+  PYTHONUNBUFFERED=1 UV_NO_PROJECT=1 uv run --offline --no-project python -I - "$dry_run" "$complete" "$lib" <<'PY'
+import hashlib, sys
+from pathlib import Path
+
+sys.stderr.reconfigure(line_buffering=True)
+dry = sys.argv[1] == "1"
+complete = Path(sys.argv[2])
+lib = Path(sys.argv[3])
+exts = {".mp3", ".flac", ".m4a", ".alac", ".aac", ".wav", ".aiff", ".aif", ".ogg", ".opus"}
+
+def audio_files(root: Path):
+    for p in root.rglob("*"):
+        if p.is_file() and p.suffix.lower() in exts:
+            if "Incoming" in p.parts:
+                continue
+            yield p
+
+def digest(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+inbox = [p for p in audio_files(complete) if p.stat().st_size > 0]
+if not inbox:
+    print("0 0")
+    raise SystemExit(0)
+by_digest: dict[str, list[Path]] = {}
+sizes: set[int] = set()
+for p in inbox:
+    d = digest(p)
+    by_digest.setdefault(d, []).append(p)
+    sizes.add(p.stat().st_size)
+unmatched = set(by_digest)
+lib_memo: dict[Path, str] = {}
+for libp in audio_files(lib):
+    if not unmatched:
+        break
+    try:
+        sz = libp.stat().st_size
+    except OSError:
+        continue
+    if sz not in sizes:
+        continue
+    if libp not in lib_memo:
+        lib_memo[libp] = digest(libp)
+    d = lib_memo[libp]
+    if d in unmatched:
+        unmatched.discard(d)
+drained = leftover = 0
+for d, paths in by_digest.items():
+    if d in unmatched:
+        leftover += len(paths)
+        continue
+    for src in paths:
+        drained += 1
+        print(f"[music-ingest] proposal only: identical Library copy; retain inbox original: {src}", file=sys.stderr)
+print(f"{drained} {leftover}")
+PY
+}
+
+enrich_paths() {
+  local dry_run="$1"
+  shift
+  if [[ "$#" -eq 0 ]]; then
+    log "enrich: no paths"
+    return 0
+  fi
+  local p
+  if [[ "$dry_run" -eq 1 ]]; then
+    for p in "$@"; do
+      log "dry-run: would enrich ${p}"
+    done
+    return 0
+  fi
+  die "enrichment is proposal-only; exact verified IDs and reviewed fields required"
+}
+
+restore_copy_running() {
+  local pidfile="${LOG_DIR}/gdrive-restore.pid"
+  local pid
+  [[ -f "$pidfile" ]] || return 1
+  pid="$(cat "$pidfile" 2>/dev/null || true)"
+  [[ -n "$pid" ]] || return 1
+  kill -0 "$pid" 2>/dev/null
+}
+
+cmd_enrich() {
+  local dry_run=1
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) dry_run=1 ;;
+      --apply) dry_run=0 ;;
+      --force-analyze)
+        die "catalog/enrich refuse --force-analyze (would overwrite existing keys)"
+        ;;
+      --*)
+        die "unknown enrich flag: ${arg}"
+        ;;
+      *)
+        die "enrich takes no paths (operates on $(library_dir))"
+        ;;
+    esac
+  done
+  local lib
+  lib="$(library_dir)"
+  if [[ "$dry_run" -eq 1 ]]; then
+    log "enrich dry-run: proposal only (no writes); --apply is disabled pending reviewed exact-ID enrichment."
+    log "dry-run: would beet fetchart -q ${lib}"
+    log "dry-run: would beet embedart -y ${lib}"
+    log "dry-run: would beet lyrics ${lib}"
+    log "dry-run: would beet mbsync -M ${lib}"
+    log "dry-run: would rsgain custom -s i ${lib}"
+    log "dry-run: would music-dj-tag ${lib}"
+    return 0
+  fi
+  die "enrich --apply is disabled: whole-library enrichment requires reviewed exact IDs"
+}
+
+cmd_catalog() {
+  local dry_run=1
+  local src=""
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) dry_run=1 ;;
+      --apply) dry_run=0 ;;
+      --force-analyze)
+        die "catalog/enrich refuse --force-analyze (would overwrite existing keys)"
+        ;;
+      --*)
+        die "unknown catalog flag: ${arg}"
+        ;;
+      *)
+        if [[ -n "$src" ]]; then
+          die "catalog takes at most one path"
+        fi
+        src="$arg"
+        ;;
+    esac
+  done
+  if [[ -z "$src" ]]; then
+    src="$(incoming_dir)/gdrive-restore"
+  fi
+  if restore_copy_running; then
+    if [[ "$dry_run" -eq 1 ]]; then
+      log "gdrive restore copy still running; catalog --apply will wait until rclone exits"
+    else
+      die "gdrive restore copy still running; wait for rclone to finish before catalog --apply"
+    fi
+  fi
+  if [[ ! -e "$src" ]]; then
+    die "catalog path missing: ${src}"
+  fi
+  local -a import_flags=(--quiet --incremental)
+  case "$src" in
+    "$(incoming_dir)" | "$(incoming_dir)"/*)
+      import_flags+=(--move --nocopy)
+      ;;
+  esac
+  if [[ "$src" == "$(complete_dir)" || "$src" == "$(complete_dir)"/* ]]; then
+    die "catalog refuses Soulseek complete (use ingest, which moves into Library)"
+  fi
+  if [[ "$dry_run" -eq 1 ]]; then
+    log "catalog dry-run: import proposal only; --apply is disabled pending verified exact-ID journaling."
+    log "dry-run: would beet import ${import_flags[*]} ${src}"
+    cmd_enrich --dry-run
+    return 0
+  fi
+  die "catalog --apply is disabled: restore imports need verified exact-ID journaling and a reviewed pilot"
+}
+
+# Query complete beets IDs, never Library mtimes or a grep of import output.
+# Any malformed/ambiguous listing is an error rather than an empty cohort.
+beet_id_snapshot() {
+  local dest="$1" raw
+  raw="${dest}.raw"
+  # shellcheck disable=SC2016 # Beets expands the literal $id formatter.
+  "$BEET_BIN" ls -f '$id' >"$raw" || return 1
+  if grep -q -vE '^[0-9]+$' "$raw"; then
+    return 1
+  fi
+  LC_ALL=C sort -u "$raw" >"$dest"
+  [[ "$(wc -l <"$raw")" -eq "$(wc -l <"$dest")" ]]
+}
+
+beet_path_snapshot() {
+  local dest="$1"
+  # shellcheck disable=SC2016 # Beets expands the literal $path formatter.
+  "$BEET_BIN" ls -f '$path' >"$dest" || return 1
+  if grep -q '^$' "$dest"; then return 1; fi
+  LC_ALL=C sort -u "$dest" -o "$dest"
+}
+
+verify_imported_ids() {
+  local before="$1" after="$2" expected="$3" ids="$4" prior_paths="$5" source_hashes="$6"
+  local id path lib digest dest_hashes="${ids}.hashes" dest_paths="${ids}.paths"
+  : >"$dest_hashes"
+  : >"$dest_paths"
+  lib="$(library_dir)"
+  if [[ -n "$(comm -23 "$before" "$after")" ]]; then
+    log "beets IDs disappeared during import"
+    return 1
+  fi
+  comm -13 "$before" "$after" >"$ids"
+  if [[ "$(wc -l <"$ids")" -ne "$expected" ]]; then
+    log "import ID count differs from validated source count (${expected})"
+    return 1
+  fi
+  while IFS= read -r id; do
+    # shellcheck disable=SC2016 # Beets expands the literal $path formatter.
+    path="$("$BEET_BIN" ls -f '$path' "id:${id}")" || return 1
+    if [[ "$path" != "$lib"/* || "$path" == "$lib"/Incoming/* || ! -f "$path" || -L "$path" || "$path" == *$'\n'* ]]; then
+      log "imported ID ${id} lacks a unique regular Library path"
+      return 1
+    fi
+    if grep -qxF "$path" "$prior_paths"; then
+      log "imported ID ${id} points to a preexisting DB path"
+      return 1
+    fi
+    validate_audio "$path" || return 1
+    digest="$(/usr/bin/shasum -a 256 "$path")" || return 1
+    printf '%s\n' "${digest%% *}" >>"$dest_hashes" || return 1
+    printf '%s\n' "$path" >>"$dest_paths" || return 1
+  done <"$ids"
+  if [[ -n "$(LC_ALL=C sort "$dest_paths" | uniq -d)" ||
+  -n "$(LC_ALL=C sort "$source_hashes" | uniq -d)" ||
+  -n "$(LC_ALL=C sort "$dest_hashes" | uniq -d)" ]]; then
+    log "ambiguous duplicate source or destination mapping"
+    return 1
+  fi
+  if [[ "$(wc -l <"$source_hashes")" -ne "$expected" ||
+  "$(wc -l <"$dest_hashes")" -ne "$expected" ]]; then
+    log "source/destination hash count mismatch"
+    return 1
+  fi
+  if ! diff -q <(LC_ALL=C sort "$source_hashes") <(LC_ALL=C sort "$dest_hashes") >/dev/null; then
+    log "new DB paths do not contain byte-identical source copies"
+    return 1
+  fi
+}
+
+cmd_ingest() {
+  local dry_run=0
+  case "${1:-}" in
+    --dry-run) dry_run=1 ;;
+    '') ;;
+    *) die "unknown ingest flag: $1" ;;
+  esac
+  if [[ "$dry_run" -eq 0 ]]; then
+    lock_music_writer
+    assert_no_pending_imports
+  fi
+  local complete
+  complete="$(complete_dir)"
+  if [[ ! -d "$complete" ]]; then
+    log "complete inbox missing: ${complete}"
+    return 0
+  fi
+  if [[ "$dry_run" -eq 0 ]]; then
+    ensure_dirs
+  fi
+  # Matching byte copies are deliberately retained; equality is not import proof.
+  # No pre-import inbox deletion or whole-library mtime selection.
+  local dir found=0
+  while IFS= read -r dir; do
+    [[ -z "$dir" || ! -d "$dir" ]] && continue
+    found=1
+    if already_seen "$dir" "$dry_run"; then
+      log "previously verified unit retained for review: ${dir}"
+      continue
+    fi
+    if ! album_settled "$dir"; then
+      log "waiting for settle: ${dir}"
+      continue
+    fi
+    local -a candidates=()
+    local audio
+    while IFS= read -r audio; do
+      [[ -z "$audio" ]] && continue
+      candidates+=("$audio")
+    done < <(list_direct_audio "$dir")
+    if [[ "${#candidates[@]}" -eq 0 ]]; then
+      continue
+    fi
+    local mode=album
+    if dir_has_nested_audio "$dir" || [[ "${#candidates[@]}" -eq 1 ]]; then
+      mode=singletons
+    fi
+    if [[ "$dry_run" -eq 1 ]]; then
+      log "dry-run: would beet import --quiet --copy ${mode} ${dir} (${#candidates[@]} files)"
+      log "dry-run: would verify new import IDs; would enrich imported files only after independent review (proposal only)"
+      continue
+    fi
+    for audio in "${candidates[@]}"; do
+      if ! validate_audio "$audio"; then
+        die "unreadable audio (retained in inbox): ${audio}"
+      fi
+    done
+    require_cmd "$BEET_BIN"
+    local marker import_log before after ids prior_paths source_hashes input_key digest dir_key audio_key sidecar_key
+    mkdir -p "$STATE_DIR" "${STATE_DIR}/pending-imports"
+    # Keep the full snapshot for in-flight race detection, but persist only
+    # audio identity as the import decision and sidecar identity separately.
+    input_key="$(dir_seen_key "$dir" all)" || die "cannot fingerprint input: ${dir}"
+    audio_key="$(dir_seen_key "$dir" audio)" || die "cannot fingerprint audio: ${dir}"
+    sidecar_key="$(dir_seen_key "$dir" sidecar)" || die "cannot fingerprint sidecars: ${dir}"
+    dir_key="$(unit_path_key "$dir")" || die "cannot fingerprint unit path: ${dir}"
+    before="$(mktemp "${STATE_DIR}/baseline.XXXXXX")"
+    prior_paths="${before}.paths"
+    # Read-only preflight comes BEFORE the pending marker: failure here cannot
+    # leave a phantom unresolved import, because no import has started.
+    if ! beet_id_snapshot "$before" || ! beet_path_snapshot "$prior_paths"; then
+      rm -f "$before" "${before}.raw" "$prior_paths"
+      die "could not snapshot beets baseline; no import started"
+    fi
+    source_hashes="${before}.source-hashes"
+    : >"$source_hashes"
+    for audio in "${candidates[@]}"; do
+      digest="$(/usr/bin/shasum -a 256 "$audio")" || {
+        rm -f "$before" "${before}.raw" "$prior_paths" "$source_hashes"
+        die "source hash failed; no import started"
+      }
+      printf '%s\n' "${digest%% *}" >>"$source_hashes"
+    done
+    marker="$(mktemp "${STATE_DIR}/pending-imports/unit.XXXXXX")"
+    printf 'unit=%s\nstatus=started\n' "$dir" >"$marker"
+    import_log="${marker}.log"
+    after="${marker}.after"
+    ids="${marker}.ids"
+    if [[ "$mode" == singletons ]]; then
+      if ! "$BEET_BIN" import --quiet --copy --singletons "${candidates[@]}" >"$import_log" 2>&1; then
+        die "beet import failed; marker and inbox retained: ${marker}"
+      fi
+    elif ! "$BEET_BIN" import --quiet --copy "$dir" >"$import_log" 2>&1; then
+      die "beet import failed; marker and inbox retained: ${marker}"
+    fi
+    local post_key
+    post_key="$(dir_seen_key "$dir" all)" || die "source changed/unreadable during import; marker retained: ${marker}"
+    if grep -qE 'Skipping\.|^skip ' "$import_log" \
+      || ! beet_id_snapshot "$after" \
+      || ! verify_imported_ids "$before" "$after" "${#candidates[@]}" "$ids" "$prior_paths" "$source_hashes" \
+      || [[ "$post_key" != "$input_key" ]]; then
+      die "ambiguous/partial import or changed source; marker and inbox retained: ${marker}"
+    fi
+    printf 'status=verified\nids=%s\n' "$(paste -sd, "$ids")" >>"$marker"
+    cat "$marker" >>"${STATE_DIR}/verified-imports.log"
+    local unit_kind=multi
+    [[ "${#candidates[@]}" -eq 1 ]] && unit_kind=single
+    mark_seen "$dir_key" "$audio_key" "$sidecar_key" "$unit_kind"
+    rm -f "$import_log" "$before" "${before}.raw" "$prior_paths" "$source_hashes" "$after" "${after}.raw" "$ids" "${ids}.hashes" "${ids}.paths" "$marker"
+    log "verified import (${mode}): ${dir}; enrichment proposal only"
+  done < <(iter_inbox_units "$complete")
+  if [[ "$found" -eq 0 ]]; then
+    log "no album directories in ${complete}"
+  fi
+}
+
+cmd_doctor() {
+  log "library: $(library_dir) $([[ -d $(library_dir) ]] && echo present || echo missing)"
+  log "complete inbox: $(complete_dir) $([[ -d $(complete_dir) ]] && echo present || echo missing)"
+  local cmd
+  for cmd in beet ffprobe ffmpeg picard keyfinder-cli aubio rsgain fpcalc navidrome mp3val; do
+    if command -v "$cmd" >/dev/null 2>&1; then
+      log "bin ${cmd}: $(command -v "$cmd")"
+    else
+      log "bin ${cmd}: missing"
+    fi
+  done
+  if [[ -x /Applications/MusicBrainz\ Picard.app/Contents/MacOS/picard-run ]]; then
+    log "picard app: present"
+  else
+    log "picard app: missing"
+  fi
+  if [[ -d /Applications/Petrichor.app ]]; then
+    log "petrichor: present"
+  else
+    log "petrichor: missing"
+  fi
+  if [[ -d /Applications/Syncthing.app ]]; then
+    log "syncthing-app: present"
+  else
+    log "syncthing-app: missing"
+  fi
+  local dest
+  dest="${HOME}/Library/LaunchAgents/${PLIST_INGEST_NAME}"
+  if [[ -f "$dest" ]]; then
+    log "plist ingest: ${dest}"
+  else
+    log "plist ingest: missing"
+  fi
+  dest="${HOME}/Library/LaunchAgents/${PLIST_NAVIDROME_NAME}"
+  if [[ -f "$dest" ]]; then
+    log "plist navidrome: ${dest}"
+  else
+    log "plist navidrome: missing"
+  fi
+  if [[ -f "${HOME}/.config/beets/config.yaml" ]]; then
+    log "beets config: present"
+  else
+    log "beets config: missing (apply Chezmoi from rig/home)"
+  fi
+  if [[ -f "${HOME}/.config/navidrome/navidrome.toml" ]]; then
+    log "navidrome config: present"
+  else
+    log "navidrome config: missing (apply Chezmoi from rig/home)"
+  fi
+  return 0
+}
+
+main() {
+  local cmd="${1:-doctor}"
+  shift || true
+  case "$cmd" in
+    -h | --help) usage ;;
+    doctor) cmd_doctor "$@" ;;
+    ingest) cmd_ingest "$@" ;;
+    refine) cmd_refine "$@" ;;
+    prepare) cmd_refine "$@" ;;
+    catalog) cmd_catalog "$@" ;;
+    enrich) cmd_enrich "$@" ;;
+    install) cmd_install "$@" ;;
+    *)
+      usage >&2
+      die "unknown command: ${cmd}"
+      ;;
+  esac
+}
+
+main "$@"

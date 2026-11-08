@@ -1,0 +1,4 @@
+EditionId,LikedTrackId,BeetsItemId,Version,Status,Artist,Title,Album,DurationMs,ISRC,Evidence,Reason
+song-extended,synthetic,,extended,verified,Artist,Song (Extended Mix),Edition Album,360000,USABC0012345,fixture://review/extended,
+song-radio,synthetic,,radio,verified,Artist,Song (Radio Edit),Edition Album,195000,USABC0012345,fixture://review/radio,
+song-unresolved,synthetic,,radio,unresolved,,,,,,,Associated release not yet verified
