@@ -1,3 +1,5 @@
+# shellcheck shell=bash
+# shellcheck disable=SC2154 # Assigned by apple-text-test.sh before this file is sourced.
 # Sourced from apple-text-test.sh. Uses CLI, ROOT, TMP, FIXTURE, rendered, doctor_json, and fail.
 python3 - "$doctor_json" <<'PY'
 import json
@@ -212,7 +214,7 @@ PY
 pwn_trigger="$(cat "$TMP/pwn-trigger")"
 rm -f "$TMP/pwned"
 set +e
-( cd "$ROOT" && just apple-text show "$pwn_trigger" >/dev/null 2>"$TMP/adv.err" )
+(cd "$ROOT" && just apple-text show "$pwn_trigger" >/dev/null 2>"$TMP/adv.err")
 adv_status=$?
 set -e
 if [[ -e "$TMP/pwned" ]]; then
