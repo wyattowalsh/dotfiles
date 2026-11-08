@@ -18,6 +18,7 @@ font-size = {{ .ghostty.fontSize | default "14" }}
 font-thicken = true
 font-thicken-strength = 80
 adjust-cell-height = 2
+grapheme-width-method = unicode
 font-feature = calt
 font-feature = -liga
 
@@ -86,8 +87,8 @@ resize-overlay-duration = 750ms
 unfocused-split-opacity = 0.85
 split-preserve-zoom = navigation
 
-macos-titlebar-style = tabs
-macos-non-native-fullscreen = padded-notch
+macos-titlebar-style = native
+macos-non-native-fullscreen = false
 macos-window-buttons = visible
 macos-window-shadow = true
 macos-hidden = never
@@ -106,7 +107,7 @@ quick-terminal-animation-duration = 0.12
 quick-terminal-autohide = true
 quick-terminal-space-behavior = move
 
-copy-on-select = clipboard
+copy-on-select = true
 
 clipboard-read = ask
 clipboard-write = allow
@@ -121,8 +122,7 @@ bell-features = audio,attention,title
 bell-audio-path = {{ .chezmoi.homeDir }}/.config/ghostty/sounds/notification.aiff
 bell-audio-volume = 0.5
 
-auto-update = download
-auto-update-channel = stable
+auto-update = off
 
 keybind = global:ctrl+backquote=toggle_quick_terminal
 

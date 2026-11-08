@@ -4,17 +4,22 @@ title: Terminal
 description: Ghostty + fonts.
 ---
 
-SSOT: `rig/home/private_dot_config/ghostty/config.tmpl` (defaults in `rig/home/.chezmoidata.toml`). Fonts: Nerd Font casks in `rig/brew/Brewfile`.
+SSOT: `rig/home/private_dot_config/ghostty/private_config.tmpl` (defaults in `rig/home/.chezmoidata.toml`). The `private_` prefix keeps the deployed config at mode `0600`. Fonts: Nerd Font casks in `rig/brew/Brewfile`.
 
 ## Tracked behavior
 
 | Area | Desired state |
 | --- | --- |
-| Typography | `font-feature = calt` enables contextual alternates; `font-feature = -liga` disables standard ligatures. |
+| Typography | `font-feature = calt` enables contextual alternates; `font-feature = -liga` disables standard ligatures. `grapheme-width-method = unicode` pins Ghostty's Unicode-width default for emoji and non-English text; older applications may show cursor-width mismatches. |
 | Palette | `palette-generate = true` plus `palette-harmonious = true` produces an extended palette ordered for the light theme. Legacy TUIs that assume indices 16–231 run dark-to-light need a visual check. |
 | Local overlay | `config-file = ?config.local` loads an optional, untracked sibling at `~/.config/ghostty/config.local`; a missing file is valid. |
 | Local assets | Bell audio stays under `~/.config/ghostty/sounds/`; backgrounds stay under `~/.config/ghostty/backgrounds/`. Missing local assets are expected until copied. |
-| Fullscreen | `macos-non-native-fullscreen = padded-notch` avoids native fullscreen animation and pads below the notch. Ghostty native tabs are unavailable while using non-native fullscreen. |
+| Background and padding | Keep the existing 12-point horizontal and 10-point vertical grid padding with balancing; changing padding does not guarantee the background paints differently. The local image stays centered with `cover` (and may be cropped), `background-image-opacity = 0.85`, and `background-opacity = 0.96`. |
+| Tabs and fullscreen | On macOS 27, Ghostty 1.3.1's custom `tabs` titlebar can stack and clip tabs at the right edge ([upstream report](https://github.com/ghostty-org/ghostty/discussions/14244)). Use `macos-titlebar-style = native` as the reported stable-build workaround; keep `macos-non-native-fullscreen = false` so tabs remain available in fullscreen. Titlebar changes apply to **new windows only**: open a new window with multiple tabs to verify, and recheck after an upstream stable fix. |
+| Selection and clipboard | On macOS, `copy-on-select = true` still copies selections to the system clipboard (there is no separate selection clipboard); `clipboard` also writes to it. Use `false` if automatic copying is unwanted. `selection-clear-on-copy = false` keeps the selection visible after an explicit copy. |
+| Updates | `auto-update = off` disables Ghostty's own update checks and downloads; the Homebrew cask is updated through `freshen` / `fr`. Keep that upgrade workflow active to receive fixes. |
+| Performance | Keep the default macOS vsync and current image/blur until a same-workload comparison shows a problem. Ghostty duplicates the background image in GPU memory per terminal surface; the 64 MiB scrollback cap is per surface but allocated lazily. More splits may therefore cost more memory without implying a startup regression. |
+| 1.3 workflow | Search, system scrollbars, click-to-move in supported prompts, command palette, prompt navigation, quick terminal, and splits are already configured or built in. Test them before adding overlapping bindings. |
 | Links | With the pointer over a detected URL, **Cmd-Option-U** copies it to the clipboard. |
 | Shell integration | `shell-integration = detect` lets Ghostty inject its official initial-zsh integration; zshrc does not source a separate Ghostty shim. |
 
@@ -27,11 +32,13 @@ Ghostty owns everyday splits. The tracked tmux formula exists only as Agent Deck
 | `just check-ghostty` | Tracked source contracts plus isolated Chezmoi rendering and native parsing when both tools are available; never applies config. |
 | `gtyv` | Deployed Ghostty config, including a real `config.local` overlay when present. |
 | `gtyc` | Effective non-default Ghostty settings. |
-| `just home-diff` | Preview the Chezmoi deployment delta. |
+| `chezmoi --source rig/home diff ~/.config/ghostty/config` | Preview only the Ghostty target, including permission changes; use `chezmoi --source rig/home verify ~/.config/ghostty/config` to check deployed parity. |
 
 ```bash
 just check-ghostty
-just home-diff
+chezmoi --source rig/home diff ~/.config/ghostty/config
 gtyv
 gtyc
 ```
+
+The Ghostty-only apply is `chezmoi --source rig/home apply ~/.config/ghostty/config` after reviewing that exact diff and keeping a private backup. Avoid a full-rig `just bootstrap --apply` for this change; do not check the background image or `config.local` into the public repository.

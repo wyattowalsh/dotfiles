@@ -52,7 +52,7 @@ repos:
         entry: just check-ghostty
         language: system
         pass_filenames: false
-        files: ^(rig/home/private_dot_config/ghostty/config\.tmpl|rig/home/\.chezmoidata\.toml|rig/dots/zshrc|rig/home/dot_zshrc\.tmpl|rig/home/AGENTS\.md|checks/ghostty\.sh|justfile|\.pre-commit-config\.yaml|docs/content/docs/(terminal|validation|home-config|shell)\.mdx)$
+        files: ^(rig/home/private_dot_config/ghostty/private_config\.tmpl|rig/home/\.chezmoidata\.toml|rig/dots/zshrc|rig/home/dot_zshrc\.tmpl|rig/home/AGENTS\.md|checks/ghostty\.sh|justfile|\.pre-commit-config\.yaml|docs/content/docs/(terminal|validation|home-config|shell)\.mdx)$
 
       - id: dotfiles-zsh-parity
         name: dotfiles zsh syntax and parity

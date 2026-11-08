@@ -5,7 +5,7 @@ TBD - created by archiving change improve-ghostty-config-assurance. Update Purpo
 ## Requirements
 ### Requirement: Canonical Ghostty template
 
-The repository SHALL manage Ghostty through `rig/home/private_dot_config/ghostty/config.tmpl`, retain the public theme/font data contract, and load an optional machine-local overlay using the sibling-relative `config-file = ?config.local` directive.
+The repository SHALL manage Ghostty through `rig/home/private_dot_config/ghostty/private_config.tmpl` with a private (`0600`) deployed file, retain the public theme/font data contract, and load an optional machine-local overlay using the sibling-relative `config-file = ?config.local` directive.
 
 #### Scenario: Render the tracked base config
 
@@ -13,6 +13,12 @@ The repository SHALL manage Ghostty through `rig/home/private_dot_config/ghostty
 - **THEN** the result contains no unresolved template expressions
 - **AND** the optional overlay resolves beside the rendered configuration
 - **AND** absence of `config.local` does not fail rendering or Ghostty parsing
+
+#### Scenario: Keep the deployed file private
+
+- **WHEN** Chezmoi applies only the Ghostty configuration target
+- **THEN** `~/.config/ghostty/config` has mode `0600`
+- **AND** the optional local overlay and background assets are not overwritten
 
 #### Scenario: Keep machine paths portable in source
 
@@ -22,14 +28,34 @@ The repository SHALL manage Ghostty through `rig/home/private_dot_config/ghostty
 
 ### Requirement: Refined Ghostty 1.3 behavior
 
-The tracked Ghostty template SHALL preserve its existing explicit pins and SHALL enable harmonious generated palettes, padded-notch non-native fullscreen, and URL copying through `cmd+alt+u`.
+The tracked Ghostty template SHALL retain intentional explicit settings and SHALL enable harmonious generated palettes, a native macOS titlebar and fullscreen mode for usable tabs, and URL copying through `cmd+alt+u`.
 
 #### Scenario: Validate approved configuration additions
 
 - **WHEN** the rendered base config is parsed by Ghostty 1.3.1 or newer
 - **THEN** `palette-harmonious = true` is active with palette generation
-- **AND** `macos-non-native-fullscreen = padded-notch` is accepted
+- **AND** `macos-titlebar-style = native` and `macos-non-native-fullscreen = false` are accepted
 - **AND** `cmd+alt+u` maps to `copy_url_to_clipboard`
+
+#### Scenario: Preserve tab visibility in fullscreen
+
+- **WHEN** the tracked macOS configuration is inspected
+- **THEN** it avoids the custom integrated tabs titlebar that stacks and clips tabs on macOS 27 with Ghostty 1.3.1
+- **AND** fullscreen does not use a non-native mode that removes the titlebar required for tabs
+- **AND** a new window with multiple tabs is visually checked during post-apply acceptance
+
+#### Scenario: Keep clipboard and update ownership intentional
+
+- **WHEN** the tracked Ghostty configuration is inspected
+- **THEN** `copy-on-select = true` still writes selections to the macOS system clipboard when no separate selection clipboard exists
+- **AND** `selection-clear-on-copy = false` retains the selection after an explicit copy
+- **AND** `auto-update = off` delegates app updates to the tracked Homebrew cask workflow
+
+#### Scenario: Keep grapheme widths and padding consistent
+
+- **WHEN** the tracked Ghostty configuration is inspected
+- **THEN** `grapheme-width-method = unicode` is explicitly selected
+- **AND** the existing horizontal 12-point and vertical 10-point window padding remains balanced pending a visual comparison
 
 #### Scenario: Avoid unsupported padding syntax
 

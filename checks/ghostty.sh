@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TEMPLATE="$ROOT/rig/home/private_dot_config/ghostty/config.tmpl"
+TEMPLATE="$ROOT/rig/home/private_dot_config/ghostty/private_config.tmpl"
 DATA="$ROOT/rig/home/.chezmoidata.toml"
 ZSHRC="$ROOT/rig/dots/zshrc"
 ZSHRC_TEMPLATE="$ROOT/rig/home/dot_zshrc.tmpl"
@@ -49,6 +49,28 @@ require_text() {
   fi
 }
 
+require_unique_line() {
+  local path="$1"
+  local line="$2"
+  local message="$3"
+  local key="${line%% = *}"
+  local count assignments
+  count="$(rg -F -x -c -- "$line" "$path" || true)"
+  assignments="$(rg -c -- "^[[:space:]]*${key}[[:space:]]*=" "$path" || true)"
+  if [[ "${count:-0}" != "1" || "${assignments:-0}" != "1" ]]; then
+    fail_msg "$message (expected exactly one ${key} assignment)"
+  fi
+}
+
+reject_line() {
+  local path="$1"
+  local line="$2"
+  local message="$3"
+  if rg -F -x -q -- "$line" "$path"; then
+    fail_msg "$message"
+  fi
+}
+
 require_file "$TEMPLATE" || true
 require_file "$DATA" || true
 require_file "$ZSHRC" || true
@@ -84,10 +106,35 @@ if [[ -f "$TEMPLATE" ]]; then
     "template must generate the extended palette"
   require_line "$TEMPLATE" 'palette-harmonious = true' \
     "template must harmonize generated colors for the light theme"
+  require_unique_line "$TEMPLATE" 'grapheme-width-method = unicode' \
+    "template must pin Unicode grapheme widths exactly once"
+  require_unique_line "$TEMPLATE" 'window-padding-x = 12' \
+    "template must use 12-point horizontal padding exactly once"
+  require_unique_line "$TEMPLATE" 'window-padding-y = 10' \
+    "template must retain 10-point vertical padding exactly once"
+  require_unique_line "$TEMPLATE" 'window-padding-balance = true' \
+    "template must balance window padding exactly once"
   require_line "$TEMPLATE" 'shell-integration = detect' \
     "template must let Ghostty detect shell integration"
-  require_line "$TEMPLATE" 'macos-non-native-fullscreen = padded-notch' \
-    "template must use padded-notch non-native fullscreen"
+  require_unique_line "$TEMPLATE" 'macos-titlebar-style = native' \
+    "template must use the native macOS titlebar exactly once"
+  reject_line "$TEMPLATE" 'macos-titlebar-style = tabs' \
+    "custom tabs titlebar is broken on macOS 27 with Ghostty 1.3.1"
+  require_unique_line "$TEMPLATE" 'macos-non-native-fullscreen = false' \
+    "template must use native fullscreen for tabs exactly once"
+  require_unique_line "$TEMPLATE" 'selection-clear-on-copy = false' \
+    "template must preserve the selection after copying exactly once"
+  require_unique_line "$TEMPLATE" 'copy-on-select = true' \
+    "template must set automatic selection copying exactly once (macOS uses the system clipboard)"
+  require_unique_line "$TEMPLATE" 'auto-update = off' \
+    "template must leave updates to Homebrew exactly once"
+  reject_line "$TEMPLATE" 'auto-update = download' \
+    "template must not download updates independently of Homebrew"
+  if rg -q '^[[:space:]]*auto-update-channel[[:space:]]*=' "$TEMPLATE"; then
+    fail_msg "template must not set a channel for the disabled updater"
+  fi
+  reject_line "$TEMPLATE" 'macos-non-native-fullscreen = padded-notch' \
+    "template must not hide tabs in non-native fullscreen"
   require_line "$TEMPLATE" 'keybind = cmd+alt+u=copy_url_to_clipboard' \
     "template must bind Cmd-Option-U to URL copying"
   require_line "$TEMPLATE" 'link-url = true' \
@@ -120,7 +167,7 @@ for zsh_file in "$ZSHRC" "$ZSHRC_TEMPLATE"; do
   if rg -F -q -- 'ghostty/shell-integration.zsh' "$zsh_file"; then
     fail_msg "$zsh_file must not source the custom Ghostty shim"
   fi
-  if rg -F -q -- 'GHOSTTY_RESOURCES_DIR|ghostty-integration' "$zsh_file"; then
+  if rg -q -- 'GHOSTTY_RESOURCES_DIR|ghostty-integration' "$zsh_file"; then
     fail_msg "$zsh_file must not retain the old Ghostty marker guard"
   fi
   if rg -F -q -- '_ghostty_custom_precmd' "$zsh_file"; then
@@ -152,6 +199,8 @@ if [[ -f "$PRE_COMMIT" ]]; then
     "pre-commit must define dotfiles-ghostty-config"
   require_text "$PRE_COMMIT" 'entry: just check-ghostty' \
     "pre-commit Ghostty hook must run just check-ghostty"
+  require_text "$PRE_COMMIT" 'private_dot_config/ghostty/private_config\.tmpl' \
+    "pre-commit must watch the private Ghostty template"
 fi
 
 if [[ -f "$HOME_AGENTS" ]]; then
@@ -165,10 +214,16 @@ if [[ -f "$TERMINAL_DOCS" ]]; then
     "terminal docs must document harmonious generated palettes"
   require_text "$TERMINAL_DOCS" 'Cmd-Option-U' \
     "terminal docs must document URL copying"
-  require_text "$TERMINAL_DOCS" 'padded-notch' \
-    "terminal docs must document padded-notch fullscreen"
-  require_text "$TERMINAL_DOCS" 'native tabs' \
-    "terminal docs must document the fullscreen native-tab limitation"
+  require_text "$TERMINAL_DOCS" 'macos-titlebar-style = native' \
+    "terminal docs must document the native macOS titlebar"
+  require_text "$TERMINAL_DOCS" 'macos-non-native-fullscreen = false' \
+    "terminal docs must document native fullscreen for tabs"
+  require_text "$TERMINAL_DOCS" 'still copies selections to the system clipboard' \
+    "terminal docs must state macOS selection writes to the system clipboard"
+  if rg -F -q -- 'avoids writing the macOS system clipboard' "$TERMINAL_DOCS" \
+    || rg -F -q -- 'prefers the selection clipboard on macOS instead of always copying to the system clipboard' "$TERMINAL_DOCS"; then
+    fail_msg "terminal docs must state macOS selection writes to the system clipboard, not the opposite"
+  fi
 fi
 if [[ -f "$VALIDATION_DOCS" ]]; then
   require_text "$VALIDATION_DOCS" 'just check-ghostty' \
