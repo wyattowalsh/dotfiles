@@ -1,0 +1,22 @@
+# MBA READER ONLY. Deliberately unrendered; not installed by MBP bootstrap.
+# Replace both path tokens with reviewed literal canonical paths. Do not point
+# this at E0, an incomplete E1, a cloud alias or a recreated mount directory.
+# Address defaults to loopback. LAN access needs a specific reviewed IP in BOTH
+# this file and the private operator contract; wildcard binds are refused.
+Address = '127.0.0.1'
+Port = 4533
+MusicFolder = '__MBA_PUBLISHED_E1_MEDIA_ROOT__'
+DataFolder = '__MBA_NAVIDROME_DATA_DIR__'
+CacheFolder = '__MBA_NAVIDROME_DATA_DIR__/cache'
+LogLevel = 'info'
+EnableSharing = false
+EnableExternalServices = false
+
+# These settings must be supported by the separately reviewed, SHA-256-pinned
+# installed binary. Source preparation is not an installed-version acceptance.
+# The OS sandbox, not a guessed tag-write setting, enforces read-only media:
+# only the distinct pre-existing DataFolder subtree is writable by the child.
+[Scanner]
+Schedule = '0'
+WatcherWait = '5s'
+PurgeMissing = 'never'

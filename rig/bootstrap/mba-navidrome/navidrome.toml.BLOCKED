@@ -1,0 +1,10 @@
+# INTENTIONALLY NOT A NAVIDROME CONFIGURATION; DO NOT INSTALL OR START.
+# MBA version/topology, actual APFS UUID/mountpoint, and a published E0 witness
+# are not established here. A trusted live mount observer and guarded production
+# launcher are not implemented. No writer/bootstrap/LaunchAgent is provided.
+# Scanner.PurgeMissing: supported non-purging value UNKNOWN for the selected
+# MBA Navidrome version. The packaged local README does not document its values.
+# Do not copy the MBP template's unconditional 'always' setting or KeepAlive.
+# Only after versioned local documentation proves an effective non-purging
+# setting and the exact MBA host, media topology, derived data/cache locations
+# and approved E0 path are known may a separate MBA reader config be proposed.
