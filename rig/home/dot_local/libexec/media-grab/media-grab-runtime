@@ -1,0 +1,138 @@
+load_config
+validate_config
+
+resolve_runtime() {
+  if [[ -n "$YTDLP_BIN" ]]; then
+    [[ -x "$YTDLP_BIN" ]] || die "YTDLP_BIN is not executable: $YTDLP_BIN"
+    YTDLP="$YTDLP_BIN"
+  else
+    YTDLP="$(command_path yt-dlp)"
+  fi
+  FFMPEG="$(ffmpeg_bin 2>/dev/null || true)"
+  FFPROBE="$(ffprobe_bin 2>/dev/null || true)"
+  DENO="$(command_path deno)"
+}
+
+run_doctor() {
+  local network=0 status=0
+  [[ "${1:-}" != --network ]] || network=1
+  resolve_runtime
+  printf 'MediaGrab %s diagnostics\n' "$MEDIAGRAB_VERSION"
+  printf 'OS:           %s\n' "$(uname -s)"
+  printf 'Architecture: %s\n' "$(uname -m)"
+  printf 'yt-dlp:       %s\n' "${YTDLP:-missing}"
+  printf 'ffmpeg:       %s\n' "${FFMPEG:-missing}"
+  printf 'ffprobe:      %s\n' "${FFPROBE:-missing}"
+  printf 'deno:         %s\n' "${DENO:-missing}"
+  printf 'launcher:     %s\n' "$([[ -x "$DEPLOYED_LAUNCHER" ]] && printf ok || printf missing)"
+  printf 'app:          %s\n' "$([[ -d "$INSTALLED_APP" ]] && printf installed || printf missing)"
+  printf 'desktop:      %s\n' "$([[ -L "$DESKTOP_APP" ]] && printf linked || printf missing)"
+  [[ -n "$YTDLP" && -n "$FFMPEG" && -n "$FFPROBE" && -n "$DENO" ]] || status=1
+  if [[ "$network" -eq 1 && -n "$YTDLP" && -n "$FFMPEG" ]]; then
+    local -a args=(--ignore-config --no-plugin-dirs --no-playlist --skip-download --ffmpeg-location "$(dirname "$FFMPEG")" --print 'title=%(title)s | format=%(format_id)s')
+    [[ -n "$DENO" ]] && args+=(--js-runtimes "deno:$DENO")
+    case "$REMOTE_EJS" in
+      off) args+=(--no-remote-components) ;;
+      github) args+=(--remote-components ejs:github) ;;
+      npm) args+=(--remote-components ejs:npm) ;;
+    esac
+    "$YTDLP" "${args[@]}" -- 'https://www.youtube.com/watch?v=BaW_jenozKc' || status=1
+  fi
+  return "$status"
+}
+
+MODE="${1:-doctor}"
+ARG2="${2:-}"
+case "$MODE" in
+  -h|--help|help) usage; exit 0 ;;
+  --version|version) printf '%s\n' "$MEDIAGRAB_VERSION"; exit 0 ;;
+  doctor) run_doctor "$ARG2"; exit $? ;;
+  install) cmd_install "${ARG2:---dry-run}"; exit $? ;;
+  uninstall) cmd_uninstall "${ARG2:---dry-run}"; exit $? ;;
+  open-downloads) mkdir -p "$DOWNLOAD_ROOT"; open "$DOWNLOAD_ROOT"; exit 0 ;;
+  open-logs) mkdir -p "$LOG_DIR"; chmod 700 "$LOG_DIR" 2>/dev/null || true; open "$LOG_DIR"; exit 0 ;;
+  open-settings) ensure_config; open -e "$CONFIG_FILE"; exit 0 ;;
+esac
+
+URL="$ARG2"
+[[ -n "$URL" ]] || die "mode $MODE requires a URL"
+[[ "$URL" != *$'\n'* && "$URL" != *$'\r'* ]] || die "URL must be a single line"
+case "$URL" in http://*|https://*) ;; *) die "only http:// and https:// URLs are accepted" ;; esac
+
+resolve_runtime
+[[ -n "$YTDLP" ]] || die "yt-dlp is missing; apply the Brewfile"
+[[ -n "$FFMPEG" ]] || die "ffmpeg is missing; apply the Brewfile"
+[[ -n "$FFPROBE" ]] || die "ffprobe is missing; apply the Brewfile"
+[[ -n "$DENO" ]] || log "warning: Deno is missing; YouTube may expose fewer formats"
+
+mkdir -p "$APP_SUPPORT" "$TMP_PARENT" "$LOG_DIR" "$DOWNLOAD_ROOT" "$DOWNLOAD_ROOT/.tmp"
+chmod 700 "$APP_SUPPORT" "$TMP_PARENT" "$LOG_DIR" "$DOWNLOAD_ROOT/.tmp" 2>/dev/null || true
+if [[ "$LOG_RETENTION_DAYS" -gt 0 ]]; then
+  find "$LOG_DIR" -type f -name '*.log' -mtime "+$LOG_RETENTION_DAYS" -delete 2>/dev/null || true
+fi
+RUN_ID="$(date '+%Y%m%d-%H%M%S')-$$"
+LOG_FILE="$LOG_DIR/$RUN_ID.log"
+RUN_TMP="$(mktemp -d "$TMP_PARENT/run.XXXXXX")"
+touch "$LOG_FILE"
+chmod 600 "$LOG_FILE"
+ln -sfn "$LOG_FILE" "$LOG_DIR/latest.log"
+cleanup() { rm -rf "$RUN_TMP"; }
+trap cleanup EXIT
+exec > >(tee -a "$LOG_FILE") 2>&1
+
+notify() {
+  local title="${1:-MediaGrab}" message="${2:-Done}"
+  osascript - "$title" "$message" <<'OSA' >/dev/null 2>&1 || true
+on run argv
+  display notification (item 2 of argv) with title (item 1 of argv)
+end run
+OSA
+}
+
+redacted_url() {
+  if [[ "$LOG_FULL_URL" == 1 ]]; then printf '%s' "$1"; return; fi
+  local value="${1%%#*}"
+  [[ "$value" == *\?* ]] && printf '%s?…' "${value%%\?*}" || printf '%s' "$value"
+}
+
+AUTH_PATTERNS='sign in to confirm|use --cookies-from-browser|login required|authentication required|confirm your age|age.?restricted|private video|members.?only|login to view|http error 401|401 unauthorized|forbidden.*(login|sign.?in|auth)'
+AUTH_ESTABLISHED=0
+BASE_ARGS=(--ignore-config --newline --progress --ffmpeg-location "$(dirname "$FFMPEG")" --paths "$DOWNLOAD_ROOT" --paths "temp:$DOWNLOAD_ROOT/.tmp")
+[[ "$ALLOW_PLUGINS" == 0 ]] && BASE_ARGS+=(--no-plugin-dirs)
+[[ -n "$DENO" ]] && BASE_ARGS+=(--js-runtimes "deno:$DENO")
+case "$REMOTE_EJS" in
+  off) BASE_ARGS+=(--no-remote-components) ;;
+  github) BASE_ARGS+=(--remote-components ejs:github) ;;
+  npm) BASE_ARGS+=(--remote-components ejs:npm) ;;
+esac
+[[ "$FORCE_IPV4" == 1 ]] && BASE_ARGS+=(--force-ipv4)
+[[ "$CONCURRENT_FRAGMENTS" -gt 1 ]] && BASE_ARGS+=(--concurrent-fragments "$CONCURRENT_FRAGMENTS")
+
+SINGLE_TEMPLATE='%(extractor_key|Unknown)s/%(title).180B [%(id)s].%(ext)s'
+ARCHIVE_TEMPLATE='Archives/%(extractor_key|Unknown)s/%(title).120B [%(id)s]/%(title).180B [%(id)s].%(ext)s'
+PLAYLIST_TEMPLATE='Playlists/%(extractor_key|Unknown)s/%(playlist,playlist_id|Playlist).120B/%(playlist_index)03d - %(title).150B [%(id)s].%(ext)s'
+
+run_with_auth_retry() {
+  local url="$1"; shift
+  local retry_log="$RUN_TMP/auth-attempt.log" status
+  : >"$retry_log"; chmod 600 "$retry_log"
+  local -a command=("$YTDLP" "${BASE_ARGS[@]}")
+  [[ "$AUTH_MODE" == always || "$AUTH_ESTABLISHED" == 1 ]] && command+=(--cookies-from-browser "$BROWSER")
+  command+=("$@" -- "$url")
+  set +e
+  "${command[@]}" 2>&1 | tee "$retry_log"
+  status=${PIPESTATUS[0]}
+  set -e
+  if [[ "$status" -ne 0 && "$AUTH_MODE" == auto ]] && grep -Eiq "$AUTH_PATTERNS" "$retry_log"; then
+    printf '\nAuthentication appears necessary. Retrying with local %s cookies…\n\n' "$BROWSER"
+    set +e
+    "$YTDLP" "${BASE_ARGS[@]}" --cookies-from-browser "$BROWSER" "$@" -- "$url"
+    status=$?
+    set -e
+    [[ "$status" -ne 0 ]] || AUTH_ESTABLISHED=1
+  fi
+  return "$status"
+}
+
+MEDIA_COMMON=(--embed-metadata --embed-chapters --no-playlist --output "$SINGLE_TEMPLATE")
+label=""; MODE_ARGS=(); POST_ALL_SUBS=0; HEADER_PRINTED=0

@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# MediaGrab: repo-owned, inspectable wrapper around yt-dlp + FFmpeg.
+set -Eeuo pipefail
+umask 022
+
+MEDIAGRAB_VERSION="1.3.0"
+export PATH="/opt/homebrew/opt/ffmpeg-full/bin:/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin${PATH:+:$PATH}"
+
+APP_SUPPORT="$HOME/Library/Application Support/MediaGrab"
+CONFIG_FILE="$APP_SUPPORT/config.env"
+LOG_DIR="$HOME/Library/Logs/MediaGrab"
+DEFAULT_DOWNLOAD_ROOT="$HOME/Downloads/MediaGrab"
+TMP_PARENT="$APP_SUPPORT/tmp"
+INSTALLED_APP="$HOME/Applications/MediaGrab.app"
+DESKTOP_APP="$HOME/Desktop/MediaGrab.app"
+DEPLOYED_SHARE="$HOME/.local/share/media-grab"
+DEPLOYED_LAUNCHER="$HOME/.local/libexec/media-grab/launch-media-grab"
+BUNDLE_ID="com.wyatt.media-grab"
+
+DOWNLOAD_ROOT="$DEFAULT_DOWNLOAD_ROOT"
+YTDLP_BIN=""
+BROWSER="brave"
+AUTH_MODE="auto"
+FORCE_IPV4="0"
+CONCURRENT_FRAGMENTS="1"
+OPEN_AFTER_SUCCESS="1"
+REMOTE_EJS="off"
+ALLOW_PLUGINS="0"
+LOG_RETENTION_DAYS="30"
+LOG_FULL_URL="0"
+SUBTITLE_SLEEP="2"
+PLAYLIST_ARCHIVE="0"
+
+log() { printf '[media-grab] %s\n' "$*" >&2; }
+die() { log "error: $*"; exit 1; }
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  media-grab [doctor [--network]]
+  media-grab install [--dry-run|--apply]
+  media-grab uninstall [--dry-run|--apply]
+  media-grab {video|video-en|audio|audio-en|exact|archive|archive-full|archive-full-allsubs|playlist|compatible|live} URL
+  media-grab {open-downloads|open-settings|open-logs}
+  media-grab --version
+
+The default command is the read-only local doctor. Installation is preview-only
+unless --apply is supplied. Runtime settings live in:
+  ~/Library/Application Support/MediaGrab/config.env
+USAGE
+}
+
+
+if [[ -n "${MEDIAGRAB_REPO:-}" && -d "${MEDIAGRAB_REPO}/rig/home/dot_local/libexec/media-grab" ]]; then
+  MEDIAGRAB_LIBEXEC="${MEDIAGRAB_REPO}/rig/home/dot_local/libexec/media-grab"
+else
+  MEDIAGRAB_LIBEXEC="${MEDIAGRAB_LIBEXEC:-$HOME/.local/libexec/media-grab}"
+fi
+for component in config install runtime modes; do
+  component_path="$MEDIAGRAB_LIBEXEC/media-grab-$component"
+  [[ -r "$component_path" ]] || die "missing runtime component: $component_path"
+  # shellcheck source=/dev/null
+  source "$component_path"
+done

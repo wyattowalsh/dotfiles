@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#161a2e"/><stop offset="1" stop-color="#4a276f"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="22" stdDeviation="24" flood-color="#000" flood-opacity=".35"/>
+    </filter>
+  </defs>
+  <rect x="42" y="42" width="940" height="940" rx="210" fill="url(#bg)"/>
+  <g filter="url(#shadow)">
+    <path d="M300 650V418c0-140 94-244 224-244s224 104 224 244v232l-70-48-61 55-70-55-70 55-61-55z" fill="#fff"/>
+    <path d="M338 651h372l-34 129H372z" fill="#101421"/>
+    <path d="M410 375h116l-18 82h-84zM548 375h116l-14 82h-86z" fill="#101421"/>
+    <path d="M526 392h22v20h-22z" fill="#101421"/>
+    <path d="M445 525c42 42 116 42 158 0" fill="none" stroke="#101421" stroke-width="22" stroke-linecap="round"/>
+    <circle cx="474" cy="522" r="7" fill="#101421"/><circle cx="574" cy="522" r="7" fill="#101421"/>
+    <rect x="403" y="655" width="242" height="118" rx="34" fill="#ff496d"/>
+    <path d="M496 681l78 33-78 33z" fill="#fff"/>
+    <path d="M524 594v89" stroke="#6ce5e8" stroke-width="24" stroke-linecap="round"/>
+    <path d="M486 646l38 38 38-38" fill="none" stroke="#6ce5e8" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="512" y="880" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif" font-size="72" font-weight="800" fill="#fff">yoink</text>
+</svg>
