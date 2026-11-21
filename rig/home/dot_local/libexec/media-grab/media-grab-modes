@@ -1,0 +1,76 @@
+case "$MODE" in
+  video)
+    label="Maximum-quality video (yt-dlp upstream best selection)"
+    MODE_ARGS=("${MEDIA_COMMON[@]}" --merge-output-format mkv --remux-video mkv)
+    ;;
+  video-en)
+    label="Maximum-quality video with English-labeled audio preferred"
+    MODE_ARGS=("${MEDIA_COMMON[@]}" --format 'bv+ba[language^=en]/b[language^=en]/bv*+ba/b' --merge-output-format mkv --remux-video mkv)
+    ;;
+  audio)
+    label="Best available audio, preserving source codec where possible"
+    MODE_ARGS=(--no-playlist --output "$SINGLE_TEMPLATE" --format 'ba/b' --extract-audio --audio-format best --embed-metadata)
+    ;;
+  audio-en)
+    label="Best English-labeled audio, then best available audio"
+    MODE_ARGS=(--no-playlist --output "$SINGLE_TEMPLATE" --format 'ba[language^=en]/b[language^=en]/ba/b' --extract-audio --audio-format best --embed-metadata)
+    ;;
+  exact)
+    label="Exact format selection"
+    printf 'Available formats:\n\n'
+    run_with_auth_retry "$URL" --no-playlist --list-formats || die "could not list formats"
+    printf '\nEnter selector (examples: 401+251, bv+ba, 251; blank = upstream default): '
+    IFS= read -r selector
+    MODE_ARGS=("${MEDIA_COMMON[@]}" --merge-output-format mkv)
+    [[ -z "$selector" ]] || MODE_ARGS+=(--format "$selector")
+    ;;
+  archive)
+    label="Safe archive: media, cleaned metadata, description, thumbnail, URL, English subtitles"
+    umask 077
+    MODE_ARGS=(--no-playlist --output "$ARCHIVE_TEMPLATE" --merge-output-format mkv --remux-video mkv --embed-metadata --no-embed-info-json --embed-chapters --embed-thumbnail --embed-subs --write-info-json --clean-info-json --write-description --write-thumbnail --write-subs --write-auto-subs --sub-langs 'en.*,-live_chat' --write-webloc-link)
+    ;;
+  archive-full|archive-full-allsubs)
+    label="Exhaustive archive: raw metadata and comments (sensitive)"
+    umask 077
+    [[ "$MODE" != archive-full-allsubs ]] || POST_ALL_SUBS=1
+    MODE_ARGS=(--no-playlist --output "$ARCHIVE_TEMPLATE" --merge-output-format mkv --remux-video mkv --embed-metadata --no-embed-info-json --embed-chapters --embed-thumbnail --embed-subs --write-info-json --no-clean-info-json --write-comments --write-description --write-all-thumbnails --write-subs --write-auto-subs --sub-langs 'en.*,-live_chat' --write-webloc-link)
+    ;;
+  playlist)
+    label="Playlist or channel at maximum available quality"
+    MODE_ARGS=(--yes-playlist --output "$PLAYLIST_TEMPLATE" --merge-output-format mkv --remux-video mkv --embed-metadata --embed-chapters)
+    [[ "$PLAYLIST_ARCHIVE" != 1 ]] || MODE_ARGS+=(--download-archive "$APP_SUPPORT/playlist-download-archive.txt")
+    ;;
+  compatible)
+    label="Compatible MP4 (H.264/AAC preferred; resolution may be lower)"
+    MODE_ARGS=(--no-playlist --output "$SINGLE_TEMPLATE" --preset-alias mp4 --embed-metadata --embed-chapters)
+    ;;
+  live)
+    label="Live recording from earliest accessible point"
+    MODE_ARGS=(--no-playlist --output "$SINGLE_TEMPLATE" --live-from-start --hls-use-mpegts --merge-output-format mkv --remux-video mkv --embed-metadata --embed-chapters)
+    ;;
+  *) die "unknown mode: $MODE" ;;
+esac
+
+printf '\n👻 MediaGrab %s\nMode: %s\nDestination: %s\nLog: %s\nURL: %s\n\n' \
+  "$MEDIAGRAB_VERSION" "$label" "$DOWNLOAD_ROOT" "$LOG_FILE" "$(redacted_url "$URL")"
+command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w "$$" >/dev/null 2>&1 &
+set +e
+run_with_auth_retry "$URL" "${MODE_ARGS[@]}"
+STATUS=$?
+set -e
+if [[ "$STATUS" -eq 0 && "$POST_ALL_SUBS" -eq 1 ]]; then
+  printf '\nFetching all subtitle sidecars without embedding them…\n\n'
+  set +e
+  run_with_auth_retry "$URL" --no-playlist --skip-download --output "$ARCHIVE_TEMPLATE" --write-subs --write-auto-subs --no-embed-subs --sub-langs 'all,-live_chat' --sleep-subtitles "$SUBTITLE_SLEEP"
+  STATUS=$?
+  set -e
+fi
+if [[ "$STATUS" -eq 0 ]]; then
+  printf '\n✅ Done. Saved under: %s\n' "$DOWNLOAD_ROOT"
+  notify "MediaGrab finished" "$label"
+  [[ "$OPEN_AFTER_SUCCESS" != 1 ]] || open "$DOWNLOAD_ROOT" >/dev/null 2>&1 || true
+else
+  printf '\n❌ Download failed with exit status %s. Inspect %s\n' "$STATUS" "$LOG_FILE" >&2
+  notify "MediaGrab failed" "Inspect the terminal or latest.log"
+  exit "$STATUS"
+fi

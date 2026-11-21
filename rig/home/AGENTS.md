@@ -16,6 +16,7 @@ Runtime files under `rig/dots/` (`zshrc`, `p10k.zsh`, `gitconfig`, …) are **sy
 - Keep identities, tokens, auth files, histories, caches, and app DBs out of Git (including Atuin `history.db`/`key`/`session` and usql DSNs)
 - Preserve `~/.zshrc.local` and Chezmoi `.local` override patterns
 - XDG tools: `private_dot_config/{atuin,ast-grep,agent-deck,apple-text,xh,lnav,visidata,yazi,direnv,fd,bat,git}/` plus `sgconfig.yml`, `dot_duckdbrc`, `dot_usqlrc` (highlight only). Claude/Codex Atuin hooks live in wyattowalsh/agents. Apple text expansion SSOT is `private_dot_config/apple-text/` plus `just apple-text`; overlay `expansions.local.json` is local-only. Runbook: `docs/content/docs/apple-text.mdx`.
+- MediaGrab source lives under `dot_local/{bin,libexec,share}/media-grab`; `run_onchange_after_install-media-grab.sh.tmpl` compiles the local app after source changes. Generated `.app` bundles, `config.env`, logs, cookies, raw metadata, and downloaded media stay untracked. Homebrew owns `yt-dlp`, Deno, `ffmpeg-full`, and `resvg`. Runbook: `docs/content/docs/media-grab.mdx`.
 - Nightly backup: source `dot_local/bin/executable_kopia-nightly`. On the named MBA account, Chezmoi withholds its runner and plist, and the runner refuses install and execution. On the MBP, Chezmoi writes `~/.local/bin/kopia-nightly` and `just kopia-nightly-install` can copy the source when `KOPIA_NIGHTLY_REPO` is set. Plist: `Library/LaunchAgents/com.wyattowalsh.kopia-nightly.plist.tmpl` (`RunAtLoad=false`, 04:00 calendar). Keep the wall-clock cap in the runner (`KOPIA_NIGHTLY_TIMEOUT_SEC`, default 43200). Never point checks at live Kopia, launchctl, or Notification Center. Keep `repository.config` and `rclone.conf` untracked. Operator runbook: `docs/content/docs/backup.mdx`.
 - IINA native SSOT is `Library/Application Support/com.colliderli.iina/input_conf/IINA-Native.conf` plus `private_dot_config/iina-mpv/`. Custom QoL plugin/Hammerspoon source is retired; only an explicitly reviewed `just iina-native` migration can remove live QoL paths. Sibling plugins, overlays, history, and plugin preferences stay untracked. Runbook: `docs/content/docs/iina.mdx`.
 
@@ -28,4 +29,4 @@ just bootstrap --dry-run
 
 ## Docs sync
 
-Update `docs/content/docs/home-config.mdx` (and `apple-text.mdx` / `backup.mdx` / `terminal.mdx` / `shell.mdx` when relevant) when layout or deploy paths change.
+Update `docs/content/docs/home-config.mdx` (and `apple-text.mdx` / `backup.mdx` / `media-grab.mdx` / `terminal.mdx` / `shell.mdx` when relevant) when layout or deploy paths change.

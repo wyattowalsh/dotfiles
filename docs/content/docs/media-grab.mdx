@@ -1,0 +1,103 @@
+---
+icon: download
+title: MediaGrab
+description: Maximum-quality yt-dlp downloads from a tiny local Mac app.
+---
+
+MediaGrab is the rig-owned front end for `yt-dlp`, `ffmpeg-full`, and Deno. The tracked source is small and inspectable; generated app bundles, logs, cookies, settings, and downloaded media stay outside Git.
+
+## Ownership
+
+| Surface | Owner |
+| --- | --- |
+| CLI | `rig/home/dot_local/bin/executable_media-grab` → `~/.local/bin/media-grab` |
+| Terminal launcher | `rig/home/dot_local/libexec/media-grab/executable_launch-media-grab` |
+| AppleScript + icon + defaults | `rig/home/dot_local/share/media-grab/` |
+| Generated app | `~/Applications/MediaGrab.app` |
+| Desktop icon | `~/Desktop/MediaGrab.app` → canonical app symlink |
+| Settings | `~/Library/Application Support/MediaGrab/config.env` |
+| Logs | `~/Library/Logs/MediaGrab/` |
+| Downloads | `~/Downloads/MediaGrab/` by default |
+
+Chezmoi runs the idempotent installer after MediaGrab source changes. Re-run manually when needed:
+
+```bash
+media-grab install --dry-run
+media-grab install --apply
+media-grab doctor
+media-grab doctor --network
+```
+
+## Daily use
+
+Double-click the smug ghost on the Desktop, or use the CLI:
+
+```bash
+media-grab video 'https://…'       # upstream best video/audio; MKV remux
+media-grab video-en 'https://…'    # prefer English-labeled audio
+media-grab audio 'https://…'       # source-quality audio where possible
+media-grab exact 'https://…'       # inspect format IDs, then choose
+media-grab archive 'https://…'     # cleaned JSON + description + thumbnail + English subs
+```
+
+Shell compatibility aliases remain thin:
+
+```text
+ytdown    → media-grab video
+ytaudio   → media-grab audio
+ytarchive → media-grab archive
+```
+
+## Maximum-quality contract
+
+Normal `video` mode does **not** freeze a custom `-f` expression. Current `yt-dlp` owns best-format ranking. MediaGrab requests MKV merge/remux and does not intentionally transcode.
+
+Use `exact` when resolution, FPS, HDR, codec, or the precise soundtrack matters. English labels can still be ambiguous between original audio, auto-dub, commentary, and descriptive tracks.
+
+`compatible` is intentionally different: it uses the official MP4 compatibility preset and may choose a lower resolution to obtain H.264/AAC.
+
+## Authentication
+
+Default settings are:
+
+```text
+BROWSER="brave"
+AUTH_MODE="auto"
+```
+
+The first attempt is anonymous. Browser cookies are read locally by `yt-dlp` only after a narrow authentication, age, membership, private-video, or 401-style failure. A generic 403 is not enough to trigger cookie use.
+
+Set `AUTH_MODE="never"` to forbid browser-cookie access or `always` to use the configured browser from the first request.
+
+## Archive privacy
+
+Safe archive mode writes cleaned info JSON. Exhaustive modes can write raw metadata and comments; treat those directories as private. Raw info JSON is explicitly not embedded into the media container. All-language subtitles run as a second sidecar-only pass to avoid embedding hundreds of tracks and to reduce rate-limit pressure.
+
+## Settings
+
+Edit:
+
+```bash
+media-grab open-settings
+```
+
+The file is parsed as allowlisted literal `KEY=VALUE` data and is never sourced as shell code. Remote EJS and third-party `yt-dlp` plugins are disabled by default.
+
+## Repair and rollback
+B``bash
+media-grab install --apply
+media-grab uninstall --dry-run
+media-grab uninstall --apply
+```
+
+Uninstall removes only the generated app and Desktop link. It preserves the Chezmoi-owned CLI, settings, logs, and downloads. Apply the home state again to reconstruct the app.
+
+## Validation
+
+```bash
+bats checks/media-grab.bats
+just check-bats
+just docs-ci
+```
+
+Mac-only acceptance still requires observing local `osacompile`, icon rendering, ad-hoc signing, Automation permission, Brave Keychain access, and real extractor behavior.

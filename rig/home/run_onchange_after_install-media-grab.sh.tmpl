@@ -1,0 +1,14 @@
+{{- if eq .chezmoi.os "darwin" }}
+#!/usr/bin/env bash
+# media-grab-source-sha256: fe43f098d3e117e00078b28aa26364d811a47acae033c884ff673d0e8332532a
+set -euo pipefail
+runner="{{ .chezmoi.homeDir }}/.local/bin/media-grab"
+if [[ ! -x "$runner" ]]; then
+  printf 'MediaGrab runner missing after home apply: %s\n' "$runner" >&2
+  exit 1
+fi
+"$runner" install --apply
+{{- else }}
+#!/usr/bin/env bash
+exit 0
+{{- end }}

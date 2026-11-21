@@ -1,0 +1,134 @@
+trim_whitespace() {
+  local value="$1"
+  value="${value#"${value%%[!$' \t\r\n']*}"}"
+  value="${value%"${value##*[!$' \t\r\n']}"}"
+  printf '%s' "$value"
+}
+
+config_error() { die "invalid settings: $*"; }
+
+parse_config_value() {
+  local value first last
+  value="$(trim_whitespace "$1")"
+  if [[ ${#value} -ge 2 ]]; then
+    first="${value:0:1}"
+    last="${value:${#value}-1:1}"
+    if [[ "$first" == '"' && "$last" == '"' ]] || [[ "$first" == "'" && "$last" == "'" ]]; then
+      value="${value:1:${#value}-2}"
+    elif [[ "$first" == '"' || "$first" == "'" || "$last" == '"' || "$last" == "'" ]]; then
+      config_error "unbalanced quotes"
+    fi
+  fi
+  printf '%s' "$value"
+}
+
+load_config() {
+  [[ -f "$CONFIG_FILE" ]] || return 0
+  local raw line key value
+  while IFS= read -r raw || [[ -n "$raw" ]]; do
+    raw="${raw%$'\r'}"
+    line="$(trim_whitespace "$raw")"
+    [[ -z "$line" || "${line:0:1}" == '#' ]] && continue
+    [[ "$line" == *=* ]] || config_error "expected KEY=VALUE: $line"
+    key="$(trim_whitespace "${line%%=*}")"
+    value="$(parse_config_value "${line#*=}")"
+    case "$key" in
+      DOWNLOAD_ROOT) DOWNLOAD_ROOT="$value" ;;
+      YTDLP_BIN) YTDLP_BIN="$value" ;;
+      BROWSER) BROWSER="$value" ;;
+      AUTH_MODE) AUTH_MODE="$value" ;;
+      FORCE_IPV4) FORCE_IPV4="$value" ;;
+      CONCURRENT_FRAGMENTS) CONCURRENT_FRAGMENTS="$value" ;;
+      OPEN_AFTER_SUCCESS) OPEN_AFTER_SUCCESS="$value" ;;
+      REMOTE_EJS) REMOTE_EJS="$value" ;;
+      ALLOW_PLUGINS) ALLOW_PLUGINS="$value" ;;
+      LOG_RETENTION_DAYS) LOG_RETENTION_DAYS="$value" ;;
+      LOG_FULL_URL) LOG_FULL_URL="$value" ;;
+      SUBTITLE_SLEEP) SUBTITLE_SLEEP="$value" ;;
+      PLAYLIST_ARCHIVE) PLAYLIST_ARCHIVE="$value" ;;
+      CONFIG_VERSION) : ;;
+      *) log "warning: ignoring unknown config key: $key" ;;
+    esac
+  done <"$CONFIG_FILE"
+}
+
+validate_bool() {
+  local name="$1" value="$2"
+  [[ "$value" == 0 || "$value" == 1 ]] || config_error "$name must be 0 or 1"
+}
+
+validate_config() {
+  [[ "$DOWNLOAD_ROOT" == /* ]] || config_error "DOWNLOAD_ROOT must be absolute"
+  [[ -z "$YTDLP_BIN" || "$YTDLP_BIN" == /* ]] || config_error "YTDLP_BIN must be blank or absolute"
+  [[ -n "$BROWSER" ]] || config_error "BROWSER cannot be blank"
+  [[ "$AUTH_MODE" =~ ^(never|auto|always)$ ]] || config_error "AUTH_MODE must be never, auto, or always"
+  [[ "$REMOTE_EJS" =~ ^(off|github|npm)$ ]] || config_error "REMOTE_EJS must be off, github, or npm"
+  validate_bool FORCE_IPV4 "$FORCE_IPV4"
+  validate_bool OPEN_AFTER_SUCCESS "$OPEN_AFTER_SUCCESS"
+  validate_bool ALLOW_PLUGINS "$ALLOW_PLUGINS"
+  validate_bool LOG_FULL_URL "$LOG_FULL_URL"
+  validate_bool PLAYLIST_ARCHIVE "$PLAYLIST_ARCHIVE"
+  [[ "$CONCURRENT_FRAGMENTS" =~ ^[1-9][0-9]*$ ]] || config_error "CONCURRENT_FRAGMENTS must be positive"
+  [[ "$LOG_RETENTION_DAYS" =~ ^[0-9]+$ ]] || config_error "LOG_RETENTION_DAYS must be non-negative"
+  [[ "$SUBTITLE_SLEEP" =~ ^[0-9]+$ ]] || config_error "SUBTITLE_SLEEP must be non-negative"
+  local value
+  for value in "$DOWNLOAD_ROOT" "$YTDLP_BIN" "$BROWSER"; do
+    [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]] || config_error "settings must be single-line"
+  done
+}
+
+source_root() {
+  local candidate
+  if [[ -n "${MEDIAGRAB_REPO:-}" ]]; then
+    candidate="$MEDIAGRAB_REPO/rig/home/dot_local/share/media-grab"
+    if [[ -f "$candidate/VERSION" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  fi
+  [[ -f "$DEPLOYED_SHARE/VERSION" ]] || return 1
+  printf '%s\n' "$DEPLOYED_SHARE"
+}
+
+ffmpeg_bin() {
+  if [[ -n "${MEDIAGRAB_FFMPEG_BIN:-}" ]]; then
+    [[ -x "$MEDIAGRAB_FFMPEG_BIN" ]] || return 1
+    printf '%s\n' "$MEDIAGRAB_FFMPEG_BIN"
+  elif [[ -x /opt/homebrew/opt/ffmpeg-full/bin/ffmpeg ]]; then
+    printf '%s\n' /opt/homebrew/opt/ffmpeg-full/bin/ffmpeg
+  else
+    command -v ffmpeg
+  fi
+}
+
+ffprobe_bin() {
+  if [[ -n "${MEDIAGRAB_FFPROBE_BIN:-}" ]]; then
+    [[ -x "$MEDIAGRAB_FFPROBE_BIN" ]] || return 1
+    printf '%s\n' "$MEDIAGRAB_FFPROBE_BIN"
+  elif [[ -x /opt/homebrew/opt/ffmpeg-full/bin/ffprobe ]]; then
+    printf '%s\n' /opt/homebrew/opt/ffmpeg-full/bin/ffprobe
+  else
+    command -v ffprobe
+  fi
+}
+
+command_path() { command -v "$1" 2>/dev/null || true; }
+
+ensure_config() {
+  [[ -f "$CONFIG_FILE" ]] && return 0
+  local root example
+  root="$(source_root)" || die "MediaGrab source assets are missing"
+  example="$root/config.env.example"
+  [[ -f "$example" ]] || die "missing config template: $example"
+  mkdir -p "$APP_SUPPORT"
+  sed "s#__HOME__#${HOME//\/\\}#g" "$example" >"$CONFIG_FILE"
+  chmod 600 "$CONFIG_FILE"
+}
+
+bundle_id() {
+  local app="$1"
+  local plist="$app/Contents/Info.plist"
+  [[ -f "$plist" ]] || return 1
+  /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist" 2>/dev/null
+}
+

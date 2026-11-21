@@ -1,0 +1,166 @@
+install_plan() {
+  cat <<EOF_PLAN
+MediaGrab install plan:
+  source assets: $(source_root 2>/dev/null || printf 'missing')
+  canonical app: $INSTALLED_APP
+  desktop link:  $DESKTOP_APP -> $INSTALLED_APP
+  settings:      $CONFIG_FILE (preserved)
+  logs:          $LOG_DIR (preserved)
+  downloads:     $DOWNLOAD_ROOT (preserved)
+EOF_PLAN
+}
+
+cmd_install() {
+  local action="${1:---dry-run}"
+  [[ "$action" == --dry-run || "$action" == --apply ]] || die "install accepts --dry-run or --apply"
+  install_plan
+  [[ "$action" == --apply ]] || return 0
+  [[ "$(uname -s)" == Darwin ]] || die "app installation requires macOS"
+  [[ "$(id -u)" -ne 0 ]] || die "do not install as root"
+
+  local root applescript icon_svg version_file version launcher
+  root="$(source_root)" || die "MediaGrab source assets are missing"
+  applescript="$root/MediaGrab.applescript"
+  icon_svg="$root/MediaGrab-icon.svg"
+  version_file="$root/VERSION"
+  launcher="$DEPLOYED_LAUNCHER"
+  for path in "$applescript" "$icon_svg" "$version_file" "$launcher"; do
+    [[ -e "$path" ]] || die "missing install source: $path"
+    [[ ! -L "$path" || "$path" == "$launcher" ]] || die "refusing symlinked source: $path"
+  done
+  version="$(tr -d '[:space:]' <"$version_file")"
+  [[ "$version" == "$MEDIAGRAB_VERSION" ]] || die "version mismatch: backend=$MEDIAGRAB_VERSION assets=$version"
+
+  local required
+  for required in osacompile resvg sips iconutil plutil codesign shasum; do
+    command -v "$required" >/dev/null 2>&1 || die "missing required tool: $required"
+  done
+  [[ -x /usr/libexec/PlistBuddy ]] || die "missing PlistBuddy"
+  [[ -x "$launcher" ]] || die "launcher is not executable: $launcher"
+  command -v yt-dlp >/dev/null 2>&1 || die "yt-dlp is missing; apply the Brewfile first"
+  ffmpeg_bin >/dev/null 2>&1 || die "ffmpeg is missing; apply the Brewfile first"
+  ffprobe_bin >/dev/null 2>&1 || die "ffprobe is missing; apply the Brewfile first"
+  command -v deno >/dev/null 2>&1 || die "deno is missing; apply the Brewfile first"
+
+  ensure_config
+  mkdir -p "$HOME/Applications" "$HOME/Desktop" "$LOG_DIR" "$DOWNLOAD_ROOT" "$APP_SUPPORT/tmp"
+  chmod 700 "$APP_SUPPORT" "$LOG_DIR" "$APP_SUPPORT/tmp" 2>/dev/null || true
+
+  local tmp staged png iconset icns plist new_app backup_app desktop_backup committed=0
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/media-grab-install.XXXXXX")"
+  staged="$tmp/MediaGrab.app"
+  png="$tmp/MediaGrab-icon-1024.png"
+  iconset="$tmp/MediaGrab.iconset"
+  icns="$tmp/applet.icns"
+  new_app="$HOME/Applications/.MediaGrab.app.new.$$"
+  backup_app="$HOME/Applications/.MediaGrab.app.backup.$$"
+  desktop_backup="$HOME/Desktop/.MediaGrab.app.backup.$$"
+
+  cleanup_install() {
+    rm -rf "$tmp" "$new_app"
+    if [[ "$committed" -eq 0 ]]; then
+      [[ ! -d "$INSTALLED_APP" && -d "$backup_app" ]] && mv "$backup_app" "$INSTALLED_APP" || true
+      [[ ! -e "$DESKTOP_APP" && -d "$desktop_backup" ]] && mv "$desktop_backup" "$DESKTOP_APP" || true
+    else
+      rm -rf "$backup_app" "$desktop_backup"
+    fi
+  }
+  trap cleanup_install RETURN
+
+  resvg "$icon_svg" "$png"
+  [[ "$(sips -g pixelWidth "$png" 2>/dev/null | awk '/pixelWidth/ {print $2}')" == 1024 ]] || die "icon render was not 1024px"
+  mkdir -p "$iconset"
+  sips -z 16 16 "$png" --out "$iconset/icon_16x16.png" >/dev/null
+  sips -z 32 32 "$png" --out "$iconset/icon_16x16@2x.png" >/dev/null
+  sips -z 32 32 "$png" --out "$iconset/icon_32x32.png" >/dev/null
+  sips -z 64 64 "$png" --out "$iconset/icon_32x32@2x.png" >/dev/null
+  sips -z 128 128 "$png" --out "$iconset/icon_128x128.png" >/dev/null
+  sips -z 256 256 "$png" --out "$iconset/icon_128x128@2x.png" >/dev/null
+  sips -z 256 256 "$png" --out "$iconset/icon_256x256.png" >/dev/null
+  sips -z 512 512 "$png" --out "$iconset/icon_256x256@2x.png" >/dev/null
+  sips -z 512 512 "$png" --out "$iconset/icon_512x512.png" >/dev/null
+  cp "$png" "$iconset/icon_512x512@2x.png"
+  iconutil -c icns "$iconset" -o "$icns"
+
+  osacompile -o "$staged" "$applescript"
+  cp "$icns" "$staged/Contents/Resources/applet.icns"
+  plist="$staged/Contents/Info.plist"
+  plist_set_string() {
+    local key="$1" value="$2"
+    plutil -replace "$key" -string "$value" "$plist" 2>/dev/null || plutil -insert "$key" -string "$value" "$plist"
+  }
+  plist_set_bool() {
+    local key="$1" value="$2"
+    plutil -replace "$key" -bool "$value" "$plist" 2>/dev/null || plutil -insert "$key" -bool "$value" "$plist"
+  }
+  plist_set_string CFBundleIdentifier "$BUNDLE_ID"
+  plist_set_string CFBundleName MediaGrab
+  plist_set_string CFBundleDisplayName MediaGrab
+  plist_set_string CFBundleShortVersionString "$version"
+  plist_set_string CFBundleVersion "$version"
+  plist_set_string CFBundleIconFile applet.icns
+  plist_set_string LSMinimumSystemVersion 13.0
+  plist_set_bool LSUIElement true
+  plist_set_bool NSHighResolutionCapable true
+  plist_set_string NSAppleEventsUsageDescription "MediaGrab opens a visible local download session in Ghostty or Terminal."
+
+  /usr/libexec/PlistBuddy -c 'Delete :CFBundleDocumentTypes' "$plist" >/dev/null 2>&1 || true
+  /usr/libexec/PlistBuddy -c 'Add :CFBundleDocumentTypes array' "$plist"
+  /usr/libexec/PlistBuddy -c 'Add :CFBundleDocumentTypes:0 dict' "$plist"
+  /usr/libexec/PlistBuddy -c "Add :CFBundleDocumentTypes:0:CFBundleTypeName string 'URL reference or text file'" "$plist"
+  /usr/bin/libexec/PlistBuddy -c 'Add :CFBundleDocumentTypes:0:CFBundleTypeRole string Viewer' "$plist"
+  /usr/libexec/PlistBuddy -c 'Add :CFBundleDocumentTypes:0:LSHandlerRank string Alternate' "$plist"
+  /usr/bin/libexec/PlistBuddy -c 'Add :CFBundleDocumentTypes:0:CFBundleTypeExtensions array' "$plist"
+  /usr/libexec/PlistBuddy -c 'Add :CFBundleDocumentTypes:0:CFBundleTypeExtensions:0 string webloc' "$plist"
+  /usr/libexec/PlistBuddy -c 'Add :CFBundleDocumentTypes:0:CFBundleTypeExtensions:1 string url' "$plist"
+  /usr/libexec/PlistBuddy -c 'Add :CFBundleDocumentTypes:0:CFBundleTypeExtensions:2 string txt' "$plist"
+  plutil -lint "$plist" >/dev/null
+  codesign --force --deep --sign - "$staged"
+  codesign --verify --deep --strict "$staged"
+  [[ "$(bundle_id "$staged")" == "$BUNDLE_ID" ]] || die "staged bundle identifier mismatch"
+
+  rm -rf "$new_app"
+  mv "$staged" "$new_app"
+  if [[ -d "$INSTALLED_APP" ]]; then
+    mv "$INSTALLED_APP" "$backup_app"
+  elif [[ -e "$INSTALLED_APP" ]]; then
+    die "refusing non-directory app target: $INSTALLED_APP"
+  fi
+  mv "$new_app" "$INSTALLED_APP"
+  if [[ -L "$DESKTOP_APP" ]]; then
+    rm "$DESKTOP_APP"
+  elif [[ -e "$DESKTOP_APP" ]]; then
+    if [[ -d "$DESKTOP_APP" && "$(bundle_id "$DESKTOP_APP" 2>/dev/null || true)" == "$BUNDLE_ID" ]]; then
+      mv "$DESKTOP_APP" "$desktop_backup"
+    else
+      die "refusing to replace unknown Desktop target: $DESKTOP_APP"
+    fi
+  fi
+  ln -s "$INSTALLED_APP" "$DESKTOP_APP"
+  rm -rf "$APP_SUPPORT/bin" "$APP_SUPPORT/docs"
+  local lsregister="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+  [[ -x "$lsregister" ]] && "$lsregister" -f "$INSTALLED_APP" >/dev/null 2>&1 || true
+  committed=1
+  trap - RETURN
+  cleanup_install
+  log "installed $INSTALLED_APP"
+  log "desktop link: $DESKTOP_APP"
+}
+
+cmd_uninstall() {
+  local action="${1:---dry-run}"
+  [[ "$action" == --dry-run || "$action" == --apply ]] || die "uninstall accepts --dry-run or --apply"
+  printf 'MediaGrab uninstall plan:\n  remove: %s\n  remove link: %s\n  preserve: %s, %s, %s\n' \
+    "$INSTALLED_APP" "$DESKTOP_APP" "$CONFIG_FILE" "$LOG_DIR" "$DOWNLOAD_ROOT"
+  [[ "$action" == --apply ]] || return 0
+  if [[ -L "$DESKTOP_APP" ]]; then
+    rm "$DESKTOP_APP"
+  elif [[ -d "$DESKTOP_APP" && "$(bundle_id "$DESKTOP_APP" 2>/dev/null || true)" == "$BUNDLE_ID" ]]; then
+    rm -rf "$DESKTOP_APP"
+  fi
+  [[ ! -d "$INSTALLED_APP" || "$(bundle_id "$INSTALLED_APP" 2>/dev/null || true)" == "$BUNDLE_ID" ]] || \
+    die "refusing to remove unknown app: $INSTALLED_APP"
+  rm -rf "$INSTALLED_APP"
+  log "app removed; settings, logs, downloads, and Chezmoi-owned CLI preserved"
+}
+

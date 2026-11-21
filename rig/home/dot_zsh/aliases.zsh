@@ -80,30 +80,16 @@ alias agt='agent'
 #: Chrome with remote debugging on 9222
 [[ "$OSTYPE" == darwin* ]] && alias chrome-debug='open -a "Google Chrome" --args --remote-debugging-port=9222'
 #: local dbt wrapper
-alias dbtf="$HOME/.local/bin/dbt"
+alias dbtf="\$HOME/.local/bin/dbt"
 
-#: yt-dlp download with archive and embeds
-alias ytdown='yt-dlp \
-  -f "bv*+ba/b" \
-  -S "res,fps,hdr:12,vcodec,br,asr" \
-  --merge-output-format mkv \
-  --remote-components ejs:github \
-  --embed-metadata \
-  --embed-thumbnail \
-  --embed-chapters \
-  --add-metadata \
-  --embed-subs \
-  --sub-langs "all,-live_chat" \
-  --sponsorblock-mark all \
-  --sponsorblock-remove all \
-  --download-archive "$HOME/Downloads/yt-archive.txt" \
-  --concurrent-fragments 8 \
-  --retries 10 \
-  --extractor-retries 10 \
-  --retry-sleep extractor:5 \
-  --no-mtime \
-  --no-part \
-  -o "$HOME/Downloads/%(upload_date>%Y-%m-%d)s - %(uploader)s - %(title).200B [%(id)s].%(ext)s"'
+#: MediaGrab maximum-quality video
+alias ytdown='media-grab video'
+#: MediaGrab source-quality audio
+alias ytaudio='media-grab audio'
+#: MediaGrab safe archival download
+alias ytarchive='media-grab archive'
+#: MediaGrab exact format picker
+alias ytformats='media-grab exact'
 
 #: ofscraper
 alias ofs="ofscraper"
@@ -131,11 +117,11 @@ alias gtyv='ghostty +validate-config'
 #: ghostty show-config, changes only
 alias gtyc='ghostty +show-config --changes-only'
 #: hyperfine benchmark with 3 warmups
-command -v hyperfine &>/dev/null && alias bench='hyperfine --warmup 3'
+alias bench='hyperfine --warmup 3'
 #: jc pretty-print JSON
-command -v jc &>/dev/null && alias jcp='jc -p'
+alias jcp='jc -p'
 #: mtr report mode, 20 cycles (macOS: sudo mtrc)
-command -v mtr &>/dev/null && alias mtrc='mtr --report --report-cycles 20'
+alias mtrc='mtr --report --report-cycles 20'
 #: Atuin history recorded by AI coding agents
 alias atuin-agents="atuin search --author '\$all-agent' -- ''"
 if command -v xh &>/dev/null; then
@@ -157,7 +143,7 @@ alias-help() {
   local prefix="${1:-}"
   local desc="" line name exp cont
   local -a out
-  out+=("NAME	DESCRIPTION	EXPANSION")
+  out+=("NAME\tDESCRIPTION\tEXPANSION")
   while IFS= read -r line || [[ -n $line ]]; do
     line=${line##[[:space:]]##}
     if [[ $line == '#:'* ]]; then
@@ -178,7 +164,7 @@ alias-help() {
         exp+=" ${cont##[[:space:]]##}"
       done
       if [[ -z $prefix || $name == ${prefix}* ]]; then
-        out+=("${name}	${desc}	${exp}")
+        out+=("${name}\t${desc}\t${exp}")
       fi
     fi
     desc=""
