@@ -82,20 +82,20 @@ SH
   [ "$(cat "$count")" -eq 2 ]
   grep -Fxq -- '--cookies-from-browser' "$args"
   grep -Fxq -- 'brave' "$args"
-  ! grep -Eq '(^|[^0-9])403([^0-9]|$)' "$RUNNER"
+  ! grep -Eq '(^|[^0-9])403([^0-9]|$)' "$LIBEXEC/media-grab-runtime"
 }
 
 @test "archive modes prevent raw info JSON embedding" {
-  grep -Fq -- '--no-embed-info-json' "$RUNNER"
-  grep -Fq -- '--clean-info-json' "$RUNNER"
-  grep -Fq -- '--no-clean-info-json' "$RUNNER"
-  grep -Fq -- '--no-embed-subs' "$RUNNER"
+  grep -Fq -- '--no-embed-info-json' "$LIBEXEC/media-grab-modes"
+  grep -Fq -- '--clean-info-json' "$LIBEXEC/media-grab-modes"
+  grep -Fq -- '--no-clean-info-json' "$LIBEXEC/media-grab-modes"
+  grep -Fq -- '--no-embed-subs' "$LIBEXEC/media-grab-modes"
 }
 
 @test "dangerous legacy policy is absent" {
-  ! grep -Fq -- '--sponsorblock-remove' "$RUNNER"
-  ! grep -Fq -- '--no-part' "$RUNNER"
-  ! grep -Fq -- '--remote-components ejs:github' "$RUNNER"
+  ! grep -Fq -- '--sponsorblock-remove' "$RUNNER" "$LIBEXEC"/media-grab-*
+  ! grep -Fq -- '--no-part' "$RUNNER" "$LIBEXEC"/media-grab-*
+  ! grep -Fq -- '--remote-components ejs:github' "$RUNNER" "$LIBEXEC"/media-grab-*
 }
 
 @test "humorous icon is tracked as reproducible SVG" {
